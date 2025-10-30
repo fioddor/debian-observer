@@ -125,3 +125,73 @@ def test_query_aggregates(store):
     rows = result.fetchall()
     assert len(rows) == 1
     assert rows[0][2] == 5
+
+
+class TestExecutionStoreMigrations:
+    """Behaviour: the store opens databases written by OLDER versions.
+
+    CREATE TABLE IF NOT EXISTS does not add columns: a database with the
+    previous schema (fewer columns) used to crash _init_db with a
+    BinderException on the first COMMENT ON COLUMN — the
+    execution-report CLI could not even open an existing database.
+    """
+
+    def test_opens_database_with_legacy_schema(self, tmp_path):
+        import duckdb
+        from debian_observer.analytics.store import ExecutionStore
+
+        db = tmp_path / "runs.duckdb"
+        con = duckdb.connect(str(db))
+        # Schema of an OLDER release: 4 columns only
+        con.execute(
+            "CREATE TABLE execution_runs ("
+            " run_id VARCHAR, run_at TIMESTAMP,"
+            " execution_type VARCHAR, source_name VARCHAR)"
+        )
+        con.execute(
+            "INSERT INTO execution_runs VALUES ('legacy-1', '2026-09-01 00:00:00',"
+            " 'ingestion', 'mirror')"
+        )
+        con.close()
+
+        # Opening the legacy DB must migrate (ALTER TABLE ADD COLUMN) instead of
+        # crashing on the missing columns.
+        store = ExecutionStore(db)
+        rows = store.query("SELECT COUNT(*) AS n FROM execution_runs").fetchone()
+        assert rows[0] == 1, "legacy rows must survive the migration"
+        cols = {
+            r[0]
+            for r in store.query(
+                "SELECT column_name FROM information_schema.columns"
+                " WHERE table_name = 'execution_runs'"
+            ).fetchall()
+        }
+        from debian_observer.analytics.store import _COLUMN_DEFS
+        missing = {name for name, _, _ in _COLUMN_DEFS} - cols
+        assert not missing, f"columns not migrated: {sorted(missing)}"
+        store.close()
+
+    def test_comment_with_apostrophe_does_not_crash(self, tmp_path):
+        """_COLUMN_DEFS comments are interpolated into COMMENT ON COLUMN
+        without escaping: any future edit adding an apostrophe used to
+        blow up _init_db with a ParserException."""
+        from debian_observer.analytics import store as store_mod
+
+        db = tmp_path / "runs.duckdb"
+        # temporarily patch a comment with an apostrophe
+        original = store_mod._COLUMN_DEFS
+        patched = list(original)
+        patched[0] = (patched[0][0], patched[0][1], "it's a test comment")
+        store_mod._COLUMN_DEFS = patched
+        try:
+            es = store_mod.ExecutionStore(db)
+            es.close()
+        finally:
+            store_mod._COLUMN_DEFS = original
+
+    def test_close_is_idempotent(self, tmp_path):
+        from debian_observer.analytics.store import ExecutionStore
+
+        store = ExecutionStore(tmp_path / "runs.duckdb")
+        store.close()
+        store.close()  # must not raise

@@ -9,6 +9,7 @@ Covers the repository compliance feature:
 import json
 import re
 import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
@@ -47,8 +48,11 @@ def test_sbom_spdx_covers_declared_deps():
 
 
 def test_reuse_lint_clean():
+    # Run reuse via the running interpreter (python -m): the PATH may not
+    # carry the venv Scripts/bin dir (container without activation), while
+    # sys.executable is the interpreter whose site-packages installed reuse.
     result = subprocess.run(
-        ["reuse", "lint"],
+        [sys.executable, "-m", "reuse", "lint"],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,

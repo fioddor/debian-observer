@@ -5,5 +5,5 @@ A reproducible, event-driven observatory for studying the evolution of Debian re
 
 # Contributing
 
- - [Project for release 1](doc/release1.project.v0.4.md)
- - [How to contribute](doc/CONTRIBUTING.md)
+ - [Project for release 1](docs/release1.project.v0.4.md)
+ - [How to contribute](docs/CONTRIBUTING.md)

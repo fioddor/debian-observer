@@ -1,0 +1,293 @@
+"""Ingestion: Pipeline.
+
+Orchestrates the end-to-end ingestion workflow:
+
+1. Acquire data from a source
+2. Store raw artifact
+3. Build dataset manifest
+4. Record provenance
+5. Transform records into domain events
+6. Return ingestion result
+
+The pipeline is intentionally stateless. All mutable state is
+externalized to the filesystem (raw artifacts, manifests) and to
+the event system (domain events). This makes the pipeline easy to
+test, restart, and scale.
+
+Design notes
+------------
+
+* ``IngestionPipeline`` is a single-pass batch processor in R1.
+  Streaming/real-time ingestion is deferred to R2.
+* The pipeline does not publish events directly to NATS. Instead,
+  it returns the events as a list, allowing the caller to decide
+  how to publish (local file, in-memory queue, or NATS).
+* Raw artifacts are stored as JSON lines for simplicity and readability.
+  Parquet raw storage is deferred to R2 if volume warrants it.
+* The pipeline is idempotent when given the same source and run ID:
+  the same input always produces the same checksum and events.
+"""
+
+from __future__ import annotations
+
+import json
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from debian_observer.domain.models import PackageVersion
+from debian_observer.events import EventEnvelope
+from debian_observer.events.types import ObservationMeta, PackageVersionObservedPayload
+from debian_observer.ingestion.acquisition import AcquisitionService, DataSource
+from debian_observer.ingestion.manifest import DatasetManifest, ManifestBuilder
+from debian_observer.ingestion.provenance import ProvenanceRecorder, RawArtifact
+
+# ---------------------------------------------------------------------------
+# Ingestion result model
+# ---------------------------------------------------------------------------
+
+class IngestionResult(BaseModel):
+    """Result of a single ingestion pipeline run.
+
+    This model captures all outputs of an ingestion run, making it
+easy for callers to inspect what was produced and decide on next
+    steps (e.g. publish events, store in Parquet).
+
+    Attributes:
+        ingestion_run_id: Identifier of the ingestion run.
+        source_name: Name of the data source.
+        record_count: Number of records ingested.
+        checksum: SHA-256 checksum of the raw data.
+        artifact_path: Path to the stored raw artifact.
+        manifest: Dataset manifest describing the acquisition.
+        events: Domain events produced from the ingested records.
+        acquired_at: UTC timestamp when acquisition completed.
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        populate_by_name=True,
+        str_strip_whitespace=True,
+    )
+
+    ingestion_run_id: str = Field(..., description="Identifier of the ingestion run.")
+    source_name: str = Field(..., description="Name of the data source.")
+    record_count: int = Field(..., ge=0, description="Number of records ingested.")
+    checksum: str = Field(..., description="SHA-256 checksum of the raw data.")
+    artifact_path: Path | None = Field(
+        default=None, description="Path to the stored raw artifact."
+    )
+    manifest: DatasetManifest = Field(..., description="Dataset manifest.")
+    events: list[EventEnvelope] = Field(
+        default_factory=list, description="Domain events produced."
+    )
+    acquired_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="UTC timestamp when acquisition completed.",
+    )
+
+    @field_validator("artifact_path", mode="before")
+    @classmethod
+    def _validate_path(cls, value: Any) -> Path | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return Path(value)
+        if isinstance(value, Path):
+            return value
+        raise ValueError(f"artifact_path must be a string or Path, got {type(value).__name__}")
+
+    @field_validator("acquired_at")
+    @classmethod
+    def _ensure_utc(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+
+# ---------------------------------------------------------------------------
+# Pipeline
+# ---------------------------------------------------------------------------
+
+class IngestionPipeline:
+    """End-to-end ingestion pipeline for Debian Observatory.
+
+    The pipeline coordinates acquisition, storage, manifest creation,
+    provenance recording, and event generation. It is designed to be
+    called as a single atomic operation for a given data source.
+
+    Usage::
+
+        pipeline = IngestionPipeline(raw_dir=Path("data/raw"))
+        result = pipeline.run(source, ingestion_run_id="run-001")
+
+        for event in result.events:
+            print(f"Produced {event.event_type} for {event.entity_id}")
+
+        # Raw artifact stored at:
+        print(result.artifact_path)
+    """
+
+    def __init__(
+        self,
+        raw_dir: Path = Path("data/raw"),
+    ) -> None:
+        """Initialize the pipeline.
+
+        Args:
+            raw_dir: Directory for storing raw artifacts. Created if
+                     it does not exist.
+        """
+        self.raw_dir = raw_dir
+        self._acquisition = AcquisitionService()
+        self._manifest_builder = ManifestBuilder()
+        self._provenance = ProvenanceRecorder()
+
+    def run(
+        self,
+        source: DataSource,
+        ingestion_run_id: str | None = None,
+    ) -> IngestionResult:
+        """Run the full ingestion pipeline for a data source.
+
+        Args:
+            source: The data source to ingest.
+            ingestion_run_id: Optional run identifier. If not provided,
+                              a UUID is generated.
+
+        Returns:
+            An IngestionResult containing all outputs of the run.
+        """
+        run_id = ingestion_run_id or f"run-{uuid.uuid4().hex[:12]}"
+
+        # Step 1: Acquire data
+        acquisition_meta = self._acquisition.acquire(source)
+        records = source.retrieve()
+
+        # Step 2: Store raw artifact
+        artifact_path = self._store_raw_artifact(records, run_id, source.name)
+
+        # Step 3: Build manifest
+        manifest = self._manifest_builder.build(
+            source=source,
+            dataset_name=f"{source.name}-{run_id}",
+        )
+
+        # Step 4: Record provenance
+        artifact_meta = RawArtifact(
+            artifact_id=f"artifact-{run_id}",
+            source=source.name,
+            path=artifact_path,
+            checksum=acquisition_meta["checksum"],
+            size_bytes=artifact_path.stat().st_size,
+        )
+        self._provenance.record_artifact(artifact_meta, ingestion_run_id=run_id)
+
+        # Step 5: Transform to domain events
+        events = self._transform_records(records, source.name, run_id)
+
+        # Assemble result
+        return IngestionResult(
+            ingestion_run_id=run_id,
+            source_name=source.name,
+            record_count=acquisition_meta["record_count"],
+            checksum=acquisition_meta["checksum"],
+            artifact_path=artifact_path,
+            manifest=manifest,
+            events=events,
+            acquired_at=datetime.fromisoformat(acquisition_meta["acquired_at"]),
+        )
+
+    def _store_raw_artifact(
+        self,
+        records: list[dict[str, Any]],
+        run_id: str,
+        source_name: str,
+    ) -> Path:
+        """Store records as a JSON-lines raw artifact.
+
+        Returns:
+            Path to the created artifact file.
+        """
+        self.raw_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        filename = f"{source_name}-{timestamp}-{run_id}.jsonl"
+        artifact_path = self.raw_dir / filename
+
+        with open(artifact_path, "w", encoding="utf-8") as f:
+            for record in records:
+                f.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+
+        return artifact_path
+
+    def _transform_records(
+        self,
+        records: list[dict[str, Any]],
+        source_name: str,
+        run_id: str,
+    ) -> list[EventEnvelope]:
+        """Transform raw records into domain events.
+
+        In R1, records are assumed to represent package version
+        observations (the most common UDD query). Future releases
+        will add support for other record types and configurable
+        transformation mappings.
+
+        Returns:
+            A list of EventEnvelope instances.
+        """
+        events: list[EventEnvelope] = []
+        now = datetime.now(timezone.utc)
+
+        for record in records:
+            # Build package_id from available fields
+            pkg_name = record.get("package") or record.get("source", "unknown")
+            arch = record.get("architecture", "all")
+            package_id = f"{pkg_name}:{arch}"
+
+            # Create domain model
+            version = PackageVersion(
+                package_id=package_id,
+                version=record.get("version", "0.0-1"),
+                distribution=record.get("distribution"),
+                architecture=record.get("architecture"),
+                component=record.get("component"),
+                priority=record.get("priority"),
+                source=source_name,
+                observed_at=now,
+            )
+
+            # Create event payload
+            observation = ObservationMeta(
+                source=source_name,
+                observed_at=now,
+                effective_at=now,
+                ingestion_run_id=run_id,
+            )
+            payload = PackageVersionObservedPayload(
+                package_id=package_id,
+                version=version.version,
+                distribution=version.distribution,
+                architecture=version.architecture,
+                component=version.component,
+                priority=version.priority,
+                observation=observation,
+            )
+
+            # Create envelope
+            event = EventEnvelope.from_payload(
+                event_type="PackageVersionObserved",
+                source=source_name,
+                entity_id=package_id,
+                payload_model=payload,
+                ingestion_run_id=run_id,
+                observed_at=now,
+                effective_at=now,
+            )
+            events.append(event)
+
+        return events

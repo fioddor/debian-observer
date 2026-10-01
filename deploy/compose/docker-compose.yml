@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Purpose: Local app deployment orchestration for containerized usage.
+# Design.: No service implemented yet => Endless loop to keep the container
+#          up after the deployment of the CLI app.
+# Author.: Igor Zubiaurre <igor@zubiaurre.es>
+# Pending: To be extended as features are added.
+#-----------------------------------------------------------------------------
+
+services:
+  debian-observer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: debian-observer
+    hostname: deb-obs
+    stdin_open: true          # keeps STDIN open (like -i)
+    tty: true                 # allocates a TTY (like -t)
+    working_dir: /app
+    volumes:
+      - ../..:/app            # bind mount: host ./app ↔ container /app
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: bash -c "pipx install /app/dist/debian_observer.whl;while sleep 1000; do :; done"
+
+volumes:
+  # Raw artifact storage for ingestion pipeline
+  raw-data:
+    driver: local
+
+networks:
+  debian-observer:
+    driver: bridge

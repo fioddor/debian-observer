@@ -38,12 +38,13 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from debian_observer.domain.models import PackageVersion
 from debian_observer.events import EventEnvelope
-from debian_observer.events.types import ObservationMeta, PackageVersionObservedPayload
 from debian_observer.ingestion.acquisition import AcquisitionService, DataSource
 from debian_observer.ingestion.manifest import DatasetManifest, ManifestBuilder
 from debian_observer.ingestion.provenance import ProvenanceRecorder, RawArtifact
+from debian_observer.normalization.normalizer import Normalizer
+from debian_observer.observability.tracing import get_tracer, span
+from debian_observer.observability.metrics import IngestionMetrics
 
 # ---------------------------------------------------------------------------
 # Ingestion result model
@@ -187,8 +188,14 @@ class IngestionPipeline:
         )
         self._provenance.record_artifact(artifact_meta, ingestion_run_id=run_id)
 
-        # Step 5: Transform to domain events
-        events = self._transform_records(records, source.name, run_id)
+        tracer = get_tracer("debian_observer.ingestion")
+        with tracer.start_as_current_span("ingestion.transform_events"):
+            # Step 5: Normalize records to domain events
+            normalizer = Normalizer(source_name=source.name, ingestion_run_id=run_id)
+            events, invalid = normalizer.normalize_records(records)
+            if invalid:
+                # In R1 we silently drop invalid records; log in R2
+                    pass
 
         # Assemble result
         return IngestionResult(
@@ -224,70 +231,4 @@ class IngestionPipeline:
 
         return artifact_path
 
-    def _transform_records(
-        self,
-        records: list[dict[str, Any]],
-        source_name: str,
-        run_id: str,
-    ) -> list[EventEnvelope]:
-        """Transform raw records into domain events.
 
-        In R1, records are assumed to represent package version
-        observations (the most common UDD query). Future releases
-        will add support for other record types and configurable
-        transformation mappings.
-
-        Returns:
-            A list of EventEnvelope instances.
-        """
-        events: list[EventEnvelope] = []
-        now = datetime.now(timezone.utc)
-
-        for record in records:
-            # Build package_id from available fields
-            pkg_name = record.get("package") or record.get("source", "unknown")
-            arch = record.get("architecture", "all")
-            package_id = f"{pkg_name}:{arch}"
-
-            # Create domain model
-            version = PackageVersion(
-                package_id=package_id,
-                version=record.get("version", "0.0-1"),
-                distribution=record.get("distribution"),
-                architecture=record.get("architecture"),
-                component=record.get("component"),
-                priority=record.get("priority"),
-                source=source_name,
-                observed_at=now,
-            )
-
-            # Create event payload
-            observation = ObservationMeta(
-                source=source_name,
-                observed_at=now,
-                effective_at=now,
-                ingestion_run_id=run_id,
-            )
-            payload = PackageVersionObservedPayload(
-                package_id=package_id,
-                version=version.version,
-                distribution=version.distribution,
-                architecture=version.architecture,
-                component=version.component,
-                priority=version.priority,
-                observation=observation,
-            )
-
-            # Create envelope
-            event = EventEnvelope.from_payload(
-                event_type="PackageVersionObserved",
-                source=source_name,
-                entity_id=package_id,
-                payload_model=payload,
-                ingestion_run_id=run_id,
-                observed_at=now,
-                effective_at=now,
-            )
-            events.append(event)
-
-        return events

@@ -21,11 +21,13 @@ from debian_observer.ingestion.pipeline import IngestionPipeline
     help="Data source to ingest from.",
 )
 @click.option("--raw-dir", default="data/raw", help="Directory for raw artifacts (default: data/raw).")
+@click.option("--parquet-dir", default=None, help="Optional directory for Parquet output.")
 @click.pass_context
 def ingest(
     ctx: click.Context,
     source: str,
     raw_dir: str,
+    parquet_dir: str | None,
 ) -> None:
     """Acquire source data and run the ingestion pipeline: raw
     artifact, dataset manifest, provenance record and domain events.
@@ -43,10 +45,15 @@ def ingest(
             param_hint="--source",
         )
 
-    pipeline = IngestionPipeline(raw_dir=Path(raw_dir))
+    pipeline = IngestionPipeline(
+        raw_dir=Path(raw_dir),
+        parquet_dir=Path(parquet_dir) if parquet_dir else None,
+    )
     result = pipeline.run(data_source)
 
     click.echo(f"Ingested {result.record_count} records")
     click.echo(f"Run ID: {result.ingestion_run_id}")
     click.echo(f"Checksum: {result.checksum}")
     click.echo(f"Events produced: {len(result.events)}")
+    if result.parquet_path:
+        click.echo(f"Parquet written: {result.parquet_path}")

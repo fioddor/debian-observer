@@ -311,7 +311,7 @@ project/
 ├── docs/
 │   ├── CONTRIBUTING.md
 │   ├── architecture/
-│   ├── adr/
+│   │   └── adr/
 │   └── datasets/
 │
 ├── deploy/

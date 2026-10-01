@@ -13,6 +13,7 @@ from debian_observer.cli.commands import validate
 from debian_observer.cli.commands import query
 from debian_observer.cli.commands import status
 from debian_observer.cli.commands import benchmark
+from debian_observer.cli.commands import replay
 
 
 @click.group()
@@ -39,6 +40,7 @@ cli.add_command(validate.validate)
 cli.add_command(query.query)
 cli.add_command(status.status)
 cli.add_command(benchmark.benchmark)
+cli.add_command(replay.replay)
 
 
 if __name__ == "__main__":

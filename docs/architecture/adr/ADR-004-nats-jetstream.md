@@ -42,7 +42,7 @@ NATS JetStream provides:
  - retry and dead-letter mechanisms
  - significantly lower operational footprint than alternatives
 
-A conceptual stream `debian.events` will carry subjects such as:
+The stream is named `debian-events` (dots are invalid in NATS stream names). It carries subjects such as:
 
  - `debian.package.observed`
  - `debian.package_version.observed`
@@ -50,6 +50,8 @@ A conceptual stream `debian.events` will carry subjects such as:
  - `debian.migration.observed`
 
 The exact subject hierarchy will be refined in implementation and documented separately.
+
+> **Implementation note (2026-10-02):** The messaging layer has been verified against a live NATS v2.10 JetStream server. The `nats-py` v2.16 API expects `num_replicas` (not `replicas`) and does not accept `max_deliver` in `js.subscribe()`. Message acknowledgment is wrapped to handle `MsgAlreadyAckdError` gracefully.
 
 
 Note: Kafka is explicitly deferred. While Kafka remains a relevant and valuable market technology,

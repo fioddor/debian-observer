@@ -52,6 +52,14 @@ debian-observer ingest \
 Options: `--parquet-dir` (Parquet output).
 See `debian-observer ingest --help` for full options.
 
+## Observability
+
+OpenTelemetry tracing and metrics are wired throughout the pipeline,
+messaging and the API; the API exposes `/metrics/`. Console telemetry
+output appears only for long-lived processes: metrics export every 5
+seconds while a process runs, and traces flush at process exit —
+short-lived CLI commands show no telemetry output.
+
 ## Normalization
 
 Transform raw JSONL records into canonical domain events:
@@ -158,4 +166,10 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 pytest tests/
 ```
+
+## Troubleshooting
+
+**No Parquet files found:** ensure `--parquet-dir` matches where ingestion writes.
+
+**NATS connection refused:** verify `docker compose ps` shows nats healthy.
 

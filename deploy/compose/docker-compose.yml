@@ -46,6 +46,7 @@ services:
       - "8000:8000"
     environment:
       - NATS_URL=nats://nats:4222
+      - OTEL_EXPORTER=console
     volumes:
       - api-data:/app/data
     depends_on:

@@ -27,7 +27,6 @@ services:
         echo 'Dependencies installed. Run tests with: pytest tests/' &&
         sleep infinity
       "
-
 networks:
   debian-observer:
     driver: bridge

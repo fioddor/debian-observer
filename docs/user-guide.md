@@ -51,6 +51,36 @@ debian-observer ingest \
 
 See `debian-observer ingest --help` for full options.
 
+## Normalization
+
+Transform raw JSONL records into canonical domain events:
+
+```bash
+cat records.jsonl | debian-observer normalize > events.jsonl
+```
+
+Run `debian-observer normalize --help` for all options (source, run
+id, invalid-records file).
+
+## Validate raw records
+
+Validate raw records against the expected UDD shape before
+normalization: a record needs a `version` and a `package` or
+`source` name. Invalid records are reported with a reason on
+stderr and the run prints valid/invalid counts; the exit code
+stays 0 even when invalid records are found — validation is a
+report, not a gate.
+
+```bash
+debian-observer validate --input data/raw/<file>.jsonl
+```
+
+Mock artifacts (`mock-debian-*.jsonl`) hold synthetic rows that
+mirror the UDD `packages` shape, so `validate` counts them valid —
+they are test rows, not real UDD data.
+
+Run `debian-observer validate --help` for all options.
+
 ## Testing
 
 All features include tests. The test suite uses `pytest` with coverage reporting.

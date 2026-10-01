@@ -81,6 +81,16 @@ they are test rows, not real UDD data.
 
 Run `debian-observer validate --help` for all options.
 
+## Query stored data
+
+```bash
+debian-observer query \
+  "SELECT package_id, version, distribution FROM events WHERE distribution = 'sid'" \
+  --parquet-dir data/parquet
+```
+
+Data is stored in **Parquet** format with a **DuckDB** analytical layer for SQL queries.
+
 ## Testing
 
 All features include tests. The test suite uses `pytest` with coverage reporting.

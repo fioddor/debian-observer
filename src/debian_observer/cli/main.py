@@ -10,6 +10,7 @@ import click
 from debian_observer.cli.commands import ingest
 from debian_observer.cli.commands import normalize
 from debian_observer.cli.commands import validate
+from debian_observer.cli.commands import query
 
 
 @click.group()
@@ -33,6 +34,7 @@ def cli() -> None:
 cli.add_command(ingest.ingest)
 cli.add_command(normalize.normalize)
 cli.add_command(validate.validate)
+cli.add_command(query.query)
 
 
 if __name__ == "__main__":

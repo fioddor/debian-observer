@@ -49,6 +49,7 @@ debian-observer ingest \
   --raw-dir data/raw
 ```
 
+Options: `--parquet-dir` (Parquet output).
 See `debian-observer ingest --help` for full options.
 
 ## Normalization
@@ -90,6 +91,10 @@ debian-observer query \
 ```
 
 Data is stored in **Parquet** format with a **DuckDB** analytical layer for SQL queries.
+
+## Pipeline
+
+The ingestion pipeline integrates ParquetWriter for optional persistent storage. After running `debian-observer ingest`, raw artifacts and Parquet events are available in `data/`.
 
 ## Testing
 

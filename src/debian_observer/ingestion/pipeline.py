@@ -82,6 +82,9 @@ easy for callers to inspect what was produced and decide on next
     artifact_path: Path | None = Field(
         default=None, description="Path to the stored raw artifact."
     )
+    parquet_path: Path | None = Field(
+        default=None, description="Path to the written Parquet file."
+    )
     manifest: DatasetManifest = Field(..., description="Dataset manifest.")
     events: list[EventEnvelope] = Field(
         default_factory=list, description="Domain events produced."
@@ -136,18 +139,25 @@ class IngestionPipeline:
     def __init__(
         self,
         raw_dir: Path = Path("data/raw"),
+        parquet_dir: Path | None = None,
     ) -> None:
         """Initialize the pipeline.
 
         Args:
             raw_dir: Directory for storing raw artifacts. Created if
                      it does not exist.
+            parquet_dir: Optional directory for Parquet output. If
+                         provided, events are written to Parquet after
+                         normalization.
         """
         self.raw_dir = raw_dir
+        self.parquet_dir = parquet_dir
         self._acquisition = AcquisitionService()
         self._manifest_builder = ManifestBuilder()
         self._provenance = ProvenanceRecorder()
+        self._metrics = IngestionMetrics()
 
+    @span()
     def run(
         self,
         source: DataSource,
@@ -163,51 +173,76 @@ class IngestionPipeline:
         Returns:
             An IngestionResult containing all outputs of the run.
         """
+        import time
+        start = time.perf_counter()
         run_id = ingestion_run_id or f"run-{uuid.uuid4().hex[:12]}"
-
-        # Step 1: Acquire data
-        acquisition_meta = self._acquisition.acquire(source)
-        records = source.retrieve()
-
-        # Step 2: Store raw artifact
-        artifact_path = self._store_raw_artifact(records, run_id, source.name)
-
-        # Step 3: Build manifest
-        manifest = self._manifest_builder.build(
-            source=source,
-            dataset_name=f"{source.name}-{run_id}",
-        )
-
-        # Step 4: Record provenance
-        artifact_meta = RawArtifact(
-            artifact_id=f"artifact-{run_id}",
-            source=source.name,
-            path=artifact_path,
-            checksum=acquisition_meta["checksum"],
-            size_bytes=artifact_path.stat().st_size,
-        )
-        self._provenance.record_artifact(artifact_meta, ingestion_run_id=run_id)
-
         tracer = get_tracer("debian_observer.ingestion")
-        with tracer.start_as_current_span("ingestion.transform_events"):
-            # Step 5: Normalize records to domain events
-            normalizer = Normalizer(source_name=source.name, ingestion_run_id=run_id)
-            events, invalid = normalizer.normalize_records(records)
-            if invalid:
-                # In R1 we silently drop invalid records; log in R2
+
+        try:
+            with tracer.start_as_current_span("ingestion.acquire"):
+                # Step 1: Acquire data
+                acquisition_meta = self._acquisition.acquire(source)
+                records = source.retrieve()
+
+            with tracer.start_as_current_span("ingestion.store_raw"):
+                # Step 2: Store raw artifact
+                artifact_path = self._store_raw_artifact(records, run_id, source.name)
+                self._metrics.add_bytes(artifact_path.stat().st_size, source=source.name)
+
+            with tracer.start_as_current_span("ingestion.build_manifest"):
+                # Step 3: Build manifest
+                manifest = self._manifest_builder.build(
+                    source=source,
+                    dataset_name=f"{source.name}-{run_id}",
+                )
+
+            with tracer.start_as_current_span("ingestion.record_provenance"):
+                # Step 4: Record provenance
+                artifact_meta = RawArtifact(
+                    artifact_id=f"artifact-{run_id}",
+                    source=source.name,
+                    path=artifact_path,
+                    checksum=acquisition_meta["checksum"],
+                    size_bytes=artifact_path.stat().st_size,
+                )
+                self._provenance.record_artifact(artifact_meta, ingestion_run_id=run_id)
+
+            with tracer.start_as_current_span("ingestion.transform_events"):
+                # Step 5: Normalize records to domain events
+                normalizer = Normalizer(source_name=source.name, ingestion_run_id=run_id)
+                events, invalid = normalizer.normalize_records(records)
+                if invalid:
+                    # In R1 we silently drop invalid records; log in R2
                     pass
 
-        # Assemble result
-        return IngestionResult(
-            ingestion_run_id=run_id,
-            source_name=source.name,
-            record_count=acquisition_meta["record_count"],
-            checksum=acquisition_meta["checksum"],
-            artifact_path=artifact_path,
-            manifest=manifest,
-            events=events,
-            acquired_at=datetime.fromisoformat(acquisition_meta["acquired_at"]),
-        )
+            # Step 6: Write to Parquet (if configured)
+            parquet_path: Path | None = None
+            if self.parquet_dir is not None and events:
+                with tracer.start_as_current_span("ingestion.write_parquet"):
+                    from debian_observer.storage.parquet import ParquetWriter
+                    writer = ParquetWriter(output_dir=self.parquet_dir)
+                    parquet_path = writer.write_events(events, ingestion_run_id=run_id)
+
+            # Record metrics
+            duration = time.perf_counter() - start
+            self._metrics.record_duration(duration, source=source.name)
+            self._metrics.add_records(len(records), source=source.name)
+
+            # Assemble result
+            return IngestionResult(
+                ingestion_run_id=run_id,
+                source_name=source.name,
+                record_count=acquisition_meta["record_count"],
+                checksum=acquisition_meta["checksum"],
+                artifact_path=artifact_path,
+                parquet_path=parquet_path,
+                manifest=manifest,
+                events=events,
+                acquired_at=datetime.fromisoformat(acquisition_meta["acquired_at"]),
+            )
+        except Exception as exc:
+            self._metrics.add_error(source=source.name)
+            raise
 
     def _store_raw_artifact(
         self,

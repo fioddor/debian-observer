@@ -16,8 +16,11 @@ Design notes
 from __future__ import annotations
 
 from typing import Any
+from opentelemetry import trace
 
 from debian_observer.events import EventEnvelope
+from debian_observer.observability.tracing import get_tracer
+from debian_observer.observability.metrics import MessagingMetrics
 from debian_observer.messaging.config import StreamConfig
 
 # ---------------------------------------------------------------------------
@@ -53,6 +56,8 @@ class EventPublisher:
         """
         self._client = client
         self._config = stream_config or StreamConfig()
+        self._metrics = MessagingMetrics()
+        self._tracer = get_tracer("debian_observer.messaging")
 
     async def publish(self, event: EventEnvelope) -> int | None:
         """Publish a single event to JetStream.
@@ -76,10 +81,24 @@ class EventPublisher:
                 f"No subject mapping for event type: {event.event_type}"
             )
 
-        js = self._client.jetstream
-        data = event.to_json_bytes()
-        ack = await js.publish(subject, data)
-        return ack.seq if hasattr(ack, "seq") else None
+        with self._tracer.start_as_current_span("messaging.publish") as span:
+            span.set_attribute("messaging.system", "NATS")
+            span.set_attribute("messaging.destination", subject)
+            span.set_attribute("event.type", event.event_type)
+
+            js = self._client.jetstream
+            data = event.to_json_bytes()
+            try:
+                ack = await js.publish(subject, data)
+                seq = ack.seq if hasattr(ack, "seq") else None
+                self._metrics.add_published(1, subject=subject, event_type=event.event_type)
+                span.set_attribute("messaging.sequence", seq)
+                return seq
+            except Exception as exc:
+                self._metrics.add_failed(1, subject=subject, event_type=event.event_type)
+                span.set_status(trace.Status(trace.StatusCode.ERROR, str(exc)))
+                span.record_exception(exc)
+                raise
 
     async def publish_batch(self, events: list[EventEnvelope]) -> list[int | None]:
         """Publish a batch of events sequentially.

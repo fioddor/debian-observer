@@ -27,8 +27,11 @@ from __future__ import annotations
 
 import json
 from typing import Any, Awaitable, Callable
+from opentelemetry import trace
 
 from debian_observer.events import EventEnvelope
+from debian_observer.observability.tracing import get_tracer
+from debian_observer.observability.metrics import MessagingMetrics
 
 # ---------------------------------------------------------------------------
 # Type aliases
@@ -93,6 +96,8 @@ class EventConsumer:
         self.durable_name = durable_name
         self.max_deliver = max_deliver
         self._subscription: Any = None
+        self._metrics = MessagingMetrics()
+        self._tracer = get_tracer("debian_observer.messaging")
 
     async def subscribe(self, subject: str) -> None:
         """Subscribe to a subject and begin consuming messages.
@@ -130,22 +135,38 @@ class EventConsumer:
 
     async def _process_message(self, msg: Any) -> None:
         """Process a single message: deserialize, invoke handler, ack."""
+        import time
+        start = time.perf_counter()
         # Deserialize the envelope
         data = json.loads(msg.data.decode("utf-8"))
         event = EventEnvelope.model_validate(data)
 
-        # Prepare ack callback
-        async def ack() -> None:
-            if hasattr(msg, "ack"):
-                await msg.ack()
+        with self._tracer.start_as_current_span("messaging.consume") as span:
+            span.set_attribute("messaging.system", "NATS")
+            span.set_attribute("event.type", event.event_type)
+            span.set_attribute("event.id", str(event.event_id))
 
-        # Invoke handler
-        await self.handler(msg, event, event.payload, ack)
+            # Prepare ack callback
+            async def ack() -> None:
+                if hasattr(msg, "ack"):
+                    await msg.ack()
 
-        # If handler succeeded without exception, ensure ack.
-        # We always ack here even if the handler already acked —
-        # duplicate acks are harmless in NATS (no-op for acked messages).
-        await ack()
+            # Invoke handler
+            try:
+                await self.handler(msg, event, event.payload, ack)
+                duration = time.perf_counter() - start
+                self._metrics.record_consumer_duration(duration, event_type=event.event_type)
+                self._metrics.add_consumed(1, event_type=event.event_type)
+            except Exception as exc:
+                self._metrics.add_failed(1, event_type=event.event_type)
+                span.set_status(trace.Status(trace.StatusCode.ERROR, str(exc)))
+                span.record_exception(exc)
+                raise
+
+            # If handler succeeded without exception, ensure ack.
+            # We always ack here even if the handler already acked —
+            # duplicate acks are harmless in NATS (no-op for acked messages).
+            await ack()
 
     async def unsubscribe(self) -> None:
         """Unsubscribe and stop consuming messages."""

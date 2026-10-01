@@ -15,12 +15,18 @@ services:
     hostname: deb-obs-dev
     stdin_open: true          # keeps STDIN open (like -i)
     tty: true                 # allocates a TTY (like -t)
-    working_dir: /app
+    working_dir: /workspace
     volumes:
-      - ../:/app              # bind mount: host ./app ↔ container /app
+      - ..:/workspace:cached              # bind mount: host ./workspace ↔ container /workspace
     environment:
       - PYTHONUNBUFFERED=1
-    command: bash -c "pip install -e '.[dev]'; while sleep 1000; do :; done"
+    command: >
+      sh -c "
+        cd /workspace &&
+        pip install -e '.[dev]' &&
+        echo 'Dependencies installed. Run tests with: pytest tests/' &&
+        sleep infinity
+      "
 
 networks:
   debian-observer:

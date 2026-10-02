@@ -56,13 +56,35 @@ debian-observer ingest \
 
 This fetches version history for the `hello` package from `sources.debian.org`.
 
-**Expected output:**
+**Expected output (sources.debian.org):**
 ```
-Ingested 21 records
+Ingested N records
 Run ID: run-xxxxxx
-Checksum: eb6412e4...
-Events produced: 21
+Checksum: ...
+Events produced: N
 Parquet written: /tmp/smoke-parquet/run-xxxxxx.parquet
+```
+
+**Mirror package list (Packages.gz):**
+
+For a quick test with actual Debian Archive `Packages.gz` data:
+
+```bash
+debian-observer ingest \
+  --source mirror \
+  --url stable \
+  --limit 5 \
+  --raw-dir /tmp/mirror-raw \
+  --parquet-dir /tmp/mirror-parquet
+```
+
+**Expected output (mirror):**
+```
+Ingested 5 records
+Run ID: run-xxxxxx
+Checksum: ...
+Events produced: 5
+Parquet written: /tmp/mirror-parquet/run-xxxxxx.parquet
 ```
 
 **Verify outputs:**
@@ -94,7 +116,7 @@ debian-observer ingest \
   --raw-dir data/raw
 ```
 
-Options: `--parquet-dir` (Parquet output).
+Options: `--limit` (max records), `--parquet-dir` (Parquet output).
 See `debian-observer ingest --help` for full options.
 
 ## Observability

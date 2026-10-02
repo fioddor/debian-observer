@@ -401,3 +401,102 @@ class SourcesDebianOrgDataSource(DataSource):
         """Compute SHA-256 of canonical JSON representation."""
         canonical = json.dumps(self.retrieve(), sort_keys=True, ensure_ascii=False)
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# Debian mirror data source (Packages.gz)
+# ---------------------------------------------------------------------------
+
+class DebianMirrorDataSource(DataSource):
+    """Fetches real Debian package metadata from a Debian mirror.
+
+    Downloads and parses a ``Packages.gz`` file from any Debian mirror,
+    producing records that match the UDD structure. The parser is
+    deliberately minimal: it extracts core fields (package, version,
+    architecture, distribution) and ignores optional fields.
+
+    The ``limit`` parameter truncates the result to a fixed number of
+    packages, making the first ingestion fast enough for smoke tests
+    on slow connections.
+
+    Usage:
+
+        source = DebianMirrorDataSource(
+            suite="stable", component="main", architecture="amd64", limit=5
+        )
+        records = source.retrieve()
+    """
+
+    MIRROR_DEFAULT = "https://deb.debian.org/debian"
+
+    def __init__(
+        self,
+        *,
+        suite: str = "stable",
+        component: str = "main",
+        architecture: str = "amd64",
+        limit: int = 5,
+        mirror: str = MIRROR_DEFAULT,
+    ) -> None:
+        self._suite = suite
+        self._component = component
+        self._architecture = architecture
+        self._limit = limit
+        self._mirror = mirror.rstrip("/")
+        self._url = (
+            f"{self._mirror}/dists/{suite}/{component}/binary-{architecture}/Packages.gz"
+        )
+        self._records: list[dict[str, Any]] | None = None
+
+    @property
+    def name(self) -> str:
+        return "debian.mirror"
+
+    def retrieve(self) -> list[dict[str, Any]]:
+        """Download and parse Packages.gz from the mirror."""
+        import gzip
+        import urllib.request
+
+        if self._records is not None:
+            return self._records
+
+        req = urllib.request.Request(
+            self._url,
+            headers={"User-Agent": "debian-observer/0.1.0"},
+        )
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            raw = gzip.decompress(resp.read())
+
+        records = []
+        current: dict[str, str] = {}
+        count = 0
+
+        for line in raw.decode("utf-8", errors="replace").splitlines():
+            if line.startswith("Package: "):
+                current = {"package": line.split(": ", 1)[1]}
+            elif line.startswith("Version: "):
+                current["version"] = line.split(": ", 1)[1]
+            elif line.startswith("Architecture: "):
+                current["architecture"] = line.split(": ", 1)[1]
+            elif line == "" and current:
+                records.append({
+                    "package": current.get("package", ""),
+                    "version": current.get("version", ""),
+                    "distribution": self._suite,
+                    "architecture": current.get("architecture", self._architecture),
+                    "component": self._component,
+                    "source": self.name,
+                    "observed_at": datetime.now(timezone.utc).isoformat(),
+                })
+                current = {}
+                count += 1
+                if count >= self._limit:
+                    break
+
+        self._records = records
+        return records
+
+    def compute_checksum(self) -> str:
+        """Compute SHA-256 of canonical JSON representation."""
+        canonical = json.dumps(self.retrieve(), sort_keys=True, ensure_ascii=False)
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()

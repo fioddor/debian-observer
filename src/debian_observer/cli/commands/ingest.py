@@ -9,7 +9,7 @@ from pathlib import Path
 
 import click
 
-from debian_observer.ingestion.acquisition import AcquisitionService, SourcesDebianOrgDataSource
+from debian_observer.ingestion.acquisition import AcquisitionService, DebianMirrorDataSource, SourcesDebianOrgDataSource
 from debian_observer.ingestion.pipeline import IngestionPipeline
 
 
@@ -17,10 +17,11 @@ from debian_observer.ingestion.pipeline import IngestionPipeline
 @click.option(
     "--source",
     required=True,
-    type=click.Choice(["sources"]),
+    type=click.Choice(["sources", "mirror"]),
     help="Data source to ingest from.",
 )
-@click.option("--url", required=True, help="URL to fetch data from.")
+@click.option("--url", required=True, help="URL or package/suite name.")
+@click.option("--limit", default=5, help="Max records to ingest (mirror; default: 5).")
 @click.option("--raw-dir", default="data/raw", help="Directory for raw artifacts (default: data/raw).")
 @click.option("--parquet-dir", default=None, help="Optional directory for Parquet output.")
 @click.pass_context
@@ -28,6 +29,7 @@ def ingest(
     ctx: click.Context,
     source: str,
     url: str,
+    limit: int,
     raw_dir: str,
     parquet_dir: str | None,
 ) -> None:
@@ -35,7 +37,9 @@ def ingest(
     artifact, dataset manifest, provenance record and domain events.
 
     Implemented data sources: `sources` (sources.debian.org API;
-    `--url` is the package name) plus the synthetic sources of
+    `--url` is the package name) and `mirror` (Packages.gz from a
+    Debian mirror; `--url` is the suite, `--limit` caps records),
+    plus the synthetic sources of
     debian_observer.ingestion.acquisition (in-memory, mock) — synthetic
     rows for tests, not real Debian data).
     """
@@ -43,9 +47,16 @@ def ingest(
 
     if source == "sources":
         data_source = SourcesDebianOrgDataSource(package_name=url)
+    elif source == "mirror":
+        data_source = DebianMirrorDataSource(
+            suite=url,
+            component="main",
+            architecture="amd64",
+            limit=limit,
+        )
     else:  # pragma: no cover — click.Choice rejects anything else first
         raise click.BadParameter(
-            f"unknown source {source!r}; valid: sources",
+            f"unknown source {source!r}; valid: sources, mirror",
             param_hint="--source",
         )
 

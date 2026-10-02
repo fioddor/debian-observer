@@ -33,11 +33,55 @@ Then
 docker exec -ti debian-observer bash
 ```
 
-### Verify:
+## Services
+
+| Service | Port | Purpose |
+|---------|------|---------|
+| NATS | 4222 | JetStream event backbone |
+| NATS monitoring | 8222 | Health and metrics |
+| API | 8000 | FastAPI analytical endpoints |
+
+
+## Quick Start: Smoke Test with Real Debian Data
+
+For a quick end-to-end test using a real public Debian data source:
 
 ```bash
-debian-observer --help
+debian-observer ingest \
+  --source sources \
+  --url hello \
+  --raw-dir /tmp/smoke-raw \
+  --parquet-dir /tmp/smoke-parquet
 ```
+
+This fetches version history for the `hello` package from `sources.debian.org`.
+
+**Expected output:**
+```
+Ingested 21 records
+Run ID: run-xxxxxx
+Checksum: eb6412e4...
+Events produced: 21
+Parquet written: /tmp/smoke-parquet/run-xxxxxx.parquet
+```
+
+**Verify outputs:**
+
+Raw JSONL artifact:
+```bash
+cat /tmp/smoke-raw/sources.debian.org-*.jsonl | head -n 3
+```
+
+Parquet schema:
+```bash
+python3 -c "
+import pyarrow.parquet as pq
+table = pq.read_table('/tmp/smoke-parquet/run-*.parquet')
+print(f'Rows: {table.num_rows}, Cols: {table.num_columns}')
+print(f'Columns: {table.column_names}')
+"
+```
+
 
 ## Quick Start
 
@@ -61,6 +105,7 @@ output appears only for long-lived processes: metrics export every 5
 seconds while a process runs, and traces flush at process exit —
 short-lived CLI commands show no telemetry output.
 
+
 ## Normalization
 
 Transform raw JSONL records into canonical domain events:
@@ -71,6 +116,7 @@ cat records.jsonl | debian-observer normalize > events.jsonl
 
 Run `debian-observer normalize --help` for all options (source, run
 id, invalid-records file).
+
 
 ## Validate raw records
 
@@ -101,9 +147,11 @@ debian-observer query \
 
 Data is stored in **Parquet** format with a **DuckDB** analytical layer for SQL queries.
 
+
 ## Pipeline
 
 The ingestion pipeline integrates ParquetWriter for optional persistent storage. After running `debian-observer ingest`, raw artifacts and Parquet events are available in `data/`.
+
 
 ## Messaging (NATS JetStream)
 
@@ -132,6 +180,7 @@ Re-publish events to NATS (dry-run by default):
 debian-observer replay --input events.jsonl --dry-run
 ```
 
+
 ## API Endpoints
 
 When the API service is running:
@@ -146,6 +195,7 @@ When the API service is running:
 | `/migrations/` | GET | List migrations |
 | `/datasets/` | GET | List dataset manifests |
 | `/events/` | GET | List domain events |
+
 
 ## Testing
 
@@ -177,6 +227,7 @@ debian-observer consume --stream EVENTS --subject "debian.observer.>" --durable 
 ```
 
 In the devcontainer, NATS is available on `localhost:4222`.
+
 
 ## Troubleshooting
 

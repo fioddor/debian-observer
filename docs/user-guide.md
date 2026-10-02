@@ -94,11 +94,14 @@ For querying the actual UDD public mirror:
 ```bash
 debian-observer ingest \
   --source udd \
-  --url sources \
+  --url packages \
   --limit 3 \
   --raw-dir /tmp/udd-raw \
   --parquet-dir /tmp/udd-parquet
 ```
+
+This queries the `packages` table from `udd-mirror.debian.net:5432`.
+The default table is `packages`, which includes release (suite) and architecture columns.
 
 **Expected output (udd):**
 ```
@@ -108,6 +111,8 @@ Checksum: ...
 Events produced: 3
 Parquet written: /tmp/udd-parquet/run-xxxxxx.parquet
 ```
+
+Available tables include: `packages`, `sources`, `upload_history`.
 
 **Verify outputs:**
 

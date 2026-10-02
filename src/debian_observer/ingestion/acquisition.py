@@ -594,7 +594,7 @@ class UDDDataSource(DataSource):
     def __init__(
         self,
         *,
-        table: str = "sources",
+        table: str = "packages",
         limit: int = 5,
         host: str | None = None,
         port: str | None = None,
@@ -631,7 +631,7 @@ class UDDDataSource(DataSource):
         )
         with conn.cursor() as cursor:
             cursor.execute(
-                f"SELECT source, version, distribution FROM {self._table} LIMIT %s",
+                f"SELECT source, version, distribution, release, architecture FROM {self._table} LIMIT %s",
                 (self._limit,),
             )
             rows = cursor.fetchall()
@@ -644,6 +644,8 @@ class UDDDataSource(DataSource):
                     "package": row[0],
                     "version": row[1],
                     "distribution": row[2] or "unknown",
+                    "release": row[3] or "unknown",
+                    "architecture": row[4] or "unknown",
                     "source": self.name,
                     "observed_at": datetime.now(timezone.utc).isoformat(),
                 }

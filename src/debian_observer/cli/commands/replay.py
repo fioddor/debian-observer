@@ -13,7 +13,13 @@ from debian_observer.events import EventEnvelope
 
 
 @click.command(name="replay")
-@click.option("--input", "input_file", type=click.File("r"), required=True, help="Input JSON lines file with events.")
+@click.option(
+    "--input",
+    "input_file",
+    type=click.File("r"),
+    required=True,
+    help="Input JSON lines file with events.",
+)
 @click.option("--nats-url", default="nats://localhost:4222", help="NATS server URL (default: nats://localhost:4222).")
 @click.option("--dry-run", is_flag=True, help="Parse events but do not publish.")
 @click.pass_context

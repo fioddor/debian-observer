@@ -17,7 +17,9 @@ class TestDockerCompose:
 
     @pytest.fixture
     def compose_path(self) -> Path:
-        return Path(__file__).parent.parent / "deploy" / "compose" / "docker-compose.yml"
+        return (
+            Path(__file__).parent.parent / "deploy" / "compose" / "docker-compose.yml"
+        )
 
     @pytest.fixture
     def compose(self, compose_path: Path) -> dict:

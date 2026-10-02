@@ -12,8 +12,12 @@ Usage::
 
 from __future__ import annotations
 
+from debian_observer.observability.metrics import (
+    IngestionMetrics,
+    MessagingMetrics,
+    get_meter,
+)
 from debian_observer.observability.tracing import get_tracer, span
-from debian_observer.observability.metrics import get_meter, IngestionMetrics, MessagingMetrics
 
 __all__ = [
     "get_tracer",

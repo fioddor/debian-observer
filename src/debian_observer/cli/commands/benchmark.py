@@ -6,17 +6,18 @@ Run performance benchmarks for the ingestion pipeline.
 from __future__ import annotations
 
 import time
+from pathlib import Path
+from unittest.mock import MagicMock
 
 import click
 
-from debian_observer.ingestion.acquisition import AcquisitionService
-from pathlib import Path
 from debian_observer.ingestion.pipeline import IngestionPipeline
-from unittest.mock import MagicMock
 
 
 @click.command(name="benchmark")
-@click.option("--records", default=1000, help="Number of synthetic records to generate (default: 1000).")
+@click.option(
+    "--records", default=1000, help="Number of synthetic records to generate (default: 1000)."
+)
 @click.option("--raw-dir", default="data/raw", help="Directory for raw artifacts (default: data/raw).")
 def benchmark(records: int, raw_dir: str) -> None:
     """Run a quick benchmark of the ingestion pipeline."""

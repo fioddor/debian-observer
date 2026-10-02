@@ -55,6 +55,7 @@ def _utc_now() -> datetime:
 # Event Envelope
 # ---------------------------------------------------------------------------
 
+
 class EventEnvelope(BaseModel):
     """Universal wrapper for all Debian Observatory domain events.
 
@@ -275,7 +276,9 @@ class EventEnvelope(BaseModel):
             "effective_at": self.effective_at.isoformat(),
             "entity_id": self.entity_id,
             "ingestion_run_id": self.ingestion_run_id,
-            "payload_json": json.dumps(self.payload, sort_keys=True, ensure_ascii=False),
+            "payload_json": json.dumps(
+                self.payload, sort_keys=True, ensure_ascii=False
+            ),
         }
 
     def get_payload_model(self) -> Any:

@@ -69,7 +69,9 @@ class AnalyticalStorage:
 
     def count_by_event_type(self) -> dict[str, int]:
         """Return event counts grouped by event_type."""
-        rows = self.query("SELECT event_type, COUNT(*) as n FROM events GROUP BY event_type").fetchall()
+        rows = self.query(
+            "SELECT event_type, COUNT(*) as n FROM events GROUP BY event_type"
+        ).fetchall()
         return {row[0]: row[1] for row in rows}
 
     def summary(self) -> dict[str, Any]:

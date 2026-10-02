@@ -15,7 +15,10 @@ from typing import Any
 
 from opentelemetry import metrics
 from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.metrics.export import ConsoleMetricExporter, PeriodicExportingMetricReader
+from opentelemetry.sdk.metrics.export import (
+    ConsoleMetricExporter,
+    PeriodicExportingMetricReader,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +65,7 @@ def shutdown_meter() -> None:
 # ---------------------------------------------------------------------------
 # Metric helpers
 # ---------------------------------------------------------------------------
+
 
 class IngestionMetrics:
     """Counters and histograms for the ingestion pipeline."""

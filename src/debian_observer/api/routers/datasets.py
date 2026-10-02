@@ -28,5 +28,7 @@ async def get_dataset(dataset_name: str, request: Request) -> dict[str, Any]:
     store = request.app.state.store
     manifest = store.get_dataset(dataset_name)
     if manifest is None:
-        raise HTTPException(status_code=404, detail=f"Dataset '{dataset_name}' not found")
+        raise HTTPException(
+            status_code=404, detail=f"Dataset '{dataset_name}' not found"
+        )
     return manifest

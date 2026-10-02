@@ -47,6 +47,12 @@ services:
     environment:
       - NATS_URL=nats://nats:4222
       - OTEL_EXPORTER=console
+      # Optional: override default public UDD mirror with a private one
+      # - UDD_HOST=192.168.1.218
+      # - UDD_PORT=5432
+      # - UDD_DATABASE=udd
+      # - UDD_USER=udd
+      # - UDD_PASSWORD=udd
     volumes:
       - api-data:/app/data
     depends_on:

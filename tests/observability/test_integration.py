@@ -19,8 +19,8 @@ from debian_observer.api.store import InMemoryStore
 from debian_observer.events import EventEnvelope
 from debian_observer.ingestion.acquisition import DataSource
 from debian_observer.ingestion.pipeline import IngestionPipeline
-from debian_observer.messaging.publisher import EventPublisher
 from debian_observer.messaging.consumer import EventConsumer
+from debian_observer.messaging.publisher import EventPublisher
 from debian_observer.observability.tracing import shutdown_tracer
 
 
@@ -137,15 +137,17 @@ class TestConsumerObservability:
         )
 
         msg = MagicMock()
-        msg.data = json.dumps({
-            "event_type": "PackageVersionObserved",
-            "source": "test",
-            "entity_id": "vim:amd64",
-            "payload": {"version": "1.0"},
-            "event_id": "550e8400-e29b-41d4-a716-446655440000",
-            "observed_at": "2026-01-01T00:00:00+00:00",
-            "effective_at": "2026-01-01T00:00:00+00:00",
-        }).encode("utf-8")
+        msg.data = json.dumps(
+            {
+                "event_type": "PackageVersionObserved",
+                "source": "test",
+                "entity_id": "vim:amd64",
+                "payload": {"version": "1.0"},
+                "event_id": "550e8400-e29b-41d4-a716-446655440000",
+                "observed_at": "2026-01-01T00:00:00+00:00",
+                "effective_at": "2026-01-01T00:00:00+00:00",
+            }
+        ).encode("utf-8")
         msg.ack = AsyncMock()
 
         await consumer._process_message(msg)
@@ -165,15 +167,17 @@ class TestConsumerObservability:
         )
 
         msg = MagicMock()
-        msg.data = json.dumps({
-            "event_type": "PackageVersionObserved",
-            "source": "test",
-            "entity_id": "vim:amd64",
-            "payload": {"version": "1.0"},
-            "event_id": "550e8400-e29b-41d4-a716-446655440000",
-            "observed_at": "2026-01-01T00:00:00+00:00",
-            "effective_at": "2026-01-01T00:00:00+00:00",
-        }).encode("utf-8")
+        msg.data = json.dumps(
+            {
+                "event_type": "PackageVersionObserved",
+                "source": "test",
+                "entity_id": "vim:amd64",
+                "payload": {"version": "1.0"},
+                "event_id": "550e8400-e29b-41d4-a716-446655440000",
+                "observed_at": "2026-01-01T00:00:00+00:00",
+                "effective_at": "2026-01-01T00:00:00+00:00",
+            }
+        ).encode("utf-8")
         msg.ack = AsyncMock()
         msg.nak = AsyncMock()
 

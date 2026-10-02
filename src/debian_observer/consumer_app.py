@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import signal
-from typing import Any, Awaitable, Callable, TypeVar
+from typing import Any, Awaitable, Callable
 
 from debian_observer.events.envelope import EventEnvelope
 from debian_observer.idempotency import IdempotencyStore
@@ -33,6 +33,7 @@ Handler = Callable[[EventEnvelope], Any]
 # ---------------------------------------------------------------------------
 # ConsumerApp
 # ---------------------------------------------------------------------------
+
 
 class ConsumerApp:
     """Standalone consumer with idempotency and graceful shutdown.

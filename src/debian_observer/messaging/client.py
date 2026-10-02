@@ -28,6 +28,7 @@ except ImportError:
 # NATS client wrapper
 # ---------------------------------------------------------------------------
 
+
 class NATSClient:
     """Async NATS client wrapper with JetStream support.
 
@@ -93,9 +94,7 @@ class NATSClient:
             ConnectionError: If the connection fails.
         """
         if nats_client is None:
-            raise RuntimeError(
-                "nats-py is required. Install with: pip install nats-py"
-            )
+            raise RuntimeError("nats-py is required. Install with: pip install nats-py")
 
         kwargs: dict[str, Any] = {"servers": self.servers}
         if self._user is not None:

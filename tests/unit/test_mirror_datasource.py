@@ -6,8 +6,6 @@ import gzip
 from io import BytesIO
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from debian_observer.ingestion.acquisition import DebianMirrorDataSource
 
 

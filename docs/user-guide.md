@@ -87,6 +87,57 @@ Events produced: 5
 Parquet written: /tmp/mirror-parquet/run-xxxxxx.parquet
 ```
 
+**UDD public mirror (real PostgreSQL):**
+
+For querying the actual UDD public mirror:
+
+```bash
+debian-observer ingest \
+  --source udd \
+  --url packages \
+  --limit 3 \
+  --raw-dir /tmp/udd-raw \
+  --parquet-dir /tmp/udd-parquet
+```
+
+This queries the `packages` table from `udd-mirror.debian.net:5432`.
+The default table is `packages`, which includes release (suite) and architecture columns.
+
+**Expected output (udd):**
+```
+Ingested 3 records
+Run ID: run-xxxxxx
+Checksum: ...
+Events produced: 3
+Parquet written: /tmp/udd-parquet/run-xxxxxx.parquet
+```
+
+Available tables include: `packages`, `sources`, `upload_history`.
+
+**Custom UDD server (e.g. private mirror):**
+
+Set environment variables to override the default public mirror:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `UDD_HOST` | `udd-mirror.debian.net` | PostgreSQL host |
+| `UDD_PORT` | `5432` | PostgreSQL port |
+| `UDD_DATABASE` | `udd` | Database name |
+| `UDD_USER` | `udd-mirror` | Username |
+| `UDD_PASSWORD` | `udd-mirror` | Password |
+
+Example for a local mirror at `192.168.1.218`:
+
+```bash
+UDD_HOST=192.168.1.218 UDD_USER=udd UDD_PASSWORD=udd \
+  debian-observer ingest \
+  --source udd \
+  --url packages \
+  --limit 3 \
+  --raw-dir /tmp/udd-raw \
+  --parquet-dir /tmp/udd-parquet
+```
+
 **Verify outputs:**
 
 Raw JSONL artifact:
@@ -104,6 +155,24 @@ print(f'Columns: {table.column_names}')
 "
 ```
 
+
+## Production Ingest: Full Dataset
+
+For larger datasets (e.g. complete UDD), the acquisition layer supports configurable sources.
+
+```bash
+debian-observer ingest \
+  --source udd \
+  --url "https://udd.debian.org/dmd/?" \
+  --raw-dir data/raw \
+  --parquet-dir data/parquet
+```
+
+### Verify:
+
+```bash
+debian-observer --help
+```
 
 ## Quick Start
 

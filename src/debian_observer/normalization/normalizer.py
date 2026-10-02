@@ -14,9 +14,9 @@ from __future__ import annotations
 from typing import Any
 
 from debian_observer.events import EventEnvelope
-from debian_observer.normalization.validator import UDDValidator
-from debian_observer.normalization.transformer import PackageVersionTransformer
 from debian_observer.normalization.events import EventFactory
+from debian_observer.normalization.transformer import PackageVersionTransformer
+from debian_observer.normalization.validator import UDDValidator
 
 
 class Normalizer:

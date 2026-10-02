@@ -16,16 +16,18 @@ Design notes
 from __future__ import annotations
 
 from typing import Any
+
 from opentelemetry import trace
 
 from debian_observer.events import EventEnvelope
-from debian_observer.observability.tracing import get_tracer
-from debian_observer.observability.metrics import MessagingMetrics
 from debian_observer.messaging.config import StreamConfig
+from debian_observer.observability.metrics import MessagingMetrics
+from debian_observer.observability.tracing import get_tracer
 
 # ---------------------------------------------------------------------------
 # Event publisher
 # ---------------------------------------------------------------------------
+
 
 class EventPublisher:
     """Publishes domain events to NATS JetStream.
@@ -77,9 +79,7 @@ class EventPublisher:
 
         subject = self._config.subject_for(event.event_type)
         if subject is None:
-            raise ValueError(
-                f"No subject mapping for event type: {event.event_type}"
-            )
+            raise ValueError(f"No subject mapping for event type: {event.event_type}")
 
         with self._tracer.start_as_current_span("messaging.publish") as span:
             span.set_attribute("messaging.system", "NATS")
@@ -91,11 +91,15 @@ class EventPublisher:
             try:
                 ack = await js.publish(subject, data)
                 seq = ack.seq if hasattr(ack, "seq") else None
-                self._metrics.add_published(1, subject=subject, event_type=event.event_type)
+                self._metrics.add_published(
+                    1, subject=subject, event_type=event.event_type
+                )
                 span.set_attribute("messaging.sequence", seq)
                 return seq
             except Exception as exc:
-                self._metrics.add_failed(1, subject=subject, event_type=event.event_type)
+                self._metrics.add_failed(
+                    1, subject=subject, event_type=event.event_type
+                )
                 span.set_status(trace.Status(trace.StatusCode.ERROR, str(exc)))
                 span.record_exception(exc)
                 raise

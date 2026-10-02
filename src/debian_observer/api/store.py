@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from debian_observer.domain.models import Package, PackageVersion, Release, Migration
+from debian_observer.domain.models import Migration, Package, PackageVersion, Release
 from debian_observer.events import EventEnvelope
 
 

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from debian_observer.normalization.validator import UDDValidator
 
 

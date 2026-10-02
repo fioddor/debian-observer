@@ -6,7 +6,6 @@ Validate and transform raw records into canonical domain events.
 from __future__ import annotations
 
 import json
-import sys
 
 import click
 
@@ -16,9 +15,27 @@ from debian_observer.normalization.normalizer import Normalizer
 @click.command(name="normalize")
 @click.option("--source", default="udd", help="Data source name stamped on events (default: udd).")
 @click.option("--run-id", default=None, help="Ingestion run identifier (default: generated `cli-normalize`).")
-@click.option("--input", "input_file", type=click.File("r"), default="-", help="Input JSON lines file (default: stdin).")
-@click.option("--output", "output_file", type=click.File("w"), default="-", help="Output JSON lines file (default: stdout).")
-@click.option("--invalid", "invalid_file", type=click.File("w"), default=None, help="File for invalid records; without it they are dropped.")
+@click.option(
+    "--input",
+    "input_file",
+    type=click.File("r"),
+    default="-",
+    help="Input JSON lines file (default: stdin).",
+)
+@click.option(
+    "--output",
+    "output_file",
+    type=click.File("w"),
+    default="-",
+    help="Output JSON lines file (default: stdout).",
+)
+@click.option(
+    "--invalid",
+    "invalid_file",
+    type=click.File("w"),
+    default=None,
+    help="File for invalid records; without it they are dropped.",
+)
 def normalize(
     source: str,
     run_id: str | None,
@@ -35,7 +52,9 @@ def normalize(
         if line:
             records.append(json.loads(line))
 
-    normalizer = Normalizer(source_name=source, ingestion_run_id=run_id or "cli-normalize")
+    normalizer = Normalizer(
+        source_name=source, ingestion_run_id=run_id or "cli-normalize"
+    )
     events, invalid = normalizer.normalize_records(records)
 
     # Write events as JSON lines

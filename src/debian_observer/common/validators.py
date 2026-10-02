@@ -28,9 +28,9 @@ from typing import Any
 
 _DEBIAN_VERSION_RE = re.compile(
     r"^"
-    r"(?:(?P<epoch>\d+):)?"          # optional epoch
+    r"(?:(?P<epoch>\d+):)?"  # optional epoch
     r"(?P<upstream>[0-9][A-Za-z0-9.\-+~:]*)"  # upstream must start with digit
-    r"(?:-(?P<revision>[A-Za-z0-9.\-+~:]+))?" # optional debian revision
+    r"(?:-(?P<revision>[A-Za-z0-9.\-+~:]+))?"  # optional debian revision
     r"$"
 )
 
@@ -75,6 +75,7 @@ def validate_debian_version(value: str) -> str:
 # Reusable Pydantic v2 validator factory
 # ---------------------------------------------------------------------------
 
+
 def make_version_validator(field_name: str = "version") -> Any:
     """Return a Pydantic v2 field validator for Debian version strings.
 
@@ -98,7 +99,9 @@ def make_version_validator(field_name: str = "version") -> Any:
         if value is None:
             return None
         if not isinstance(value, str):
-            raise ValueError(f"{field_name} must be a string, got {type(value).__name__}")
+            raise ValueError(
+                f"{field_name} must be a string, got {type(value).__name__}"
+            )
         return validate_debian_version(value)
 
     return _validator

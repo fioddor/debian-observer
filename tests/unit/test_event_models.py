@@ -10,7 +10,7 @@ import pytest
 from pydantic import BaseModel, ValidationError
 
 from debian_observer.common.types import MigrationStatus
-from debian_observer.domain.models import Package, PackageVersion, Release, Migration
+from debian_observer.domain.models import Package, PackageVersion
 from debian_observer.events import (
     DatasetManifest,
     EventEnvelope,
@@ -19,14 +19,13 @@ from debian_observer.events import (
     PackageVersionObservedPayload,
     ReleaseObservedPayload,
 )
-from debian_observer.events.envelope import _utc_now
 from debian_observer.events.manifest import Checksum
 from debian_observer.events.types import ObservationMeta
-
 
 # ---------------------------------------------------------------------------
 # EventEnvelope tests
 # ---------------------------------------------------------------------------
+
 
 class TestEventEnvelope:
     """Tests for the canonical event envelope."""
@@ -123,7 +122,10 @@ class TestEventEnvelope:
         row = env.to_parquet_row()
         assert row["event_type"] == "MigrationObserved"
         assert row["schema_version"] == 1
-        assert row["payload_json"] == '{"migration_id": "mig-001", "source": "sid", "target": "trixie"}'
+        assert (
+            row["payload_json"]
+            == '{"migration_id": "mig-001", "source": "sid", "target": "trixie"}'
+        )
         assert isinstance(row["observed_at"], str)
 
     def test_get_payload_model_package(self) -> None:
@@ -192,6 +194,7 @@ class TestEventEnvelope:
 # ---------------------------------------------------------------------------
 # Payload model tests
 # ---------------------------------------------------------------------------
+
 
 class TestPackageObservedPayload:
     """Tests for PackageObserved event payload."""
@@ -316,6 +319,7 @@ class TestMigrationObservedPayload:
 # DatasetManifest tests
 # ---------------------------------------------------------------------------
 
+
 class TestChecksum:
     """Tests for Checksum model."""
 
@@ -433,7 +437,6 @@ class TestDatasetManifest:
         assert restored.retrieved_at == now
 
     def test_yaml_missing_pyyaml(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        import debian_observer.events.manifest as manifest_module
 
         original_import = __builtins__.get("__import__", __import__)
 
@@ -469,6 +472,7 @@ class TestDatasetManifest:
 # ---------------------------------------------------------------------------
 # Integration: domain → event flow
 # ---------------------------------------------------------------------------
+
 
 class TestDomainToEventFlow:
     """Integration tests demonstrating the full domain → event flow."""

@@ -9,7 +9,12 @@ from pathlib import Path
 
 import click
 
-from debian_observer.ingestion.acquisition import AcquisitionService, DebianMirrorDataSource, SourcesDebianOrgDataSource
+from debian_observer.ingestion.acquisition import (
+    AcquisitionService,
+    DebianMirrorDataSource,
+    SourcesDebianOrgDataSource,
+    UDDDataSource,
+)
 from debian_observer.ingestion.pipeline import IngestionPipeline
 
 
@@ -17,13 +22,15 @@ from debian_observer.ingestion.pipeline import IngestionPipeline
 @click.option(
     "--source",
     required=True,
-    type=click.Choice(["sources", "mirror"]),
+    type=click.Choice(["sources", "mirror", "udd"]),
     help="Data source to ingest from.",
 )
-@click.option("--url", required=True, help="URL or package/suite name.")
-@click.option("--limit", default=5, help="Max records to ingest (mirror; default: 5).")
+@click.option("--url", required=True, help="URL or package/suite/table name.")
+@click.option("--limit", default=5, help="Max records to ingest (mirror/udd; default: 5).")
 @click.option("--raw-dir", default="data/raw", help="Directory for raw artifacts (default: data/raw).")
-@click.option("--parquet-dir", default=None, help="Optional directory for Parquet output.")
+@click.option(
+    "--parquet-dir", default=None, help="Optional directory for Parquet output."
+)
 @click.pass_context
 def ingest(
     ctx: click.Context,
@@ -37,11 +44,11 @@ def ingest(
     artifact, dataset manifest, provenance record and domain events.
 
     Implemented data sources: `sources` (sources.debian.org API;
-    `--url` is the package name) and `mirror` (Packages.gz from a
-    Debian mirror; `--url` is the suite, `--limit` caps records),
-    plus the synthetic sources of
-    debian_observer.ingestion.acquisition (in-memory, mock) — synthetic
-    rows for tests, not real Debian data).
+    `--url` is the package name), `mirror` (Packages.gz from a Debian
+    mirror; `--url` is the suite) and `udd` (UDD PostgreSQL mirror,
+    udd-mirror.debian.net; `--url` is the table name); `--limit`
+    caps records for mirror/udd. Synthetic sources (in-memory,
+    mock) emit synthetic rows for tests, not real Debian data.
     """
     acquisition = AcquisitionService()
 
@@ -54,9 +61,14 @@ def ingest(
             architecture="amd64",
             limit=limit,
         )
+    elif source == "udd":
+        data_source = UDDDataSource(
+            table=url,
+            limit=limit,
+        )
     else:  # pragma: no cover — click.Choice rejects anything else first
         raise click.BadParameter(
-            f"unknown source {source!r}; valid: sources, mirror",
+            f"unknown source {source!r}; valid: sources, mirror, udd",
             param_hint="--source",
         )
 

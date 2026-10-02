@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 
 from debian_observer.events import EventEnvelope
-from debian_observer.storage.parquet import ParquetWriter
 from debian_observer.storage.analytical import AnalyticalStorage
+from debian_observer.storage.parquet import ParquetWriter
 
 
 class TestAnalyticalStorage:
@@ -46,7 +46,9 @@ class TestAnalyticalStorage:
         writer.write_events(events, ingestion_run_id="run-001")
 
         analytics = AnalyticalStorage(tmp_path)
-        result = analytics.query("SELECT distribution, COUNT(*) as n FROM events GROUP BY distribution ORDER BY distribution")
+        result = analytics.query(
+            "SELECT distribution, COUNT(*) as n FROM events GROUP BY distribution ORDER BY distribution"
+        )
         rows = result.fetchall()
         assert len(rows) == 2
         assert {row[0] for row in rows} == {"sid", "bookworm"}
@@ -62,7 +64,8 @@ class TestAnalyticalStorage:
                 payload={"package_id": "a:all", "version": "1.0"},
                 observed_at=now,
                 effective_at=now,
-            ) for _ in range(5)
+            )
+            for _ in range(5)
         ]
         writer.write_events(events, ingestion_run_id="run-002")
 
@@ -85,7 +88,8 @@ class TestAnalyticalStorage:
                 payload={"package_id": "a:all", "version": "1.0"},
                 observed_at=now,
                 effective_at=now,
-            ) for _ in range(3)
+            )
+            for _ in range(3)
         ]
         writer.write_events(events, ingestion_run_id="run-003")
 

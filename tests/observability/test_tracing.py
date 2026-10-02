@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import pytest
 from opentelemetry import trace
-from opentelemetry.trace import StatusCode
 
 from debian_observer.observability.tracing import (
     _init_provider,
     get_tracer,
-    span,
     shutdown_tracer,
+    span,
 )
 
 
@@ -53,6 +52,7 @@ class TestSpanDecorator:
             return x * 3
 
         import asyncio
+
         assert asyncio.run(async_work(7)) == 21
 
     def test_preserves_function_name(self):

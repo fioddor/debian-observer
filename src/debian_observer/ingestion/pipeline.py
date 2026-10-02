@@ -43,29 +43,30 @@ from debian_observer.ingestion.acquisition import AcquisitionService, DataSource
 from debian_observer.ingestion.manifest import DatasetManifest, ManifestBuilder
 from debian_observer.ingestion.provenance import ProvenanceRecorder, RawArtifact
 from debian_observer.normalization.normalizer import Normalizer
-from debian_observer.observability.tracing import get_tracer, span
 from debian_observer.observability.metrics import IngestionMetrics
+from debian_observer.observability.tracing import get_tracer, span
 
 # ---------------------------------------------------------------------------
 # Ingestion result model
 # ---------------------------------------------------------------------------
 
+
 class IngestionResult(BaseModel):
     """Result of a single ingestion pipeline run.
 
-    This model captures all outputs of an ingestion run, making it
-easy for callers to inspect what was produced and decide on next
-    steps (e.g. publish events, store in Parquet).
+        This model captures all outputs of an ingestion run, making it
+    easy for callers to inspect what was produced and decide on next
+        steps (e.g. publish events, store in Parquet).
 
-    Attributes:
-        ingestion_run_id: Identifier of the ingestion run.
-        source_name: Name of the data source.
-        record_count: Number of records ingested.
-        checksum: SHA-256 checksum of the raw data.
-        artifact_path: Path to the stored raw artifact.
-        manifest: Dataset manifest describing the acquisition.
-        events: Domain events produced from the ingested records.
-        acquired_at: UTC timestamp when acquisition completed.
+        Attributes:
+            ingestion_run_id: Identifier of the ingestion run.
+            source_name: Name of the data source.
+            record_count: Number of records ingested.
+            checksum: SHA-256 checksum of the raw data.
+            artifact_path: Path to the stored raw artifact.
+            manifest: Dataset manifest describing the acquisition.
+            events: Domain events produced from the ingested records.
+            acquired_at: UTC timestamp when acquisition completed.
     """
 
     model_config = ConfigDict(
@@ -103,7 +104,9 @@ easy for callers to inspect what was produced and decide on next
             return Path(value)
         if isinstance(value, Path):
             return value
-        raise ValueError(f"artifact_path must be a string or Path, got {type(value).__name__}")
+        raise ValueError(
+            f"artifact_path must be a string or Path, got {type(value).__name__}"
+        )
 
     @field_validator("acquired_at")
     @classmethod
@@ -116,6 +119,7 @@ easy for callers to inspect what was produced and decide on next
 # ---------------------------------------------------------------------------
 # Pipeline
 # ---------------------------------------------------------------------------
+
 
 class IngestionPipeline:
     """End-to-end ingestion pipeline for Debian Observatory.
@@ -174,6 +178,7 @@ class IngestionPipeline:
             An IngestionResult containing all outputs of the run.
         """
         import time
+
         start = time.perf_counter()
         run_id = ingestion_run_id or f"run-{uuid.uuid4().hex[:12]}"
         tracer = get_tracer("debian_observer.ingestion")
@@ -187,7 +192,9 @@ class IngestionPipeline:
             with tracer.start_as_current_span("ingestion.store_raw"):
                 # Step 2: Store raw artifact
                 artifact_path = self._store_raw_artifact(records, run_id, source.name)
-                self._metrics.add_bytes(artifact_path.stat().st_size, source=source.name)
+                self._metrics.add_bytes(
+                    artifact_path.stat().st_size, source=source.name
+                )
 
             with tracer.start_as_current_span("ingestion.build_manifest"):
                 # Step 3: Build manifest
@@ -209,7 +216,9 @@ class IngestionPipeline:
 
             with tracer.start_as_current_span("ingestion.transform_events"):
                 # Step 5: Normalize records to domain events
-                normalizer = Normalizer(source_name=source.name, ingestion_run_id=run_id)
+                normalizer = Normalizer(
+                    source_name=source.name, ingestion_run_id=run_id
+                )
                 events, invalid = normalizer.normalize_records(records)
                 if invalid:
                     # In R1 we silently drop invalid records; log in R2
@@ -220,6 +229,7 @@ class IngestionPipeline:
             if self.parquet_dir is not None and events:
                 with tracer.start_as_current_span("ingestion.write_parquet"):
                     from debian_observer.storage.parquet import ParquetWriter
+
                     writer = ParquetWriter(output_dir=self.parquet_dir)
                     parquet_path = writer.write_events(events, ingestion_run_id=run_id)
 
@@ -240,7 +250,7 @@ class IngestionPipeline:
                 events=events,
                 acquired_at=datetime.fromisoformat(acquisition_meta["acquired_at"]),
             )
-        except Exception as exc:
+        except Exception:
             self._metrics.add_error(source=source.name)
             raise
 
@@ -265,5 +275,3 @@ class IngestionPipeline:
                 f.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
 
         return artifact_path
-
-

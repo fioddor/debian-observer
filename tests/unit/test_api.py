@@ -12,27 +12,22 @@ All tests use an in-memory store and FastAPI TestClient.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any
-
 import pytest
 from fastapi.testclient import TestClient
 
 from debian_observer.api.app import create_app
 from debian_observer.api.store import InMemoryStore
-from debian_observer.domain.models import Package, PackageVersion, Release, Migration
+from debian_observer.domain.models import Migration, Package, PackageVersion, Release
 from debian_observer.events import EventEnvelope
 from debian_observer.events.types import (
     ObservationMeta,
-    PackageVersionObservedPayload,
     PackageObservedPayload,
-    ReleaseObservedPayload,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def test_store() -> InMemoryStore:
@@ -40,74 +35,90 @@ def test_store() -> InMemoryStore:
     store = InMemoryStore()
 
     # Add packages
-    store.add_package(Package(
-        package_id="package:libc6:amd64",
-        name="libc6",
-        source_package="glibc",
-        section="libs",
-        architecture="amd64",
-    ))
-    store.add_package(Package(
-        package_id="package:python3:amd64",
-        name="python3",
-        source_package="python3-defaults",
-        section="python",
-        architecture="amd64",
-    ))
+    store.add_package(
+        Package(
+            package_id="package:libc6:amd64",
+            name="libc6",
+            source_package="glibc",
+            section="libs",
+            architecture="amd64",
+        )
+    )
+    store.add_package(
+        Package(
+            package_id="package:python3:amd64",
+            name="python3",
+            source_package="python3-defaults",
+            section="python",
+            architecture="amd64",
+        )
+    )
 
     # Add package versions
-    store.add_package_version(PackageVersion(
-        package_id="package:libc6:amd64",
-        version="2.37-12",
-        distribution="trixie",
-        architecture="amd64",
-        component="main",
-        priority="required",
-        source="udd",
-    ))
-    store.add_package_version(PackageVersion(
-        package_id="package:libc6:amd64",
-        version="2.37-13",
-        distribution="sid",
-        architecture="amd64",
-        component="main",
-        priority="required",
-        source="udd",
-    ))
-    store.add_package_version(PackageVersion(
-        package_id="package:python3:amd64",
-        version="3.11.2-1",
-        distribution="trixie",
-        architecture="amd64",
-        component="main",
-        priority="important",
-        source="udd",
-    ))
+    store.add_package_version(
+        PackageVersion(
+            package_id="package:libc6:amd64",
+            version="2.37-12",
+            distribution="trixie",
+            architecture="amd64",
+            component="main",
+            priority="required",
+            source="udd",
+        )
+    )
+    store.add_package_version(
+        PackageVersion(
+            package_id="package:libc6:amd64",
+            version="2.37-13",
+            distribution="sid",
+            architecture="amd64",
+            component="main",
+            priority="required",
+            source="udd",
+        )
+    )
+    store.add_package_version(
+        PackageVersion(
+            package_id="package:python3:amd64",
+            version="3.11.2-1",
+            distribution="trixie",
+            architecture="amd64",
+            component="main",
+            priority="important",
+            source="udd",
+        )
+    )
 
     # Add releases
-    store.add_release(Release(
-        release_id="release:trixie",
-        name="Debian 13",
-        codename="trixie",
-        status="testing",
-    ))
-    store.add_release(Release(
-        release_id="release:bookworm",
-        name="Debian 12",
-        codename="bookworm",
-        status="stable",
-    ))
+    store.add_release(
+        Release(
+            release_id="release:trixie",
+            name="Debian 13",
+            codename="trixie",
+            status="testing",
+        )
+    )
+    store.add_release(
+        Release(
+            release_id="release:bookworm",
+            name="Debian 12",
+            codename="bookworm",
+            status="stable",
+        )
+    )
 
     # Add migrations
-    store.add_migration(Migration(
-        migration_id="mig:1",
-        source="testing",
-        target="stable",
-        package="libc6",
-        version="2.37-12",
-        architecture="amd64",
-        status="completed",
-    ))
+    store.add_migration(
+        Migration(
+            migration_id="mig:1",
+            source="testing",
+            target="stable",
+            package="libc6",
+            version="2.37-12",
+            architecture="amd64",
+            status="completed",
+        )
+    )
 
     # Add an event
     obs = ObservationMeta(source="udd")
@@ -127,13 +138,16 @@ def test_store() -> InMemoryStore:
     store.add_event(event)
 
     # Add dataset manifest
-    store.add_dataset("udd-snapshot", {
-        "dataset_name": "udd-snapshot",
-        "source": "udd",
-        "retrieved_at": "2026-01-01T12:00:00Z",
-        "checksum": "abc123",
-        "record_count": 100,
-    })
+    store.add_dataset(
+        "udd-snapshot",
+        {
+            "dataset_name": "udd-snapshot",
+            "source": "udd",
+            "retrieved_at": "2026-01-01T12:00:00Z",
+            "checksum": "abc123",
+            "record_count": 100,
+        },
+    )
 
     return store
 
@@ -148,6 +162,7 @@ def test_client(test_store: InMemoryStore) -> TestClient:
 # ---------------------------------------------------------------------------
 # Health endpoint
 # ---------------------------------------------------------------------------
+
 
 class TestHealth:
     """Tests for the health endpoint."""
@@ -166,6 +181,7 @@ class TestHealth:
 # ---------------------------------------------------------------------------
 # Packages endpoint
 # ---------------------------------------------------------------------------
+
 
 class TestPackages:
     """Tests for package endpoints."""
@@ -208,6 +224,7 @@ class TestPackages:
 # Releases endpoint
 # ---------------------------------------------------------------------------
 
+
 class TestReleases:
     """Tests for releases endpoints."""
 
@@ -225,6 +242,7 @@ class TestReleases:
 # Migrations endpoint
 # ---------------------------------------------------------------------------
 
+
 class TestMigrations:
     """Tests for migrations endpoints."""
 
@@ -240,6 +258,7 @@ class TestMigrations:
 # ---------------------------------------------------------------------------
 # Datasets endpoint
 # ---------------------------------------------------------------------------
+
 
 class TestDatasets:
     """Tests for dataset endpoints."""
@@ -260,6 +279,7 @@ class TestDatasets:
 # ---------------------------------------------------------------------------
 # Events endpoint
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def _test_store_with_event() -> InMemoryStore:
@@ -293,7 +313,9 @@ def test_client_for_events(_test_store_with_event: InMemoryStore) -> TestClient:
 class TestEvents:
     """Tests for event endpoints."""
 
-    def test_get_event_by_id(self, test_client_for_events: TestClient, _test_store_with_event: InMemoryStore) -> None:
+    def test_get_event_by_id(
+        self, test_client_for_events: TestClient, _test_store_with_event: InMemoryStore
+    ) -> None:
         event_id = list(_test_store_with_event.events.keys())[0]
         response = test_client_for_events.get(f"/events/{event_id}")
         assert response.status_code == 200
@@ -305,6 +327,3 @@ class TestEvents:
     def test_get_event_not_found(self, test_client_for_events: TestClient) -> None:
         response = test_client_for_events.get("/events/nonexistent-id")
         assert response.status_code == 404
-
-
-

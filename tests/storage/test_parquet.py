@@ -54,10 +54,19 @@ class TestParquetWriter:
         table = pq.read_table(path)
         assert table.num_rows == 1
         assert table.column_names == [
-            "event_id", "event_type", "source", "entity_id",
-            "observed_at", "effective_at", "ingestion_run_id",
-            "package_id", "version", "distribution",
-            "architecture", "component", "priority",
+            "event_id",
+            "event_type",
+            "source",
+            "entity_id",
+            "observed_at",
+            "effective_at",
+            "ingestion_run_id",
+            "package_id",
+            "version",
+            "distribution",
+            "architecture",
+            "component",
+            "priority",
         ]
 
     def test_empty_events_raises(self, tmp_path: Path):

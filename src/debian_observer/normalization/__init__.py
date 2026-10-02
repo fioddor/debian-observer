@@ -13,10 +13,10 @@ Usage::
 
 from __future__ import annotations
 
-from debian_observer.normalization.validator import UDDValidator
-from debian_observer.normalization.transformer import PackageVersionTransformer
 from debian_observer.normalization.events import EventFactory
 from debian_observer.normalization.normalizer import Normalizer
+from debian_observer.normalization.transformer import PackageVersionTransformer
+from debian_observer.normalization.validator import UDDValidator
 
 __all__ = [
     "UDDValidator",

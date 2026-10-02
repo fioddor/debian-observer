@@ -37,6 +37,7 @@ from debian_observer.ingestion.acquisition import DataSource
 # Dataset manifest model
 # ---------------------------------------------------------------------------
 
+
 class DatasetManifest(BaseModel):
     """Manifest describing a single acquired dataset.
 
@@ -127,6 +128,7 @@ class DatasetManifest(BaseModel):
     def to_json(self) -> str:
         """Serialize to a JSON string."""
         import json
+
         return json.dumps(self.to_dict(), indent=2, ensure_ascii=False)
 
     def to_yaml(self) -> str:
@@ -137,6 +139,7 @@ class DatasetManifest(BaseModel):
         """
         try:
             import yaml
+
             return yaml.safe_dump(
                 self.to_dict(),
                 sort_keys=False,
@@ -152,6 +155,7 @@ class DatasetManifest(BaseModel):
 # ---------------------------------------------------------------------------
 # Manifest builder
 # ---------------------------------------------------------------------------
+
 
 class ManifestBuilder:
     """Constructs dataset manifests from data sources.

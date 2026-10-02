@@ -6,7 +6,6 @@ Creates canonical EventEnvelope instances from domain objects.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
 
 from debian_observer.domain.models import PackageVersion
 from debian_observer.events import EventEnvelope

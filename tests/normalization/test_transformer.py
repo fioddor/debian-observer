@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 from debian_observer.domain.models import PackageVersion
 from debian_observer.normalization.transformer import PackageVersionTransformer
 

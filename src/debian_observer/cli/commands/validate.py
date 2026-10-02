@@ -13,8 +13,19 @@ from debian_observer.normalization.validator import UDDValidator
 
 
 @click.command(name="validate")
-@click.option("--input", "input_file", type=click.File("r"), default="-", help="Input JSON lines file (default: stdin).")
-@click.option("--source", type=click.Choice(["udd"]), default="udd", help="Data source type (for validator selection; default: udd).")
+@click.option(
+    "--input",
+    "input_file",
+    type=click.File("r"),
+    default="-",
+    help="Input JSON lines file (default: stdin).",
+)
+@click.option(
+    "--source",
+    type=click.Choice(["udd"]),
+    default="udd",
+    help="Data source type (for validator selection; default: udd).",
+)
 def validate(input_file: click.File, source: str) -> None:
     """Validate raw UDD-shaped records against expected fields before
     normalization: a record is valid with a `version` and a `package`

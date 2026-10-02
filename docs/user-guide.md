@@ -87,6 +87,28 @@ Events produced: 5
 Parquet written: /tmp/mirror-parquet/run-xxxxxx.parquet
 ```
 
+**UDD public mirror (real PostgreSQL):**
+
+For querying the actual UDD public mirror:
+
+```bash
+debian-observer ingest \
+  --source udd \
+  --url sources \
+  --limit 3 \
+  --raw-dir /tmp/udd-raw \
+  --parquet-dir /tmp/udd-parquet
+```
+
+**Expected output (udd):**
+```
+Ingested 3 records
+Run ID: run-xxxxxx
+Checksum: ...
+Events produced: 3
+Parquet written: /tmp/udd-parquet/run-xxxxxx.parquet
+```
+
 **Verify outputs:**
 
 Raw JSONL artifact:

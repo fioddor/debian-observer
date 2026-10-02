@@ -69,6 +69,7 @@ def shutdown_tracer() -> None:
 # @span decorator
 # ---------------------------------------------------------------------------
 
+
 def span(
     name: str | None = None,
     kind: trace.SpanKind = trace.SpanKind.INTERNAL,

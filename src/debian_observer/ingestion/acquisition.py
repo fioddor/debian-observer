@@ -26,15 +26,14 @@ from __future__ import annotations
 import hashlib
 import json
 import random
-import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Any
 
-
 # ---------------------------------------------------------------------------
 # Abstract base
 # ---------------------------------------------------------------------------
+
 
 class DataSource(ABC):
     """Abstract base class for Debian Observatory data sources.
@@ -83,6 +82,7 @@ class DataSource(ABC):
 # In-memory source (for tests)
 # ---------------------------------------------------------------------------
 
+
 class InMemoryDataSource(DataSource):
     """A simple in-memory data source for testing.
 
@@ -130,44 +130,97 @@ class InMemoryDataSource(DataSource):
 
 # Small set of realistic Debian package names for synthetic data generation
 _DEBIAN_PACKAGES = [
-    "libc6", "libc6-dev", "python3", "python3-dev",
-    "bash", "coreutils", "dpkg", "apt",
-    "gcc", "g++", "make", "build-essential",
-    "vim", "nano", "emacs",
-    "curl", "wget", "git", "openssh-client",
-    "nginx", "apache2", "postgresql", "mysql-server",
-    "redis-server", "memcached",
-    "systemd", "sysvinit-core",
-    "linux-image-amd64", "firmware-linux",
-    "gnome-shell", "kde-plasma-desktop", "xfce4",
-    "firefox", "chromium",
-    "openssl", "libssl-dev",
-    "zlib1g", "zlib1g-dev",
-    "libpng16-16", "libjpeg62-turbo",
+    "libc6",
+    "libc6-dev",
+    "python3",
+    "python3-dev",
+    "bash",
+    "coreutils",
+    "dpkg",
+    "apt",
+    "gcc",
+    "g++",
+    "make",
+    "build-essential",
+    "vim",
+    "nano",
+    "emacs",
+    "curl",
+    "wget",
+    "git",
+    "openssh-client",
+    "nginx",
+    "apache2",
+    "postgresql",
+    "mysql-server",
+    "redis-server",
+    "memcached",
+    "systemd",
+    "sysvinit-core",
+    "linux-image-amd64",
+    "firmware-linux",
+    "gnome-shell",
+    "kde-plasma-desktop",
+    "xfce4",
+    "firefox",
+    "chromium",
+    "openssl",
+    "libssl-dev",
+    "zlib1g",
+    "zlib1g-dev",
+    "libpng16-16",
+    "libjpeg62-turbo",
 ]
 
 _DEBIAN_VERSIONS = [
-    "2.37-12", "2.37-13", "2.38-1",
-    "3.11.2-1", "3.11.2-2", "3.12.0-1",
-    "5.2-21", "5.2-22",
-    "9.1-1", "9.2-1",
-    "1.22.0-1", "1.22.0-2",
-    "2.9.1-1", "2.10.0-1",
-    "1:3.11.2-1", "1:3.12.0-1",
-    "2.31-13+deb12u5", "2.31-13+deb12u6",
-    "1.21.6-1", "1.21.7-1",
-    "8.0.33-1", "8.0.34-1",
-    "7.0.12-1", "7.2.0-1",
-    "252.17-1", "252.22-1",
-    "6.4-4", "6.4-5",
-    "1.2.11-1", "1.2.11-2",
-    "1.6.40-1", "1.6.40-2",
+    "2.37-12",
+    "2.37-13",
+    "2.38-1",
+    "3.11.2-1",
+    "3.11.2-2",
+    "3.12.0-1",
+    "5.2-21",
+    "5.2-22",
+    "9.1-1",
+    "9.2-1",
+    "1.22.0-1",
+    "1.22.0-2",
+    "2.9.1-1",
+    "2.10.0-1",
+    "1:3.11.2-1",
+    "1:3.12.0-1",
+    "2.31-13+deb12u5",
+    "2.31-13+deb12u6",
+    "1.21.6-1",
+    "1.21.7-1",
+    "8.0.33-1",
+    "8.0.34-1",
+    "7.0.12-1",
+    "7.2.0-1",
+    "252.17-1",
+    "252.22-1",
+    "6.4-4",
+    "6.4-5",
+    "1.2.11-1",
+    "1.2.11-2",
+    "1.6.40-1",
+    "1.6.40-2",
 ]
 
 _DEBIAN_DISTRIBUTIONS = ["sid", "trixie", "bookworm", "bullseye"]
 _DEBIAN_COMPONENTS = ["main", "contrib", "non-free"]
 _DEBIAN_ARCHITECTURES = ["amd64", "i386", "arm64", "armhf", "all", "source"]
-_DEBIAN_SECTIONS = ["libs", "python", "net", "devel", "editors", "web", "kernel", "x11", "utils"]
+_DEBIAN_SECTIONS = [
+    "libs",
+    "python",
+    "net",
+    "devel",
+    "editors",
+    "web",
+    "kernel",
+    "x11",
+    "utils",
+]
 _DEBIAN_PRIORITIES = ["required", "important", "standard", "optional", "extra"]
 
 
@@ -234,16 +287,18 @@ class MockDebianDataSource(DataSource):
                 min(self.versions_per_package, len(_DEBIAN_VERSIONS)),
             )
             for ver in versions:
-                records.append({
-                    "package": pkg,
-                    "source": pkg,  # simplified: source = binary name
-                    "version": ver,
-                    "distribution": rng.choice(_DEBIAN_DISTRIBUTIONS),
-                    "architecture": rng.choice(_DEBIAN_ARCHITECTURES),
-                    "component": rng.choice(_DEBIAN_COMPONENTS),
-                    "priority": rng.choice(_DEBIAN_PRIORITIES),
-                    "section": rng.choice(_DEBIAN_SECTIONS),
-                })
+                records.append(
+                    {
+                        "package": pkg,
+                        "source": pkg,  # simplified: source = binary name
+                        "version": ver,
+                        "distribution": rng.choice(_DEBIAN_DISTRIBUTIONS),
+                        "architecture": rng.choice(_DEBIAN_ARCHITECTURES),
+                        "component": rng.choice(_DEBIAN_COMPONENTS),
+                        "priority": rng.choice(_DEBIAN_PRIORITIES),
+                        "section": rng.choice(_DEBIAN_SECTIONS),
+                    }
+                )
 
         return records
 
@@ -267,6 +322,7 @@ class MockDebianDataSource(DataSource):
 # ---------------------------------------------------------------------------
 # Acquisition service
 # ---------------------------------------------------------------------------
+
 
 class AcquisitionService:
     """Orchestrates retrieval and initial validation of source data.
@@ -329,6 +385,7 @@ class AcquisitionService:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _compute_sha256(records: list[dict[str, Any]]) -> str:
     """Compute a SHA-256 checksum of a list of record dicts.
 
@@ -344,9 +401,11 @@ def _compute_sha256(records: list[dict[str, Any]]) -> str:
     )
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
+
 # ---------------------------------------------------------------------------
 # Real Debian data source (smoke test)
 # ---------------------------------------------------------------------------
+
 
 class SourcesDebianOrgDataSource(DataSource):
     """Fetches real Debian package version data from sources.debian.org API.
@@ -373,6 +432,7 @@ class SourcesDebianOrgDataSource(DataSource):
     def retrieve(self) -> list[dict[str, Any]]:
         """Download and parse package version history."""
         import urllib.request
+
         if self._records is not None:
             return self._records
 
@@ -386,14 +446,16 @@ class SourcesDebianOrgDataSource(DataSource):
         records = []
         for v in data.get("versions", []):
             for suite in v.get("suites", []):
-                records.append({
-                    "package": self._package_name,
-                    "version": v["version"],
-                    "distribution": suite,
-                    "area": v.get("area", "main"),
-                    "source": self.name,
-                    "observed_at": datetime.now(timezone.utc).isoformat(),
-                })
+                records.append(
+                    {
+                        "package": self._package_name,
+                        "version": v["version"],
+                        "distribution": suite,
+                        "area": v.get("area", "main"),
+                        "source": self.name,
+                        "observed_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
         self._records = records
         return records
 
@@ -406,6 +468,7 @@ class SourcesDebianOrgDataSource(DataSource):
 # ---------------------------------------------------------------------------
 # Debian mirror data source (Packages.gz)
 # ---------------------------------------------------------------------------
+
 
 class DebianMirrorDataSource(DataSource):
     """Fetches real Debian package metadata from a Debian mirror.
@@ -443,9 +506,7 @@ class DebianMirrorDataSource(DataSource):
         self._architecture = architecture
         self._limit = limit
         self._mirror = mirror.rstrip("/")
-        self._url = (
-            f"{self._mirror}/dists/{suite}/{component}/binary-{architecture}/Packages.gz"
-        )
+        self._url = f"{self._mirror}/dists/{suite}/{component}/binary-{architecture}/Packages.gz"
         self._records: list[dict[str, Any]] | None = None
 
     @property
@@ -479,19 +540,114 @@ class DebianMirrorDataSource(DataSource):
             elif line.startswith("Architecture: "):
                 current["architecture"] = line.split(": ", 1)[1]
             elif line == "" and current:
-                records.append({
-                    "package": current.get("package", ""),
-                    "version": current.get("version", ""),
-                    "distribution": self._suite,
-                    "architecture": current.get("architecture", self._architecture),
-                    "component": self._component,
-                    "source": self.name,
-                    "observed_at": datetime.now(timezone.utc).isoformat(),
-                })
+                records.append(
+                    {
+                        "package": current.get("package", ""),
+                        "version": current.get("version", ""),
+                        "distribution": self._suite,
+                        "architecture": current.get("architecture", self._architecture),
+                        "component": self._component,
+                        "source": self.name,
+                        "observed_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
                 current = {}
                 count += 1
                 if count >= self._limit:
                     break
+
+        self._records = records
+        return records
+
+    def compute_checksum(self) -> str:
+        """Compute SHA-256 of canonical JSON representation."""
+        canonical = json.dumps(self.retrieve(), sort_keys=True, ensure_ascii=False)
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# UDD data source
+# ---------------------------------------------------------------------------
+
+
+class UDDDataSource(DataSource):
+    """Connects to the public UDD mirror via PostgreSQL.
+
+    Queries the ultimate Debian database (UDD) public mirror at
+    udd-mirror.debian.net for real package metadata.
+
+    Connection parameters can be overridden via constructor arguments.
+    Defaults fall back to hardcoded class constants.
+
+    Usage:
+
+        source = UDDDataSource(table="sources", limit=10)
+        records = source.retrieve()
+    """
+
+    HOST = "udd-mirror.debian.net"
+    PORT = 5432
+    DATABASE = "udd"
+    USER = "udd-mirror"
+    PASSWORD = "udd-mirror"
+
+    def __init__(
+        self,
+        *,
+        table: str = "sources",
+        limit: int = 5,
+        host: str | None = None,
+        port: str | None = None,
+        database: str | None = None,
+        user: str | None = None,
+        password: str | None = None,
+    ) -> None:
+        self._table = table
+        self._limit = limit
+        self._records: list[dict[str, Any]] | None = None
+        self._host_override = host
+        self._port_override = port
+        self._database_override = database
+        self._user_override = user
+        self._password_override = password
+
+    @property
+    def name(self) -> str:
+        return "udd"
+
+    def retrieve(self) -> list[dict[str, Any]]:
+        """Query the UDD public mirror."""
+        import psycopg2
+
+        if self._records is not None:
+            return self._records
+
+        conn = psycopg2.connect(
+            host=self._host_override or self.HOST,
+            port=self._port_override or self.PORT,
+            database=self._database_override or self.DATABASE,
+            user=self._user_override or self.USER,
+            password=self._password_override or self.PASSWORD,
+        )
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"SELECT source, version, distribution FROM {self._table} LIMIT %s",
+                (self._limit,),
+            )
+            rows = cursor.fetchall()
+        conn.close()
+
+        records = []
+        for row in rows:
+            records.append(
+                {
+                    "package": row[0],
+                    "version": row[1],
+                    "distribution": row[2] or "unknown",
+                    "source": self.name,
+                    "observed_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
 
         self._records = records
         return records

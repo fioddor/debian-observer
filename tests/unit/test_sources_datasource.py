@@ -6,8 +6,6 @@ import json
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from debian_observer.ingestion.acquisition import SourcesDebianOrgDataSource
 
 
@@ -28,13 +26,16 @@ class TestSourcesDebianOrgDataSource:
 
     @patch("urllib.request.urlopen")
     def test_retrieve_parses_versions(self, mock_urlopen: MagicMock) -> None:
-        _mock_urlopen_response(mock_urlopen, {
-            "package": "hello",
-            "versions": [
-                {"version": "2.0-1", "suites": ["sid"], "area": "main"},
-                {"version": "1.0-1", "suites": ["bookworm"], "area": "main"},
-            ],
-        })
+        _mock_urlopen_response(
+            mock_urlopen,
+            {
+                "package": "hello",
+                "versions": [
+                    {"version": "2.0-1", "suites": ["sid"], "area": "main"},
+                    {"version": "1.0-1", "suites": ["bookworm"], "area": "main"},
+                ],
+            },
+        )
 
         source = SourcesDebianOrgDataSource(package_name="hello")
         records = source.retrieve()
@@ -46,12 +47,15 @@ class TestSourcesDebianOrgDataSource:
 
     @patch("urllib.request.urlopen")
     def test_multi_suite_expands_records(self, mock_urlopen: MagicMock) -> None:
-        _mock_urlopen_response(mock_urlopen, {
-            "package": "testpkg",
-            "versions": [
-                {"version": "1.0", "suites": ["sid", "trixie"], "area": "main"},
-            ],
-        })
+        _mock_urlopen_response(
+            mock_urlopen,
+            {
+                "package": "testpkg",
+                "versions": [
+                    {"version": "1.0", "suites": ["sid", "trixie"], "area": "main"},
+                ],
+            },
+        )
 
         source = SourcesDebianOrgDataSource(package_name="testpkg")
         records = source.retrieve()
@@ -62,10 +66,13 @@ class TestSourcesDebianOrgDataSource:
 
     @patch("urllib.request.urlopen")
     def test_compute_checksum_deterministic(self, mock_urlopen: MagicMock) -> None:
-        _mock_urlopen_response(mock_urlopen, {
-            "package": "hello",
-            "versions": [{"version": "1.0", "suites": ["sid"], "area": "main"}],
-        })
+        _mock_urlopen_response(
+            mock_urlopen,
+            {
+                "package": "hello",
+                "versions": [{"version": "1.0", "suites": ["sid"], "area": "main"}],
+            },
+        )
 
         source = SourcesDebianOrgDataSource(package_name="hello")
         checksum1 = source.compute_checksum()

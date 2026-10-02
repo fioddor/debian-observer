@@ -13,7 +13,6 @@ real NATS server are deferred to a separate test suite.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -26,13 +25,13 @@ from debian_observer.events.types import (
 )
 from debian_observer.messaging.client import NATSClient
 from debian_observer.messaging.config import StreamConfig
-from debian_observer.messaging.publisher import EventPublisher
 from debian_observer.messaging.consumer import EventConsumer, IngestionHandler
-
+from debian_observer.messaging.publisher import EventPublisher
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def sample_event() -> EventEnvelope:
@@ -81,6 +80,7 @@ def mock_js() -> MagicMock:
 # Stream configuration tests
 # ---------------------------------------------------------------------------
 
+
 class TestStreamConfig:
     """Tests for JetStream stream configuration."""
 
@@ -120,6 +120,7 @@ class TestStreamConfig:
 # ---------------------------------------------------------------------------
 # NATS client tests
 # ---------------------------------------------------------------------------
+
 
 class TestNATSClient:
     """Tests for NATS client connection management."""
@@ -175,11 +176,14 @@ class TestNATSClient:
 # Publisher tests
 # ---------------------------------------------------------------------------
 
+
 class TestEventPublisher:
     """Tests for event publishing to JetStream."""
 
     @pytest.mark.asyncio
-    async def test_publish_event(self, mock_nats_client: MagicMock, sample_event: EventEnvelope) -> None:
+    async def test_publish_event(
+        self, mock_nats_client: MagicMock, sample_event: EventEnvelope
+    ) -> None:
         """Publisher should publish an event to the correct subject."""
         mock_js = MagicMock()
         mock_js.publish = AsyncMock(return_value=MagicMock(seq=42))
@@ -192,10 +196,14 @@ class TestEventPublisher:
         mock_js.publish.assert_awaited_once()
         call_args = mock_js.publish.call_args[0]
         assert call_args[0] == "debian.package_version.observed"
-        assert json.loads(call_args[1]) == json.loads(sample_event.to_json_bytes().decode())
+        assert json.loads(call_args[1]) == json.loads(
+            sample_event.to_json_bytes().decode()
+        )
 
     @pytest.mark.asyncio
-    async def test_publish_routes_by_event_type(self, mock_nats_client: MagicMock) -> None:
+    async def test_publish_routes_by_event_type(
+        self, mock_nats_client: MagicMock
+    ) -> None:
         """Publisher should route events to correct subjects based on event type."""
         publisher = EventPublisher(client=mock_nats_client)
 
@@ -224,7 +232,9 @@ class TestEventPublisher:
             assert call_args[0] == expected_subject, f"Wrong subject for {event_type}"
 
     @pytest.mark.asyncio
-    async def test_publish_batch(self, mock_nats_client: MagicMock, sample_event: EventEnvelope) -> None:
+    async def test_publish_batch(
+        self, mock_nats_client: MagicMock, sample_event: EventEnvelope
+    ) -> None:
         """Publisher should publish multiple events in batch."""
         mock_js = MagicMock()
         mock_js.publish = AsyncMock(return_value=MagicMock(seq=1))
@@ -238,7 +248,9 @@ class TestEventPublisher:
         assert mock_js.publish.call_count == 3
 
     @pytest.mark.asyncio
-    async def test_publish_unconnected(self, mock_nats_client: MagicMock, sample_event: EventEnvelope) -> None:
+    async def test_publish_unconnected(
+        self, mock_nats_client: MagicMock, sample_event: EventEnvelope
+    ) -> None:
         """Publisher should raise if client is not connected."""
         mock_nats_client.is_connected = False
 
@@ -250,6 +262,7 @@ class TestEventPublisher:
 # ---------------------------------------------------------------------------
 # Consumer tests
 # ---------------------------------------------------------------------------
+
 
 class TestEventConsumer:
     """Tests for event consumption from JetStream."""
@@ -266,7 +279,9 @@ class TestEventConsumer:
         assert consumer.handler is handler
 
     @pytest.mark.asyncio
-    async def test_extracts_event_from_message(self, mock_nats_client: MagicMock) -> None:
+    async def test_extracts_event_from_message(
+        self, mock_nats_client: MagicMock
+    ) -> None:
         """Consumer should extract EventEnvelope from NATS message data."""
         mock_js = MagicMock()
         mock_nats_client.jetstream = mock_js
@@ -285,7 +300,9 @@ class TestEventConsumer:
 
         handler_calls: list[Any] = []
 
-        async def handler(msg: Any, event_env: EventEnvelope, data: dict, ack: Any) -> None:
+        async def handler(
+            msg: Any, event_env: EventEnvelope, data: dict, ack: Any
+        ) -> None:
             handler_calls.append((event_env, data))
             await ack()
 
@@ -305,10 +322,14 @@ class TestEventConsumer:
         assert mock_msg.ack.await_count == 2
 
     @pytest.mark.asyncio
-    async def test_acknowledges_after_handler(self, mock_nats_client: MagicMock) -> None:
+    async def test_acknowledges_after_handler(
+        self, mock_nats_client: MagicMock
+    ) -> None:
         """Consumer should ack only after handler succeeds."""
         mock_msg = MagicMock()
-        mock_msg.data = b'{"event_type":"test","source":"udd","entity_id":"x","payload":{}}'
+        mock_msg.data = (
+            b'{"event_type":"test","source":"udd","entity_id":"x","payload":{}}'
+        )
         mock_msg.ack = AsyncMock()
 
         async def handler(msg: Any, event: EventEnvelope, data: dict, ack: Any) -> None:
@@ -328,7 +349,9 @@ class TestEventConsumer:
     async def test_no_ack_on_handler_failure(self, mock_nats_client: MagicMock) -> None:
         """Consumer should not ack if handler raises an exception."""
         mock_msg = MagicMock()
-        mock_msg.data = b'{"event_type":"test","source":"udd","entity_id":"x","payload":{}}'
+        mock_msg.data = (
+            b'{"event_type":"test","source":"udd","entity_id":"x","payload":{}}'
+        )
         mock_msg.ack = AsyncMock()
         mock_msg.nak = AsyncMock()
 
@@ -351,7 +374,9 @@ class TestEventConsumer:
     async def test_naks_on_handler_failure(self, mock_nats_client: MagicMock) -> None:
         """Consumer should nak (negative ack) on handler failure."""
         mock_msg = MagicMock()
-        mock_msg.data = b'{"event_type":"test","source":"udd","entity_id":"x","payload":{}}'
+        mock_msg.data = (
+            b'{"event_type":"test","source":"udd","entity_id":"x","payload":{}}'
+        )
         mock_msg.ack = AsyncMock()
         mock_msg.nak = AsyncMock()
 
@@ -375,6 +400,7 @@ class TestEventConsumer:
 # ---------------------------------------------------------------------------
 # Idempotency tests
 # ---------------------------------------------------------------------------
+
 
 class TestIngestionHandler:
     """Tests for the standard ingestion handler pattern."""
@@ -463,6 +489,7 @@ class TestIngestionHandler:
 # Subscription management tests
 # ---------------------------------------------------------------------------
 
+
 class TestConsumerLifecycle:
     """Tests for consumer subscribe/unsubscribe/close."""
 
@@ -549,7 +576,9 @@ class TestConsumerLifecycle:
     async def test_on_message_catches_exception(self) -> None:
         """_on_message should catch handler exceptions and nak."""
         mock_msg = MagicMock()
-        mock_msg.data = b'{"event_type":"test","source":"udd","entity_id":"x","payload":{}}'
+        mock_msg.data = (
+            b'{"event_type":"test","source":"udd","entity_id":"x","payload":{}}'
+        )
         mock_msg.ack = AsyncMock()
         mock_msg.nak = AsyncMock()
 

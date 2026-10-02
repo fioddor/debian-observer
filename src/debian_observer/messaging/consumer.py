@@ -27,11 +27,12 @@ from __future__ import annotations
 
 import json
 from typing import Any, Awaitable, Callable
+
 from opentelemetry import trace
 
 from debian_observer.events import EventEnvelope
-from debian_observer.observability.tracing import get_tracer
 from debian_observer.observability.metrics import MessagingMetrics
+from debian_observer.observability.tracing import get_tracer
 
 # ---------------------------------------------------------------------------
 # Type aliases
@@ -47,6 +48,7 @@ EventHandler = Callable[
 # ---------------------------------------------------------------------------
 # Event consumer
 # ---------------------------------------------------------------------------
+
 
 class EventConsumer:
     """Consumes events from a NATS JetStream stream.
@@ -136,6 +138,7 @@ class EventConsumer:
     async def _process_message(self, msg: Any) -> None:
         """Process a single message: deserialize, invoke handler, ack."""
         import time
+
         start = time.perf_counter()
         # Deserialize the envelope
         data = json.loads(msg.data.decode("utf-8"))
@@ -155,7 +158,9 @@ class EventConsumer:
             try:
                 await self.handler(msg, event, event.payload, ack)
                 duration = time.perf_counter() - start
-                self._metrics.record_consumer_duration(duration, event_type=event.event_type)
+                self._metrics.record_consumer_duration(
+                    duration, event_type=event.event_type
+                )
                 self._metrics.add_consumed(1, event_type=event.event_type)
             except Exception as exc:
                 self._metrics.add_failed(1, event_type=event.event_type)
@@ -185,6 +190,7 @@ class EventConsumer:
 # ---------------------------------------------------------------------------
 # Standard ingestion handler with idempotency
 # ---------------------------------------------------------------------------
+
 
 class IngestionHandler:
     """Standard handler pattern with idempotency (at-least-once semantics).

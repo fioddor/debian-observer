@@ -105,6 +105,24 @@ print(f'Columns: {table.column_names}')
 ```
 
 
+## Production Ingest: Full Dataset
+
+For larger datasets (e.g. complete UDD), the acquisition layer supports configurable sources.
+
+```bash
+debian-observer ingest \
+  --source udd \
+  --url "https://udd.debian.org/dmd/?" \
+  --raw-dir data/raw \
+  --parquet-dir data/parquet
+```
+
+### Verify:
+
+```bash
+debian-observer --help
+```
+
 ## Quick Start
 
 Run a basic ingestion using a configured data source:

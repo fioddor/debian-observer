@@ -36,6 +36,7 @@ from debian_observer.domain.models import Observation
 # Raw artifact model
 # ---------------------------------------------------------------------------
 
+
 class RawArtifact(BaseModel):
     """Reference to an immutable raw data artifact.
 
@@ -111,6 +112,7 @@ class RawArtifact(BaseModel):
 # ---------------------------------------------------------------------------
 # Provenance recorder
 # ---------------------------------------------------------------------------
+
 
 class ProvenanceRecorder:
     """Records and retrieves provenance metadata for raw artifacts.

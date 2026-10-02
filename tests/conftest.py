@@ -2,10 +2,8 @@
 
 from datetime import datetime, timezone
 from typing import Any
-import uuid
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Domain model fixtures (TDD — will fail until models are implemented)
@@ -108,6 +106,7 @@ def sample_idempotency_key() -> str:
 def event_loop():
     """Provide a fresh event loop for async tests."""
     import asyncio
+
     loop = asyncio.new_event_loop()
     yield loop
     loop.close()

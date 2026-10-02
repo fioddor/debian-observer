@@ -1,7 +1,9 @@
 """CLI tests for query command."""
+
 from __future__ import annotations
 
 from click.testing import CliRunner
+
 from debian_observer.cli.main import cli
 
 

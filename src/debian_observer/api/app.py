@@ -15,12 +15,10 @@ Usage::
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI, Request
 
-from debian_observer.api.store import InMemoryStore
 from debian_observer.api.routers import (
     datasets,
     events,
@@ -30,8 +28,9 @@ from debian_observer.api.routers import (
     packages,
     releases,
 )
-from debian_observer.observability.tracing import get_tracer
+from debian_observer.api.store import InMemoryStore
 from debian_observer.observability.metrics import APIMetrics
+from debian_observer.observability.tracing import get_tracer
 
 
 def create_app(
@@ -62,6 +61,7 @@ def create_app(
     @app.middleware("http")
     async def observability_middleware(request: Request, call_next):
         import time
+
         start = time.perf_counter()
         method = request.method
         path = request.url.path

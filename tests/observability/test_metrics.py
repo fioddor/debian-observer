@@ -6,12 +6,12 @@ import pytest
 from opentelemetry import metrics
 
 from debian_observer.observability.metrics import (
+    APIMetrics,
+    IngestionMetrics,
+    MessagingMetrics,
     _init_provider,
     get_meter,
     shutdown_meter,
-    IngestionMetrics,
-    MessagingMetrics,
-    APIMetrics,
 )
 
 

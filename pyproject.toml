@@ -25,6 +25,7 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "nats-py>=2.16",
+    "psycopg2-binary>=2.9",
     "pyyaml>=6.0",
     "opentelemetry-api>=1.24",
     "opentelemetry-sdk>=1.24",

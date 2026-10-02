@@ -1,7 +1,10 @@
 """CLI tests for ingestion command."""
-from __future__ import annotations
 
+from __future__ import annotations
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 from click.testing import CliRunner
+
 from debian_observer.cli.main import cli
 
 
@@ -13,15 +16,91 @@ def test_ingest_help():
     assert "--url" in result.output
 
 
+def _make_mock_result(
+    *, record_count: int = 3, ingestion_run_id: str = "run-abc", checksum: str = "sha256-xyz", events: list | None = None, parquet_path: str | None = None
+):
+    """Build a minimal mock IngestionResult-like object."""
+    mock = MagicMock()
+    mock.record_count = record_count
+    mock.ingestion_run_id = ingestion_run_id
+    mock.checksum = checksum
+    mock.events = events or []
+    mock.parquet_path = Path(parquet_path) if parquet_path else None
+    return mock
+
+
+def test_ingest_sources_source():
+    runner = CliRunner()
+    mock_result = _make_mock_result(record_count=5, events=[MagicMock(), MagicMock()])
+
+    with patch("debian_observer.cli.commands.ingest.IngestionPipeline") as MockPipeline:
+        MockPipeline.return_value.run.return_value = mock_result
+        result = runner.invoke(cli, ["ingest", "--source", "sources", "--url", "bash"])
+
+    assert result.exit_code == 0
+    # Verify pipeline was instantiated
+    MockPipeline.assert_called_once()
+    # Verify run was called with a SourcesDebianOrgDataSource
+    call_args = MockPipeline.return_value.run.call_args
+    data_source = call_args[0][0]
+    assert data_source.name == "sources.debian.org"
+    assert data_source._package_name == "bash"
+
+
+def test_ingest_mirror_source():
+    runner = CliRunner()
+    mock_result = _make_mock_result(record_count=2, events=[MagicMock()])
+
+    with patch("debian_observer.cli.commands.ingest.IngestionPipeline") as MockPipeline:
+        MockPipeline.return_value.run.return_value = mock_result
+        result = runner.invoke(cli, [
+            "ingest", "--source", "mirror", "--url", "stable",
+            "--limit", "2", "--raw-dir", "/tmp/raw"
+        ])
+
+    assert result.exit_code == 0
+    call_args = MockPipeline.return_value.run.call_args
+    data_source = call_args[0][0]
+    assert data_source.name == "debian.mirror"
+    assert data_source._suite == "stable"
+    assert data_source._component == "main"
+    assert data_source._architecture == "amd64"
+    assert data_source._limit == 2
+    # Verify raw_dir passed to pipeline
+    MockPipeline.assert_called_once_with(raw_dir=Path("/tmp/raw"), parquet_dir=None)
+
+
+def test_ingest_udd_source():
+    runner = CliRunner()
+    mock_result = _make_mock_result(record_count=10, events=[MagicMock()] * 3)
+
+    with patch("debian_observer.cli.commands.ingest.IngestionPipeline") as MockPipeline:
+        MockPipeline.return_value.run.return_value = mock_result
+        result = runner.invoke(cli, [
+            "ingest", "--source", "udd", "--url", "packages",
+            "--limit", "10"
+        ])
+
+    assert result.exit_code == 0
+    call_args = MockPipeline.return_value.run.call_args
+    data_source = call_args[0][0]
+    assert data_source.name == "udd"
+    assert data_source._table == "packages"
+    assert data_source._limit == 10
+
+
 def test_ingest_invalid_source():
     """Unknown --source values are usage errors: exit 2, one line, no traceback."""
     runner = CliRunner()
     result = runner.invoke(cli, ["ingest", "--source", "unknown", "--url", "http://x"])
+    # A bad parameter value is a usage error, not a runtime crash.
     assert result.exit_code == 2
+    # The message names the offending value...
     assert "unknown" in result.output
-    # The message names every accepted source.
-    assert "sources" in result.output
-    assert "mirror" in result.output
+    # ...and the accepted sources.
+    for valid in ("sources", "mirror", "udd"):
+        assert valid in result.output
+    # No Python traceback leaks to the user.
     assert "Traceback" not in result.output
     assert "TypeError" not in result.output
 
@@ -31,4 +110,41 @@ def test_ingest_help_lists_source_choices():
     runner = CliRunner()
     result = runner.invoke(cli, ["ingest", "--help"])
     assert result.exit_code == 0
-    assert "[sources|mirror]" in result.output
+    # click.Choice renders the option metavar as [sources|mirror|udd].
+    assert "[sources|mirror|udd]" in result.output
+
+
+def test_ingest_with_parquet_dir():
+    runner = CliRunner()
+    mock_result = _make_mock_result(record_count=5, parquet_path="/tmp/pq/out.parquet")
+
+    with patch("debian_observer.cli.commands.ingest.IngestionPipeline") as MockPipeline:
+        MockPipeline.return_value.run.return_value = mock_result
+        result = runner.invoke(cli, [
+            "ingest", "--source", "sources", "--url", "hello",
+            "--parquet-dir", "/tmp/pq"
+        ])
+
+    assert result.exit_code == 0
+    MockPipeline.assert_called_once_with(raw_dir=Path("data/raw"), parquet_dir=Path("/tmp/pq"))
+    assert "Parquet written" in result.output
+
+
+def test_ingest_output_format():
+    runner = CliRunner()
+    mock_result = _make_mock_result(
+        record_count=42,
+        ingestion_run_id="run-test-007",
+        checksum="sha256-abc123",
+        events=[MagicMock()] * 7,
+    )
+
+    with patch("debian_observer.cli.commands.ingest.IngestionPipeline") as MockPipeline:
+        MockPipeline.return_value.run.return_value = mock_result
+        result = runner.invoke(cli, ["ingest", "--source", "sources", "--url", "vim"])
+
+    assert result.exit_code == 0
+    assert "Ingested 42 records" in result.output
+    assert "Run ID: run-test-007" in result.output
+    assert "Checksum: sha256-abc123" in result.output
+    assert "Events produced: 7" in result.output

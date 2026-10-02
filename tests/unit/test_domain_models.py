@@ -16,10 +16,10 @@ from debian_observer.domain.models import (
     Release,
 )
 
-
 # ---------------------------------------------------------------------------
 # Package tests
 # ---------------------------------------------------------------------------
+
 
 class TestPackage:
     """Tests for the Package domain model."""
@@ -94,6 +94,7 @@ class TestPackage:
 # PackageVersion tests
 # ---------------------------------------------------------------------------
 
+
 class TestPackageVersion:
     """Tests for the PackageVersion domain model."""
 
@@ -164,8 +165,12 @@ class TestPackageVersion:
 
     def test_hashable(self) -> None:
         now = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
-        pv1 = PackageVersion(package_id="p", version="1.0-1", source="s", observed_at=now)
-        pv2 = PackageVersion(package_id="p", version="1.0-1", source="s", observed_at=now)
+        pv1 = PackageVersion(
+            package_id="p", version="1.0-1", source="s", observed_at=now
+        )
+        pv2 = PackageVersion(
+            package_id="p", version="1.0-1", source="s", observed_at=now
+        )
         assert hash(pv1) == hash(pv2)
         assert pv1 == pv2
 
@@ -173,6 +178,7 @@ class TestPackageVersion:
 # ---------------------------------------------------------------------------
 # Release tests
 # ---------------------------------------------------------------------------
+
 
 class TestRelease:
     """Tests for the Release domain model."""
@@ -212,6 +218,7 @@ class TestRelease:
 # ---------------------------------------------------------------------------
 # Migration tests
 # ---------------------------------------------------------------------------
+
 
 class TestMigration:
     """Tests for the Migration domain model (minimal R1)."""
@@ -282,6 +289,7 @@ class TestMigration:
 # ---------------------------------------------------------------------------
 # Observation tests
 # ---------------------------------------------------------------------------
+
 
 class TestObservation:
     """Tests for the Observation metadata model."""

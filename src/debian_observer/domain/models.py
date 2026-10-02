@@ -38,7 +38,11 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from debian_observer.common.types import DebianVersionString, MigrationStatus, ReleaseStatus
+from debian_observer.common.types import (
+    DebianVersionString,
+    MigrationStatus,
+    ReleaseStatus,
+)
 from debian_observer.common.validators import (
     validate_debian_version,
     validate_package_name,
@@ -52,10 +56,10 @@ from debian_observer.common.validators import (
 # at runtime: instances cannot be mutated after creation and are hashable.
 FrozenModelConfig = ConfigDict(
     frozen=True,
-    extra="forbid",           # Reject unexpected fields (strict contracts)
-    populate_by_name=True,    # Allow construction by alias
+    extra="forbid",  # Reject unexpected fields (strict contracts)
+    populate_by_name=True,  # Allow construction by alias
     str_strip_whitespace=True,
-    validate_assignment=False, # Not needed when frozen=True
+    validate_assignment=False,  # Not needed when frozen=True
 )
 
 
@@ -67,6 +71,7 @@ def _utc_now() -> datetime:
 # ---------------------------------------------------------------------------
 # 5.1.1 Package
 # ---------------------------------------------------------------------------
+
 
 class Package(BaseModel):
     """A Debian source or binary package entity.
@@ -154,6 +159,7 @@ class Package(BaseModel):
 # ---------------------------------------------------------------------------
 # 5.1.2 PackageVersion
 # ---------------------------------------------------------------------------
+
 
 class PackageVersion(BaseModel):
     """An observed version of a Debian package.
@@ -250,6 +256,7 @@ class PackageVersion(BaseModel):
 # 5.1.3 Release
 # ---------------------------------------------------------------------------
 
+
 class Release(BaseModel):
     """A Debian release or suite.
 
@@ -316,6 +323,7 @@ class Release(BaseModel):
 # ---------------------------------------------------------------------------
 # 5.1.4 Migration (minimal for R1)
 # ---------------------------------------------------------------------------
+
 
 class Migration(BaseModel):
     """A simplified migration-related fact.
@@ -421,6 +429,7 @@ class Migration(BaseModel):
 # 5.2.1 Observation (Metadata)
 # ---------------------------------------------------------------------------
 
+
 class Observation(BaseModel):
     """Metadata recording that information was obtained from an external source.
 
@@ -488,7 +497,9 @@ class Observation(BaseModel):
         description="Identifier of the ingestion run.",
     )
 
-    @field_validator("observation_id", "entity_id", "entity_type", "source", mode="before")
+    @field_validator(
+        "observation_id", "entity_id", "entity_type", "source", mode="before"
+    )
     @classmethod
     def _validate_required_str(cls, value: Any) -> Any:
         if not value or not isinstance(value, str):

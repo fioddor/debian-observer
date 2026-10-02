@@ -49,6 +49,7 @@ def _utc_now() -> datetime:
 # Checksum model
 # ---------------------------------------------------------------------------
 
+
 class Checksum(BaseModel):
     """Cryptographic checksum for a dataset artifact.
 
@@ -101,6 +102,7 @@ class Checksum(BaseModel):
 # ---------------------------------------------------------------------------
 # Dataset Manifest
 # ---------------------------------------------------------------------------
+
 
 class DatasetManifest(BaseModel):
     """Manifest describing a single ingested dataset.
@@ -255,7 +257,9 @@ class DatasetManifest(BaseModel):
 
         # Use safe_dump with custom representer for datetime
         def _datetime_representer(dumper: Any, data: datetime) -> Any:
-            return dumper.represent_scalar("tag:yaml.org,2002:timestamp", data.isoformat())
+            return dumper.represent_scalar(
+                "tag:yaml.org,2002:timestamp", data.isoformat()
+            )
 
         yaml.add_representer(datetime, _datetime_representer)
 

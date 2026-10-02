@@ -7,14 +7,16 @@ from __future__ import annotations
 
 import click
 
-from debian_observer.cli.commands import benchmark
-from debian_observer.cli.commands import consume
-from debian_observer.cli.commands import ingest
-from debian_observer.cli.commands import normalize
-from debian_observer.cli.commands import query
-from debian_observer.cli.commands import replay
-from debian_observer.cli.commands import status
-from debian_observer.cli.commands import validate
+from debian_observer.cli.commands import (
+    benchmark,
+    consume,
+    ingest,
+    normalize,
+    query,
+    replay,
+    status,
+    validate,
+)
 
 
 @click.group()

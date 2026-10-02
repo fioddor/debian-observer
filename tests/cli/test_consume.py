@@ -37,10 +37,38 @@ class TestConsumeCommand:
                 cli,
                 [
                     "consume",
-                    "--stream", "EVENTS",
-                    "--subject", "debian.observer.>",
-                    "--durable", "consumer-cli-01",
+                    "--stream",
+                    "EVENTS",
+                    "--subject",
+                    "debian.observer.>",
+                    "--durable",
+                    "consumer-cli-01",
                 ],
             )
             assert result.exit_code == 0
-            assert "consumer-cli-01" in result.output or "Starting consumer" in result.output
+            assert (
+                "consumer-cli-01" in result.output
+                or "Starting consumer" in result.output
+            )
+
+    def test_consume_app_raises_exception(self) -> None:
+        """Ensure the command exits with ClickException when ConsumerApp fails."""
+        runner = CliRunner()
+        with patch("debian_observer.cli.commands.consume.ConsumerApp") as mock_app:
+            mock_instance = mock_app.return_value
+            mock_instance.run = AsyncMock(side_effect=RuntimeError("NATS unavailable"))
+            result = runner.invoke(
+                cli,
+                [
+                    "consume",
+                    "--stream",
+                    "EVENTS",
+                    "--subject",
+                    "debian.observer.>",
+                    "--durable",
+                    "consumer-cli-01",
+                ],
+            )
+            assert result.exit_code != 0
+            assert "Consumer error" in result.output
+            assert "NATS unavailable" in result.output

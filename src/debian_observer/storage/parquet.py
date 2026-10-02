@@ -12,7 +12,6 @@ Design notes:
 from __future__ import annotations
 
 import json
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -27,21 +26,23 @@ from debian_observer.events import EventEnvelope
 # ---------------------------------------------------------------------------
 
 # Inferred from to_parquet_row + EventEnvelope fields
-_DEFAULT_SCHEMA = pa.schema([
-    ("event_id", pa.string()),
-    ("event_type", pa.string()),
-    ("source", pa.string()),
-    ("entity_id", pa.string()),
-    ("observed_at", pa.string()),
-    ("effective_at", pa.string()),
-    ("ingestion_run_id", pa.string()),
-    ("package_id", pa.string()),
-    ("version", pa.string()),
-    ("distribution", pa.string()),
-    ("architecture", pa.string()),
-    ("component", pa.string()),
-    ("priority", pa.string()),
-])
+_DEFAULT_SCHEMA = pa.schema(
+    [
+        ("event_id", pa.string()),
+        ("event_type", pa.string()),
+        ("source", pa.string()),
+        ("entity_id", pa.string()),
+        ("observed_at", pa.string()),
+        ("effective_at", pa.string()),
+        ("ingestion_run_id", pa.string()),
+        ("package_id", pa.string()),
+        ("version", pa.string()),
+        ("distribution", pa.string()),
+        ("architecture", pa.string()),
+        ("component", pa.string()),
+        ("priority", pa.string()),
+    ]
+)
 
 
 class ParquetWriter:
@@ -113,7 +114,10 @@ class ParquetWriter:
         if not events:
             raise ValueError("Cannot write empty event list to Parquet")
 
-        run_id = ingestion_run_id or f"run-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
+        run_id = (
+            ingestion_run_id
+            or f"run-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
+        )
         filename = f"{run_id}.parquet"
         file_path = self.output_dir / filename
 

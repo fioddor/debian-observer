@@ -16,8 +16,8 @@ Usage::
 
 from __future__ import annotations
 
-from debian_observer.storage.parquet import ParquetWriter
 from debian_observer.storage.analytical import AnalyticalStorage
+from debian_observer.storage.parquet import ParquetWriter
 
 __all__ = [
     "ParquetWriter",

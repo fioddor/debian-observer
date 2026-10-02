@@ -7,7 +7,6 @@ standalone event consumer process.
 from __future__ import annotations
 
 import asyncio
-from typing import Any
 
 import click
 
@@ -67,7 +66,9 @@ def consume_command(
     # Register a simple print handler for all known event types.
     # R1: users are expected to subclass or script their own handlers.
     # This CLI provides the infrastructure; domain logic belongs in plugins.
-    click.echo(f"Starting consumer on stream={stream} subject={subject} durable={durable}")
+    click.echo(
+        f"Starting consumer on stream={stream} subject={subject} durable={durable}"
+    )
 
     try:
         asyncio.run(

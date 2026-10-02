@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 # ---------------------------------------------------------------------------
 # Stream configuration
 # ---------------------------------------------------------------------------
@@ -95,6 +94,7 @@ class StreamConfig:
             A dict with NATS JetStream configuration keys.
         """
         import datetime
+
         max_age = datetime.timedelta(days=self.max_age_days)
 
         return {

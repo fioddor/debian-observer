@@ -1,8 +1,11 @@
 """CLI tests for normalization commands."""
+
 from __future__ import annotations
 
 import json
+
 from click.testing import CliRunner
+
 from debian_observer.cli.main import cli
 
 
@@ -49,8 +52,10 @@ def test_validate_all_valid():
 def test_validate_some_invalid():
     runner = CliRunner()
     input_data = (
-        json.dumps({"package": "vim", "version": "1.0"}) + "\n" +
-        json.dumps({"package": "bad"}) + "\n"
+        json.dumps({"package": "vim", "version": "1.0"})
+        + "\n"
+        + json.dumps({"package": "bad"})
+        + "\n"
     )
     result = runner.invoke(cli, ["validate", "--source", "udd"], input=input_data)
     assert result.exit_code == 0
@@ -62,6 +67,8 @@ def test_unknown_source_rejected(tmp_path):
     runner = CliRunner()
     inline_jsonl = tmp_path / "inline.jsonl"
     inline_jsonl.write_text(json.dumps({"package": "vim", "version": "1.0"}) + "\n")
-    result = runner.invoke(cli, ["validate", "--input", str(inline_jsonl), "--source", "mock"])
+    result = runner.invoke(
+        cli, ["validate", "--input", str(inline_jsonl), "--source", "mock"]
+    )
     assert result.exit_code == 2
     assert "Invalid value" in result.output

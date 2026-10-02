@@ -11,9 +11,6 @@ These tests verify that the ingestion layer correctly:
 
 from __future__ import annotations
 
-import hashlib
-import json
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -30,10 +27,10 @@ from debian_observer.ingestion.manifest import DatasetManifest, ManifestBuilder
 from debian_observer.ingestion.pipeline import IngestionPipeline, IngestionResult
 from debian_observer.ingestion.provenance import ProvenanceRecorder, RawArtifact
 
-
 # ---------------------------------------------------------------------------
 # Acquisition tests
 # ---------------------------------------------------------------------------
+
 
 class TestInMemoryDataSource:
     """Tests for the in-memory data source (used for tests)."""
@@ -80,9 +77,7 @@ class TestMockDebianDataSource:
         assert all("version" in r for r in records)
 
     def test_generates_version_records(self) -> None:
-        source = MockDebianDataSource(
-            package_count=3, versions_per_package=2
-        )
+        source = MockDebianDataSource(package_count=3, versions_per_package=2)
         records = source.retrieve()
         assert len(records) == 6  # 3 packages × 2 versions
         assert all("distribution" in r for r in records)
@@ -129,6 +124,7 @@ class TestAcquisitionService:
 # ---------------------------------------------------------------------------
 # Manifest tests
 # ---------------------------------------------------------------------------
+
 
 class TestDatasetManifest:
     """Tests for the dataset manifest model."""
@@ -182,6 +178,7 @@ class TestManifestBuilder:
 # Provenance tests
 # ---------------------------------------------------------------------------
 
+
 class TestRawArtifact:
     """Tests for the raw artifact model."""
 
@@ -218,6 +215,7 @@ class TestProvenanceRecorder:
 # ---------------------------------------------------------------------------
 # Pipeline tests
 # ---------------------------------------------------------------------------
+
 
 class TestIngestionPipeline:
     """Integration-style tests for the ingestion pipeline."""
@@ -260,6 +258,7 @@ class TestIngestionPipeline:
 
         # Events should be valid domain events
         from debian_observer.events import EventEnvelope
+
         for event in result.events:
             assert isinstance(event, EventEnvelope)
             assert event.event_type is not None
@@ -286,6 +285,7 @@ class TestIngestionPipeline:
 # Coverage gap tests
 # ---------------------------------------------------------------------------
 
+
 class TestManifestCoverage:
     """Tests for manifest paths not exercised by main tests."""
 
@@ -297,6 +297,7 @@ class TestManifestCoverage:
 
     def test_manifest_naive_datetime(self) -> None:
         from datetime import datetime
+
         manifest = DatasetManifest(
             dataset_name="test",
             source="test",
@@ -353,6 +354,7 @@ class TestProvenanceCoverage:
 
     def test_artifact_naive_datetime(self) -> None:
         from datetime import datetime
+
         artifact = RawArtifact(
             artifact_id="art-1",
             source="udd",
@@ -365,6 +367,7 @@ class TestProvenanceCoverage:
 
     def test_artifact_non_utc_datetime(self) -> None:
         from datetime import datetime, timedelta, timezone
+
         cet = timezone(timedelta(hours=1))
         artifact = RawArtifact(
             artifact_id="art-1",
@@ -425,6 +428,7 @@ class TestPipelineCoverage:
 
     def test_ingestion_result_naive_datetime(self) -> None:
         from datetime import datetime
+
         result = IngestionResult(
             ingestion_run_id="run-1",
             source_name="test",
@@ -448,6 +452,7 @@ class TestPipelineCoverage:
 
     def test_data_source_default_record_count(self) -> None:
         """Test the default record_count() implementation in DataSource."""
+
         class MinimalSource(DataSource):
             @property
             def name(self) -> str:

@@ -28,12 +28,16 @@ async def get_package(package_name: str, request: Request) -> dict[str, Any]:
     store = request.app.state.store
     package = store.get_package(package_name)
     if package is None:
-        raise HTTPException(status_code=404, detail=f"Package '{package_name}' not found")
+        raise HTTPException(
+            status_code=404, detail=f"Package '{package_name}' not found"
+        )
     return package.model_dump(mode="json")
 
 
 @router.get("/{package_name}/versions", response_model=list[dict[str, Any]])
-async def get_package_versions(package_name: str, request: Request) -> list[dict[str, Any]]:
+async def get_package_versions(
+    package_name: str, request: Request
+) -> list[dict[str, Any]]:
     """Return all observed versions for a package.
 
     Args:
@@ -48,5 +52,7 @@ async def get_package_versions(package_name: str, request: Request) -> list[dict
     store = request.app.state.store
     versions = store.get_package_versions(package_name)
     if versions is None:
-        raise HTTPException(status_code=404, detail=f"Package '{package_name}' not found")
+        raise HTTPException(
+            status_code=404, detail=f"Package '{package_name}' not found"
+        )
     return [v.model_dump(mode="json") for v in versions]

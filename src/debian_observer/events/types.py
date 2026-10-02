@@ -30,7 +30,10 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from debian_observer.common.types import MigrationStatus
-from debian_observer.common.validators import validate_debian_version, validate_package_name
+from debian_observer.common.validators import (
+    validate_debian_version,
+    validate_package_name,
+)
 
 # ---------------------------------------------------------------------------
 # Shared config
@@ -52,6 +55,7 @@ def _utc_now() -> datetime:
 # ---------------------------------------------------------------------------
 # Reusable: Observation metadata embedded in payloads
 # ---------------------------------------------------------------------------
+
 
 class ObservationMeta(BaseModel):
     """Subset of Observation metadata embedded in event payloads.
@@ -136,6 +140,7 @@ class ObservationMeta(BaseModel):
 # 6.2 Specific event type: PackageObserved
 # ---------------------------------------------------------------------------
 
+
 class PackageObservedPayload(BaseModel):
     """Payload for ``PackageObserved`` events.
 
@@ -203,6 +208,7 @@ class PackageObservedPayload(BaseModel):
 # ---------------------------------------------------------------------------
 # 6.2 Specific event type: PackageVersionObserved
 # ---------------------------------------------------------------------------
+
 
 class PackageVersionObservedPayload(BaseModel):
     """Payload for ``PackageVersionObserved`` events.
@@ -274,6 +280,7 @@ class PackageVersionObservedPayload(BaseModel):
 # 6.2 Specific event type: ReleaseObserved
 # ---------------------------------------------------------------------------
 
+
 class ReleaseObservedPayload(BaseModel):
     """Payload for ``ReleaseObserved`` events.
 
@@ -296,7 +303,9 @@ class ReleaseObservedPayload(BaseModel):
     codename: str | None = Field(default=None, description="Release codename.")
     status: str | None = Field(default=None, description="Release lifecycle status.")
     version: str | None = Field(default=None, description="Release version number.")
-    description: str | None = Field(default=None, description="Human-readable description.")
+    description: str | None = Field(
+        default=None, description="Human-readable description."
+    )
     observation: ObservationMeta = Field(
         ..., description="Provenance metadata for this observation."
     )
@@ -329,6 +338,7 @@ class ReleaseObservedPayload(BaseModel):
 # ---------------------------------------------------------------------------
 # 6.2 Specific event type: MigrationObserved
 # ---------------------------------------------------------------------------
+
 
 class MigrationObservedPayload(BaseModel):
     """Payload for ``MigrationObserved`` events.

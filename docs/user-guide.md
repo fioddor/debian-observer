@@ -167,6 +167,16 @@ pip install -e ".[dev]"
 pytest tests/
 ```
 
+### Consumer testing
+
+The standalone event consumer can be exercised via CLI:
+
+```bash
+debian-observer consume --stream EVENTS --subject "debian.observer.>" --durable test-consumer
+```
+
+In the devcontainer, NATS is available on `localhost:4222`.
+
 ## Troubleshooting
 
 **No Parquet files found:** ensure `--parquet-dir` matches where ingestion writes.

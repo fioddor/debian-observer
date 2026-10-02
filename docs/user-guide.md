@@ -45,7 +45,8 @@ Run a basic ingestion using a configured data source:
 
 ```bash
 debian-observer ingest \
-  --source mock \
+  --source sources \
+  --url <package> \
   --raw-dir data/raw
 ```
 

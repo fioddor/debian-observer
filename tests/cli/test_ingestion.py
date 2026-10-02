@@ -10,16 +10,16 @@ def test_ingest_help():
     result = runner.invoke(cli, ["ingest", "--help"])
     assert result.exit_code == 0
     assert "--source" in result.output
-    assert "mock" in result.output
+    assert "--url" in result.output
 
 
 def test_ingest_invalid_source():
     """Unknown --source values are usage errors: exit 2, one line, no traceback."""
     runner = CliRunner()
-    result = runner.invoke(cli, ["ingest", "--source", "unknown"])
+    result = runner.invoke(cli, ["ingest", "--source", "unknown", "--url", "http://x"])
     assert result.exit_code == 2
     assert "unknown" in result.output
-    assert "mock" in result.output
+    assert "sources" in result.output
     assert "Traceback" not in result.output
     assert "TypeError" not in result.output
 
@@ -29,4 +29,4 @@ def test_ingest_help_lists_source_choices():
     runner = CliRunner()
     result = runner.invoke(cli, ["ingest", "--help"])
     assert result.exit_code == 0
-    assert "[mock]" in result.output
+    assert "[sources]" in result.output

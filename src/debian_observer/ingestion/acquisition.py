@@ -343,3 +343,61 @@ def _compute_sha256(records: list[dict[str, Any]]) -> str:
         default=str,
     )
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+# ---------------------------------------------------------------------------
+# Real Debian data source (smoke test)
+# ---------------------------------------------------------------------------
+
+class SourcesDebianOrgDataSource(DataSource):
+    """Fetches real Debian package version data from sources.debian.org API.
+
+    This is a minimal real-data source for smoke testing the pipeline.
+    It queries the sources.debian.org REST API for a given package name
+    and produces records that mirror the UDD structure.
+
+    Usage:
+
+        source = SourcesDebianOrgDataSource(package_name="hello")
+        records = source.retrieve()
+    """
+
+    def __init__(self, package_name: str = "hello") -> None:
+        self._package_name = package_name
+        self._url = f"https://sources.debian.org/api/src/{package_name}/"
+        self._records: list[dict[str, Any]] | None = None
+
+    @property
+    def name(self) -> str:
+        return "sources.debian.org"
+
+    def retrieve(self) -> list[dict[str, Any]]:
+        """Download and parse package version history."""
+        import urllib.request
+        if self._records is not None:
+            return self._records
+
+        req = urllib.request.Request(
+            self._url,
+            headers={"User-Agent": "debian-observer-smoke-test"},
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode())
+
+        records = []
+        for v in data.get("versions", []):
+            for suite in v.get("suites", []):
+                records.append({
+                    "package": self._package_name,
+                    "version": v["version"],
+                    "distribution": suite,
+                    "area": v.get("area", "main"),
+                    "source": self.name,
+                    "observed_at": datetime.now(timezone.utc).isoformat(),
+                })
+        self._records = records
+        return records
+
+    def compute_checksum(self) -> str:
+        """Compute SHA-256 of canonical JSON representation."""
+        canonical = json.dumps(self.retrieve(), sort_keys=True, ensure_ascii=False)
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()

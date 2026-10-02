@@ -86,7 +86,7 @@ class TestStreamConfig:
 
     def test_default_stream_name(self) -> None:
         config = StreamConfig()
-        assert config.stream_name == "debian.events"
+        assert config.stream_name == "debian-events"
 
     def test_subject_prefix(self) -> None:
         config = StreamConfig()
@@ -110,7 +110,7 @@ class TestStreamConfig:
     def test_to_nats_config(self) -> None:
         config = StreamConfig()
         nats_config = config.to_nats_config()
-        assert nats_config["name"] == "debian.events"
+        assert nats_config["name"] == "debian-events"
         assert nats_config["subjects"] == config.subjects
         assert "retention" in nats_config
         assert "max_msgs" in nats_config
@@ -273,7 +273,7 @@ class TestEventConsumer:
         consumer = EventConsumer(
             client=MagicMock(),
             handler=handler,
-            stream_name="debian.events",
+            stream_name="debian-events",
             durable_name="test-consumer",
         )
         assert consumer.handler is handler
@@ -309,7 +309,7 @@ class TestEventConsumer:
         consumer = EventConsumer(
             client=mock_nats_client,
             handler=handler,
-            stream_name="debian.events",
+            stream_name="debian-events",
             durable_name="test-consumer",
         )
 
@@ -338,7 +338,7 @@ class TestEventConsumer:
         consumer = EventConsumer(
             client=MagicMock(),
             handler=handler,
-            stream_name="debian.events",
+            stream_name="debian-events",
             durable_name="test-consumer",
         )
 
@@ -361,7 +361,7 @@ class TestEventConsumer:
         consumer = EventConsumer(
             client=MagicMock(),
             handler=handler,
-            stream_name="debian.events",
+            stream_name="debian-events",
             durable_name="test-consumer",
         )
 
@@ -386,7 +386,7 @@ class TestEventConsumer:
         consumer = EventConsumer(
             client=MagicMock(),
             handler=handler,
-            stream_name="debian.events",
+            stream_name="debian-events",
             durable_name="test-consumer",
         )
 
@@ -502,7 +502,7 @@ class TestConsumerLifecycle:
         consumer = EventConsumer(
             client=client,
             handler=AsyncMock(),
-            stream_name="debian.events",
+            stream_name="debian-events",
             durable_name="test",
         )
         with pytest.raises(RuntimeError, match="not connected"):
@@ -520,14 +520,14 @@ class TestConsumerLifecycle:
         consumer = EventConsumer(
             client=client,
             handler=AsyncMock(),
-            stream_name="debian.events",
+            stream_name="debian-events",
             durable_name="test",
         )
         await consumer.subscribe("debian.package.observed")
 
         mock_js.subscribe.assert_awaited_once()
         call_kwargs = mock_js.subscribe.call_args.kwargs
-        assert call_kwargs["stream"] == "debian.events"
+        assert call_kwargs["stream"] == "debian-events"
         assert call_kwargs["durable"] == "test"
 
     @pytest.mark.asyncio
@@ -543,7 +543,7 @@ class TestConsumerLifecycle:
         consumer = EventConsumer(
             client=client,
             handler=AsyncMock(),
-            stream_name="debian.events",
+            stream_name="debian-events",
             durable_name="test",
         )
         await consumer.subscribe("debian.package.observed")
@@ -564,7 +564,7 @@ class TestConsumerLifecycle:
         consumer = EventConsumer(
             client=client,
             handler=AsyncMock(),
-            stream_name="debian.events",
+            stream_name="debian-events",
             durable_name="test",
         )
         await consumer.subscribe("debian.package.observed")
@@ -588,7 +588,7 @@ class TestConsumerLifecycle:
         consumer = EventConsumer(
             client=MagicMock(),
             handler=handler,
-            stream_name="debian.events",
+            stream_name="debian-events",
             durable_name="test",
         )
 

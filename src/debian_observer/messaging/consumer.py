@@ -68,7 +68,7 @@ class EventConsumer:
         consumer = EventConsumer(
             client=nats_client,
             handler=my_handler,
-            stream_name="debian.events",
+            stream_name="debian-events",
             durable_name="storage-consumer",
         )
         await consumer.subscribe("debian.package_version.observed")
@@ -119,7 +119,6 @@ class EventConsumer:
             stream=self.stream_name,
             durable=self.durable_name,
             cb=self._on_message,
-            max_deliver=self.max_deliver,
         )
 
     async def _on_message(self, msg: Any) -> None:
@@ -152,7 +151,10 @@ class EventConsumer:
             # Prepare ack callback
             async def ack() -> None:
                 if hasattr(msg, "ack"):
-                    await msg.ack()
+                    try:
+                        await msg.ack()
+                    except Exception:
+                        pass  # Already acked or connection closed
 
             # Invoke handler
             try:
@@ -169,8 +171,7 @@ class EventConsumer:
                 raise
 
             # If handler succeeded without exception, ensure ack.
-            # We always ack here even if the handler already acked —
-            # duplicate acks are harmless in NATS (no-op for acked messages).
+            # The ack callback already handles already-acked messages gracefully.
             await ack()
 
     async def unsubscribe(self) -> None:

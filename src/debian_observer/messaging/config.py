@@ -16,7 +16,7 @@ from typing import Any
 # Stream configuration
 # ---------------------------------------------------------------------------
 
-DEFAULT_STREAM_NAME = "debian.events"
+DEFAULT_STREAM_NAME = "debian-events"
 DEFAULT_SUBJECTS = [
     "debian.package.observed",
     "debian.package_version.observed",
@@ -105,5 +105,5 @@ class StreamConfig:
             "max_msgs": self.max_messages,
             "max_age": int(max_age.total_seconds()),
             "max_bytes": self.max_bytes,
-            "replicas": self.replication_factor,
+            "num_replicas": self.replication_factor,
         }

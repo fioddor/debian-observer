@@ -297,6 +297,29 @@ Re-publish events to NATS (dry-run by default):
 debian-observer replay --input events.jsonl --dry-run
 ```
 
+### Consume and persist to storage
+
+The :class:`PersistingHandler` connects the consumer to Parquet storage.
+Events consumed from NATS are buffered and written to Parquet files:
+
+```python
+from debian_observer.consumer_app import ConsumerApp
+from debian_observer.storage.handlers import PersistingHandler
+
+app = ConsumerApp()
+handler = PersistingHandler("data/parquet", flush_threshold=100)
+app.register_handler("PackageVersionObserved", handler)
+```
+
+Or via the `consume` CLI (writes to `data/parquet` by default):
+
+```bash
+debian-observer consume \
+  --stream debian.events \
+  --subject "debian.package_version.observed" \
+  --durable storage-consumer
+```
+
 
 ## API Endpoints
 

@@ -14,6 +14,7 @@ from debian_observer.cli.commands import (
     normalize,
     query,
     replay,
+    serve,
     status,
     validate,
 )
@@ -43,6 +44,7 @@ cli.add_command(ingest.ingest)
 cli.add_command(normalize.normalize)
 cli.add_command(query.query)
 cli.add_command(replay.replay)
+cli.add_command(serve.serve)
 cli.add_command(status.status)
 cli.add_command(validate.validate)
 

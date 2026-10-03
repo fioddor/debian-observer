@@ -53,6 +53,8 @@ services:
       # - UDD_DATABASE=udd
       # - UDD_USER=udd
       # - UDD_PASSWORD=udd
+      # Optional: pre-load Parquet data for the API
+      # - PARQUET_DIR=/app/data/parquet
     volumes:
       - api-data:/app/data
     depends_on:

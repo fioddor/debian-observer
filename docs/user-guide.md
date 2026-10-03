@@ -230,10 +230,36 @@ Run `debian-observer validate --help` for all options.
 
 ## Query stored data
 
+Run DuckDB SQL queries over ingested Parquet events:
+
 ```bash
 debian-observer query \
   "SELECT package_id, version, distribution FROM events WHERE distribution = 'sid'" \
   --parquet-dir data/parquet
+```
+
+**Aggregations:**
+
+```bash
+debian-observer query \
+  "SELECT architecture, COUNT(*) as count FROM events GROUP BY architecture ORDER BY count DESC" \
+  --parquet-dir data/parquet
+```
+
+**Output formats:**
+
+| Format | Flag | Use case |
+|--------|------|----------|
+| Table | `--format table` (default) | Human-readable |
+| CSV | `--format csv` | Spreadsheet import |
+
+**Example: export to CSV**
+
+```bash
+debian-observer query \
+  "SELECT entity_id, version, observed_at FROM events" \
+  --parquet-dir data/parquet \
+  --format csv > events.csv
 ```
 
 Data is stored in **Parquet** format with a **DuckDB** analytical layer for SQL queries.

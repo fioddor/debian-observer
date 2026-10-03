@@ -85,3 +85,39 @@ class TestUDDDataSource:
             assert call_kwargs["host"] == "192.168.1.218"
             assert call_kwargs["user"] == "udd"
             assert call_kwargs["password"] == "udd"
+
+    @patch("psycopg2.connect")
+    def test_uses_constructor_params_over_env_vars(
+        self, mock_connect: MagicMock
+    ) -> None:
+        """Constructor params should override env vars."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [("pkg", "1.0", "debian", "sid", "amd64")]
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        mock_connect.return_value = mock_conn
+
+        with patch.dict(
+            os.environ,
+            {
+                "UDD_HOST": "env-host",
+                "UDD_PORT": "5432",
+                "UDD_DATABASE": "udd",
+                "UDD_USER": "env-user",
+                "UDD_PASSWORD": "env-pass",
+            },
+        ):
+            source = UDDDataSource(
+                table="packages",
+                limit=1,
+                host="ctor-host",
+                user="ctor-user",
+                password="ctor-pass",
+            )
+            source.retrieve()
+
+            call_kwargs = mock_connect.call_args.kwargs
+            assert call_kwargs["host"] == "ctor-host"
+            assert call_kwargs["user"] == "ctor-user"
+            assert call_kwargs["password"] == "ctor-pass"

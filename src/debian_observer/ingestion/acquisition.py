@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import random
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
@@ -576,8 +577,9 @@ class UDDDataSource(DataSource):
     Queries the ultimate Debian database (UDD) public mirror at
     udd-mirror.debian.net for real package metadata.
 
-    Connection parameters can be overridden via constructor arguments.
-    Defaults fall back to hardcoded class constants.
+    Connection parameters can be overridden via constructor arguments
+    or environment variables. Constructor arguments take highest priority,
+    followed by env vars, then built-in defaults.
 
     Usage:
 
@@ -585,11 +587,26 @@ class UDDDataSource(DataSource):
         records = source.retrieve()
     """
 
-    HOST = "udd-mirror.debian.net"
-    PORT = 5432
-    DATABASE = "udd"
-    USER = "udd-mirror"
-    PASSWORD = "udd-mirror"
+    @property
+    def _host(self) -> str:
+        return self._host_override or os.getenv("UDD_HOST", "udd-mirror.debian.net")
+
+    @property
+    def _port(self) -> int:
+        port = self._port_override or os.getenv("UDD_PORT", "5432")
+        return int(port)
+
+    @property
+    def _database(self) -> str:
+        return self._database_override or os.getenv("UDD_DATABASE", "udd")
+
+    @property
+    def _user(self) -> str:
+        return self._user_override or os.getenv("UDD_USER", "udd-mirror")
+
+    @property
+    def _password(self) -> str:
+        return self._password_override or os.getenv("UDD_PASSWORD", "udd-mirror")
 
     def __init__(
         self,
@@ -623,11 +640,11 @@ class UDDDataSource(DataSource):
             return self._records
 
         conn = psycopg2.connect(
-            host=self._host_override or self.HOST,
-            port=self._port_override or self.PORT,
-            database=self._database_override or self.DATABASE,
-            user=self._user_override or self.USER,
-            password=self._password_override or self.PASSWORD,
+            host=self._host,
+            port=self._port,
+            database=self._database,
+            user=self._user,
+            password=self._password,
         )
         with conn.cursor() as cursor:
             cursor.execute(

@@ -251,6 +251,7 @@ debian-observer query \
 | Format | Flag | Use case |
 |--------|------|----------|
 | Table | `--format table` (default) | Human-readable |
+| JSON | `--format json` | Machine parsing |
 | CSV | `--format csv` | Spreadsheet import |
 
 **Example: export to CSV**

@@ -19,7 +19,7 @@ from debian_observer.storage.analytical import AnalyticalStorage
     "--format",
     "output_format",
     default="table",
-    type=click.Choice(["table", "csv"]),
+    type=click.Choice(["table", "json", "csv"]),
     help="Output format (default: table).",
 )
 def query(sql: str, parquet_dir: str, output_format: str) -> None:
@@ -39,6 +39,16 @@ def query(sql: str, parquet_dir: str, output_format: str) -> None:
                 click.echo(" | ".join(str(c) for c in row))
         else:
             click.echo("No rows returned.")
+    elif output_format == "json":
+        import json
+
+        rows = result.fetchall()
+        if rows:
+            header = [desc[0] for desc in result.description or []]
+            out = [dict(zip(header, row)) for row in rows]
+            click.echo(json.dumps(out, indent=2, default=str))
+        else:
+            click.echo("[]")
     elif output_format == "csv":
         import csv
         import sys

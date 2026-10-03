@@ -196,3 +196,120 @@ def test_query_empty_json_output():
 
         assert result.exit_code == 0
         assert result.output.strip() == "[]"
+
+
+def test_query_csv_output():
+    """Query should return valid CSV when --format csv is used."""
+    runner = CliRunner()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        event = EventEnvelope.from_payload(
+            event_type="PackageVersionObserved",
+            source="udd",
+            entity_id="hello:amd64",
+            payload_model=PackageVersionObservedPayload(
+                package_id="hello:amd64",
+                version="2.10-3",
+                distribution="sid",
+                architecture="amd64",
+                component="main",
+                priority="optional",
+                observation=ObservationMeta(source="udd"),
+            ),
+            ingestion_run_id="run-test",
+        )
+
+        import pyarrow as pa
+
+        row = {
+            "event_id": str(event.event_id),
+            "event_type": event.event_type,
+            "source": event.source,
+            "entity_id": event.entity_id,
+            "observed_at": event.observed_at.isoformat(),
+            "effective_at": event.effective_at.isoformat(),
+            "ingestion_run_id": event.ingestion_run_id,
+            "package_id": event.payload["package_id"],
+            "version": event.payload["version"],
+            "distribution": event.payload["distribution"],
+            "architecture": event.payload["architecture"],
+            "component": event.payload["component"],
+            "priority": event.payload["priority"],
+        }
+        table = pa.Table.from_pylist([row])
+        pq.write_table(table, Path(tmpdir) / "test-events.parquet")
+
+        result = runner.invoke(
+            cli,
+            [
+                "query",
+                "SELECT entity_id, version FROM events WHERE distribution = 'sid'",
+                "--parquet-dir",
+                tmpdir,
+                "--format",
+                "csv",
+            ],
+        )
+
+        assert result.exit_code == 0
+        lines = result.output.strip().split("\n")
+        assert len(lines) == 2  # header + data row
+        assert "entity_id" in lines[0]
+        assert "hello:amd64" in lines[1]
+
+
+def test_query_table_no_rows():
+    """Query should print 'No rows returned.' when table format finds nothing."""
+    runner = CliRunner()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        event = EventEnvelope.from_payload(
+            event_type="PackageVersionObserved",
+            source="udd",
+            entity_id="hello:amd64",
+            payload_model=PackageVersionObservedPayload(
+                package_id="hello:amd64",
+                version="2.10-3",
+                distribution="sid",
+                architecture="amd64",
+                component="main",
+                priority="optional",
+                observation=ObservationMeta(source="udd"),
+            ),
+            ingestion_run_id="run-test",
+        )
+
+        import pyarrow as pa
+
+        row = {
+            "event_id": str(event.event_id),
+            "event_type": event.event_type,
+            "source": event.source,
+            "entity_id": event.entity_id,
+            "observed_at": event.observed_at.isoformat(),
+            "effective_at": event.effective_at.isoformat(),
+            "ingestion_run_id": event.ingestion_run_id,
+            "package_id": event.payload["package_id"],
+            "version": event.payload["version"],
+            "distribution": event.payload["distribution"],
+            "architecture": event.payload["architecture"],
+            "component": event.payload["component"],
+            "priority": event.payload["priority"],
+        }
+        table = pa.Table.from_pylist([row])
+        pq.write_table(table, Path(tmpdir) / "test-events.parquet")
+
+        result = runner.invoke(
+            cli,
+            [
+                "query",
+                "SELECT entity_id, version FROM events WHERE distribution = 'nonexistent'",
+                "--parquet-dir",
+                tmpdir,
+                "--format",
+                "table",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "No rows returned." in result.output

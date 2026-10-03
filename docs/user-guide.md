@@ -323,18 +323,31 @@ debian-observer consume \
 
 ## API Endpoints
 
-When the API service is running:
+### Serve the API
+
+Start the FastAPI service with data loaded from Parquet:
+
+```bash
+debian-observer serve \
+  --parquet-dir data/parquet \
+  --host 0.0.0.0 \
+  --port 8000
+```
+
+Without `--parquet-dir`, the API starts with an empty store (useful for testing).
+
+### Available endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/health` | GET | Service health check |
 | `/metrics/` | GET | Available telemetry instruments |
-| `/packages/` | GET | List packages |
-| `/packages/{entity_id}` | GET | Package detail |
+| `/packages/{name}` | GET | Package detail |
+| `/packages/{name}/versions` | GET | Package versions |
 | `/releases/` | GET | List releases |
 | `/migrations/` | GET | List migrations |
 | `/datasets/` | GET | List dataset manifests |
-| `/events/` | GET | List domain events |
+| `/events/{event_id}` | GET | Event by ID |
 
 
 ## Testing

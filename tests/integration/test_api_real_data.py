@@ -13,10 +13,10 @@ from unittest.mock import MagicMock, patch
 
 sys.modules["psycopg2"] = MagicMock()
 
-from debian_observer.api.loader import EventLoader
 from fastapi.testclient import TestClient
 
 from debian_observer.api.app import create_app
+from debian_observer.api.loader import EventLoader
 from debian_observer.api.store import InMemoryStore
 from debian_observer.ingestion.acquisition import UDDDataSource
 from debian_observer.ingestion.pipeline import IngestionPipeline

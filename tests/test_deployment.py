@@ -95,10 +95,15 @@ class TestDockerfile:
         assert "HEALTHCHECK" in dockerfile
         assert "localhost:8000/health" in dockerfile
 
-    def test_uvicorn_cmd(self, dockerfile: str):
-        assert "uvicorn" in dockerfile
-        assert "debian_observer.api.app:create_app" in dockerfile
-        assert "--factory" in dockerfile
+    def test_serve_cmd(self, dockerfile: str):
+        assert "debian-observer" in dockerfile
+        assert "serve" in dockerfile
+        assert "--host" in dockerfile
+        assert "0.0.0.0" in dockerfile
+        assert "--port" in dockerfile
+
+    def test_parquet_env_handled(self, dockerfile: str):
+        assert "PARQUET_DIR" in dockerfile
 
 
 class TestDeploymentReadme:

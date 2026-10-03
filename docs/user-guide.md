@@ -334,7 +334,7 @@ debian-observer serve \
   --port 8000
 ```
 
-Without `--parquet-dir`, the API starts with an empty store (useful for testing).
+Without `--parquet-dir`, the API starts with an empty store (useful for testing), unless the `PARQUET_DIR` environment variable is set.
 
 ### Available endpoints
 

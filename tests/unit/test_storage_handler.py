@@ -5,10 +5,9 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from debian_observer.storage.handlers import PersistingHandler
-
 from debian_observer.events import EventEnvelope
 from debian_observer.events.types import ObservationMeta, PackageVersionObservedPayload
+from debian_observer.storage.handlers import PersistingHandler
 
 
 def _make_event(run_id: str = "run-test") -> EventEnvelope:

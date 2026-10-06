@@ -31,38 +31,36 @@ resource "docker_image" "nats" {
 }
 
 resource "docker_container" "nats" {
-  name  = "${var.project_name}-nats"
-  image = docker_image.nats.image_id
+  name       = "${var.project_name}-nats"
+  image      = docker_image.nats.image_id
+  privileged = true
 
   command = [
     "--jetstream",
     "--store_dir", "/data/jetstream",
+    "--port", "14222",
+    "--http_port", "18222",
   ]
 
   ports {
-    internal = 4222
+    internal = 14222
     external = var.nats_port
+    ip       = "127.0.0.1"
   }
 
   ports {
-    internal = 8222
+    internal = 18222
     external = var.nats_monitoring_port
+    ip       = "127.0.0.1"
   }
 
   volumes {
     container_path = "/data/jetstream"
-    host_path      = "${var.data_dir}/nats"
+    host_path      = abspath("${var.data_dir}/nats")
   }
 
   networks_advanced {
     name = docker_network.observatory.name
-  }
-
-  healthcheck {
-    test     = ["CMD", "wget", "-qO-", "http://localhost:8222/healthz"]
-    interval = "10s"
-    timeout  = "5s"
-    retries  = 5
   }
 }
 
@@ -71,8 +69,11 @@ resource "docker_container" "nats" {
 # ---------------------------------------------------------------------------
 
 resource "docker_image" "observer" {
-  name         = var.observer_image
-  keep_locally = false
+  name = var.observer_image
+  build {
+    context = "../.."
+    dockerfile = "deploy/compose/Dockerfile"
+  }
 }
 
 resource "docker_container" "observer_api" {
@@ -80,7 +81,7 @@ resource "docker_container" "observer_api" {
   image = docker_image.observer.image_id
 
   env = [
-    "NATS_URL=nats://${docker_container.nats.name}:4222",
+    "NATS_URL=nats://${docker_container.nats.name}:14222",
     "PARQUET_DIR=/data/parquet",
   ]
 
@@ -91,7 +92,7 @@ resource "docker_container" "observer_api" {
 
   volumes {
     container_path = "/data/parquet"
-    host_path      = "${var.data_dir}/parquet"
+    host_path      = abspath("${var.data_dir}/parquet")
   }
 
   networks_advanced {

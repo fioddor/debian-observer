@@ -23,15 +23,15 @@ variable "nats_version" {
 }
 
 variable "nats_port" {
-  description = "External NATS client port"
+  description = "External NATS client port (unprivileged for nested containers)"
   type        = number
-  default     = 4222
+  default     = 14222
 }
 
 variable "nats_monitoring_port" {
-  description = "External NATS monitoring port"
+  description = "External NATS monitoring port (unprivileged for nested containers)"
   type        = number
-  default     = 8222
+  default     = 18222
 }
 
 variable "observer_image" {
@@ -41,7 +41,7 @@ variable "observer_image" {
 }
 
 variable "api_port" {
-  description = "External API port"
+  description = "External API port (unprivileged for nested containers)"
   type        = number
-  default     = 8000
+  default     = 18000
 }

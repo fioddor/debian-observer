@@ -141,3 +141,10 @@ data/*
 *.sqlite
 nats-server.log
 jetstream/
+
+# OpenTofu / Terraform
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+*.tfplan

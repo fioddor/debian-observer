@@ -1,0 +1,51 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "debian-observer"
+version = "0.1.0"
+description = "A reproducible, event-driven observatory for studying the evolution of Debian releases."
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "AGPL-3.0-or-later"}
+authors = [
+    {name = "Debian Observatory Team"},
+]
+keywords = ["debian", "observatory", "data-engineering"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+    "pydantic>=2.0",
+    "click",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-bdd>=7.0",
+    "pytest-cov>=5.0",
+    "pytest-mock>=3.14",
+    "mypy>=1.9",
+    "black>=24.0",
+    "ruff>=0.4",
+]
+
+[project.scripts]
+debian-observer = "debian_observer.cli.main:cli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/debian_observer"]
+
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 88
+select = ["E", "F", "W", "I"]

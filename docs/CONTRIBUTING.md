@@ -10,6 +10,106 @@ Just don't expect me to react promptly.
 What and how I plan to develop is documented in `docs/`.
 It is linked in README.md too.
 
+## How to
+
+## Set Up a Development Environment
+
+It is a good practice to separate the development environments from
+each other and from your system.
+
+## Option A: Python Venvs
+
+Create a virtual environment
+
+```shell
+python3 -m venv .your.venv
+source .your.venv/bin/activate
+pip install -e ".[dev]"
+```
+
+To tear it down without destroying it:
+```shell
+.your.venv/bin/deactivate
+```
+
+To re-enter your virtual environment:
+`. .your.venv/bin/activate`
+
+
+To destroy it:
+```shell
+rm -rf .your.venv
+```
+
+### Option B: Docker (Compose)
+
+Create a virtual environment
+
+```shell
+cd .devcontainer
+docker compose up -d
+```
+
+To tear it down without destroying it:
+```shell
+docker stop debian-observer-dev
+```
+
+To re-enter your virtual environment:
+```shell
+cd .devcontainer
+docker compose up -d
+docker exec -ti debian-observer-dev bash
+```
+
+To destroy it:
+```shell
+cd .devcontainer
+docker compose down
+docker rmi  devcontainer-debian-observer-development
+```
+
+# Testing
+
+Run the test suite:
+
+```bash
+pytest
+```
+
+This runs all tests with coverage reporting. The minimum threshold is 80%.
+
+In a freshly started development container the startup setup installs
+pytest and its plugins in the background (`pip install -e ".[dev]"`); it
+takes a few seconds. If `pytest` crashes right after container start,
+wait a few seconds and run it again.
+
+# Building/Packaging
+
+```shell
+python3 -m pip install --upgrade build
+python3 -m build
+```
+
+Generates/refreshes:
+```shell
+ls -l dist/
+total 88
+-rw-r--r-- 1 root root 34413 oct  8 00:18 debian_observer-0.1.0-py3-none-any.whl
+-rw-r--r-- 1 root root 52926 oct  8 00:18 debian_observer-0.1.0.tar.gz
+```
+
+# Distributing
+
+`ln -sf debian_observer-0.1.0-py3-none-any.whl debian_observer.whl` facilitates
+the distribution:
+
+
+```shell
+pipx install dist/debian_observer.whl
+```
+
+
 # Rules
 
 ## Feature Branches

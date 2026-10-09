@@ -123,6 +123,21 @@ Re-publish events to NATS (dry-run by default):
 debian-observer replay --input events.jsonl --dry-run
 ```
 
+## API Endpoints
+
+When the API service is running:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Service health check |
+| `/metrics/` | GET | Available telemetry instruments |
+| `/packages/` | GET | List packages |
+| `/packages/{entity_id}` | GET | Package detail |
+| `/releases/` | GET | List releases |
+| `/migrations/` | GET | List migrations |
+| `/datasets/` | GET | List dataset manifests |
+| `/events/` | GET | List domain events |
+
 ## Testing
 
 All features include tests. The test suite uses `pytest` with coverage reporting.

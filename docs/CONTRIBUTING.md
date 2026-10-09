@@ -19,6 +19,10 @@ each other and from your system.
 
 ## Option A: Python Venvs
 
+If you prefer not to use containers, create a virtual environment and install
+in editable mode. You will need to run NATS separately (see
+`deploy/compose/docker-compose.yml`).
+
 Create a virtual environment
 
 ```shell
@@ -42,6 +46,16 @@ rm -rf .your.venv
 ```
 
 ### Option B: Docker (Compose)
+
+This repository provides a fully reproducible development environment
+with NATS JetStream pre-configured.
+
+**Services included:**
+
+ - Python >=3.11 with project dependencies
+ - NATS JetStream on `nats://nats:4222`
+ - NATS CLI for stream inspection
+ - Black, Ruff, MyPy pre-configured
 
 Create a virtual environment
 
@@ -68,6 +82,28 @@ cd .devcontainer
 docker compose down
 docker rmi  devcontainer-debian-observer-development
 ```
+
+### Option C: VS Dev Container
+
+The project includes a VS Code Dev Container configuration that
+connects the docker development containers to VS Code.
+
+**Requirements:**
+- [VS Code](https://code.visualstudio.com/) + [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+- Docker + Docker Compose
+
+**Quick start:**
+1. Open the project folder in VS Code
+2. Press `F1` → type "Dev Containers: Reopen in Container"
+3. VS Code builds the container, installs dependencies, and starts NATS
+4. Wait for the post-create setup to complete (installs `pip install -e ".[dev]"`)
+
+
+## Verify
+
+ - CLI: `debian-observer --help`
+ - NATS: `nats server info`
+
 
 # Testing
 

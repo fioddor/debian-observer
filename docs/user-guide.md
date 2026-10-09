@@ -96,9 +96,44 @@ Data is stored in **Parquet** format with a **DuckDB** analytical layer for SQL 
 
 The ingestion pipeline integrates ParquetWriter for optional persistent storage. After running `debian-observer ingest`, raw artifacts and Parquet events are available in `data/`.
 
+## Messaging (NATS JetStream)
+
+Events are published to NATS JetStream for durable messaging.
+
+### Docker Compose
+
+Start NATS:
+
+```bash
+cd deploy/compose
+docker compose up -d nats
+```
+
+Verify:
+
+```bash
+curl http://localhost:8222/healthz
+```
+
+### Replay events
+
+Re-publish events to NATS (dry-run by default):
+
+```bash
+debian-observer replay --input events.jsonl --dry-run
+```
+
 ## Testing
 
 All features include tests. The test suite uses `pytest` with coverage reporting.
+
+### Dev Container (recommended)
+
+Open the project in VS Code with the Dev Container extension. Dependencies are pre-installed and tests run automatically on container creation.
+
+```bash
+pytest tests/ -q
+```
 
 ### Local virtual environment
 

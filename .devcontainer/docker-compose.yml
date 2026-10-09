@@ -9,8 +9,8 @@
 services:
   debian-observer-development:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
     container_name: debian-observer-dev
     hostname: deb-obs-dev
     stdin_open: true          # keeps STDIN open (like -i)
@@ -23,7 +23,7 @@ services:
     command: >
       sh -c "
         cd /workspace &&
-        pip install -e '.[dev]' &&
+        pip install --user -e '.[dev]' &&
         echo 'Dependencies installed. Run tests with: pytest tests/' &&
         sleep infinity
       "

@@ -201,6 +201,47 @@ Tests first, and full coverage (with reasonable exceptions).
 
 Prefer using Gherking-like test definitions and structures.
 
+
+## Deployment: OpenTofu vs Docker Compose
+
+Two deployment options are maintained for different use cases.
+
+### OpenTofu (Production / Reproducible)
+
+Use `deploy/opentofu/` when you need:
+
+- **Declarative state management:** Infrastructure defined as code with `tofu plan` / `tofu apply`
+- **Parameterized deployments:** Ports, image names, and network settings in `variables.tf`
+- **Automated outputs:** URLs exposed as outputs (`nats_url`, `api_url`, `nats_monitoring_url`)
+- **Full lifecycle:** `tofu init` → `plan` → `apply` → `destroy`
+- **Build automation:** The observer image can be built automatically from `deploy/compose/Dockerfile`
+
+**Trade-off:** Requires OpenTofu >= 1.6 installed on the host.
+
+### Docker Compose (Development / Quick-start)
+
+Use `deploy/compose/docker-compose.yml` when you need:
+
+- **Zero additional tooling:** Only Docker Compose required
+- **Fast iterative cycles:** `docker compose up -d` / `docker compose down`
+- **Direct container access:** `docker exec -ti debian-observer bash`
+- **Development convenience:** Mounts source code for live reloading
+
+**Trade-off:** Imperative workflow (no state management), ports and settings hardcoded in YAML.
+
+### Decision Matrix
+
+| Need | OpenTofu | Docker Compose |
+|:---|:---|:---|
+| Production deployment | ✅ | ❌ |
+| CI/CD reproducibility | ✅ | ❌ |
+| Parameterized ports/settings | ✅ | ❌ |
+| Local development | ⚠️ (overkill) | ✅ |
+| Quick smoke test | ⚠️ (slower init) | ✅ |
+| Live code reloading | ❌ | ✅ |
+
+**Rule of thumb:** OpenTofu for anything that deploys to a shared environment; Compose for personal development on a single machine.
+
 ## Tiny commits
 
 Use tiny commits. It helps to re-arrange them.

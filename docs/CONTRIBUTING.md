@@ -261,3 +261,43 @@ Commit texts must separate 3 concerns:
  - The last commit on each PRs/feat branch must build and pass the CI/CD pipeline. 
  - On `tdd`, R-commits fail on purpose. G- and B- commits must all pass the CI/CD pipeline.
  - All commits on `fdd`*must pass the CI/CD pipeline.
+
+# Licensing
+
+The project is licensed under `AGPL-3.0-or-later`; the license text lives
+in `LICENSES/AGPL-3.0-or-later.txt`.
+
+The repository follows the [REUSE](https://reuse.software/spec/) layout:
+
+ - `REUSE.toml` carries the package metadata and the default
+   copyright/license annotation covering every repository file.
+ - `LICENSES/` holds the license texts.
+
+The one-line law: **license texts live exactly once in `LICENSES/`; everywhere
+else licensing is expressed as `SPDX-License-Identifier` expressions.**
+Never paste a license text anywhere else in the repository.
+
+Before pushing, check compliance:
+
+```bash
+reuse lint    # must exit 0 (part of the dev extras: pip install -e ".[dev]")
+reuse spdx    # prints an on-demand, file-level SPDX document; do not commit it
+```
+
+# SBOM
+
+`docs/SBOM.spdx.json` is the SBOM of the development environment: the
+Python dependencies installed in the devcontainer, in SPDX 2.3 JSON
+format, with SPDX identifiers and purls only — no license texts.
+
+Regenerate it whenever `[project].dependencies` changes:
+
+```bash
+docker compose -f .devcontainer/docker-compose.yml up -d   # if not running
+scripts/generate-sbom.sh
+```
+
+The script pins the `syft` version it uses, downloads it into the running
+devcontainer, scans the container's installed site-packages (path derived
+at run time) and rewrites `docs/SBOM.spdx.json`. Commit the regenerated
+SBOM together with the dependency change.

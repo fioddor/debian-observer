@@ -1,0 +1,16 @@
+# REUSE.toml - package metadata + default licensing annotation.
+# REUSE Specification 3.2+ (https://reuse.software/spec/).
+
+version = 1
+
+SPDX-PackageName = "debian-observer"
+SPDX-PackageDownloadLocation = "NOASSERTION"
+SPDX-License-Concluded = "AGPL-3.0-or-later"
+
+# Default annotation: covers every repository file that does not carry its
+# own REUSE info. License texts live exactly once in LICENSES/; everywhere
+# else licensing is expressed as SPDX expressions.
+[[annotations]]
+path = "**"
+SPDX-FileCopyrightText = "2026 Igor Zubiaurre <igor@zubiaurre.es>"
+SPDX-License-Identifier = "AGPL-3.0-or-later"

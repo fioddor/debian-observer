@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Purpose: a) Container image for a python CLI application.
 #          b) Production-ready container for the FastAPI analytical service.
 # Author.: Igor Zubiaurre <igor@zubiaurre.es>

@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Purpose: Local containerized deployment orchestration for developers.
 # Design.: No service implemented yet => Endless loop to keep the container
 #          up after the deployment of development dependencies.

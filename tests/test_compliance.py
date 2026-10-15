@@ -32,7 +32,8 @@ def _declared_dependencies() -> list[str]:
 
 
 def test_sbom_spdx_covers_declared_deps():
-    sbom = json.loads((REPO_ROOT / "docs" / "SBOM.spdx.json").read_text(encoding="utf-8"))
+    sbom_path = REPO_ROOT / "docs" / "SBOM.spdx.json"
+    sbom = json.loads(sbom_path.read_text(encoding="utf-8"))
 
     assert sbom["spdxVersion"] == "SPDX-2.3"
     assert sbom["dataLicense"] == "CC0-1.0"

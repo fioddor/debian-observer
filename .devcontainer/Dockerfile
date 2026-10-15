@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: AGPL-3.0-only
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Purpose: Container image for Debian Observer
 # Design.: Python 3.13.
 #          Provides Python, development tooling, and NATS CLI.

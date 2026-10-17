@@ -601,3 +601,25 @@ class TestPackageVersionObservedExtendedFields:
         assert row["source_package"] == "dpdk"
         assert row["release"] == "bullseye-security"
         assert row["section"] == "libs"
+
+
+class TestPackageVersionObservedSuiteField:
+    """PackageVersionObserved payload carries the suite role."""
+
+    def test_construction_and_parquet_row(self) -> None:
+        obs = ObservationMeta(source="debian.mirror")
+        payload = PackageVersionObservedPayload(
+            package_id="vim:amd64",
+            version="2:9.0-1",
+            distribution="debian",
+            release="bookworm",
+            suite="stable",
+            architecture="amd64",
+            component="main",
+            priority="optional",
+            observation=obs,
+        )
+        assert payload.suite == "stable"
+
+        row = payload.to_parquet_row()
+        assert row["suite"] == "stable"

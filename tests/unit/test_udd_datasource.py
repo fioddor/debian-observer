@@ -157,3 +157,23 @@ class TestUDDFullFactFields:
         assert records[0]["release"] == "bullseye-security"
         assert records[0]["section"] == "libs"
         assert records[0]["priority"] == "optional"
+
+
+class TestUDDRecordShapeUniformity:
+    """UDD records emit the uniform fact shape; suite roles are unknown."""
+
+    @patch("psycopg2.connect")
+    def test_record_carries_suite_none(self, mock_connect: MagicMock) -> None:
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [
+            ("hello", "hello", "2.10-3", "debian", "sid", "amd64", "devel", "optional"),
+        ]
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        mock_connect.return_value = mock_conn
+
+        source = UDDDataSource(table="packages", limit=5)
+        records = source.retrieve()
+
+        assert records[0]["suite"] is None

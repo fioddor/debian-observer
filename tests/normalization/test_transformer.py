@@ -15,6 +15,7 @@ class TestPackageVersionTransformer:
             "version": "2:9.0-1",
             "distribution": "debian",
             "release": "sid",
+            "suite": "unstable",
             "architecture": "amd64",
             "component": "main",
             "section": "editors",
@@ -27,6 +28,7 @@ class TestPackageVersionTransformer:
         assert version.version == "2:9.0-1"
         assert version.distribution == "debian"
         assert version.release == "sid"
+        assert version.suite == "unstable"
         assert version.architecture == "amd64"
         assert version.component == "main"
         assert version.section == "editors"
@@ -54,6 +56,7 @@ class TestPackageVersionTransformer:
         assert version.architecture is None
         assert version.distribution is None
         assert version.release is None
+        assert version.suite is None
         assert version.component is None
         assert version.section is None
         assert version.source_package is None

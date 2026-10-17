@@ -413,3 +413,27 @@ class TestPackageVersionExtendedFields:
         assert pv.source_package is None
         assert pv.release is None
         assert pv.section is None
+
+
+class TestPackageVersionSuiteField:
+    """PackageVersion carries the suite role field."""
+
+    def test_full_construction_with_suite(self) -> None:
+        pv = PackageVersion(
+            package_id="vim:amd64",
+            version="2:9.0-1",
+            distribution="debian",
+            release="bookworm",
+            suite="stable",
+            architecture="amd64",
+            source="debian.mirror",
+        )
+        assert pv.suite == "stable"
+
+    def test_suite_defaults_to_none(self) -> None:
+        pv = PackageVersion(
+            package_id="vim:amd64",
+            version="2:9.0-1",
+            source="udd",
+        )
+        assert pv.suite is None

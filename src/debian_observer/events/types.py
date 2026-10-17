@@ -186,24 +186,6 @@ class PackageObservedPayload(BaseModel):
             raise ValueError("package_id must be a non-empty string")
         return value
 
-    def to_parquet_row(self) -> dict[str, Any]:
-        """Flatten payload to a Parquet-compatible row dict."""
-        obs = self.observation
-        return {
-            "package_id": self.package_id,
-            "name": self.name,
-            "source_package": self.source_package,
-            "section": self.section,
-            "architecture": self.architecture,
-            "maintainer": self.maintainer,
-            "description": self.description,
-            "observation_source": obs.source,
-            "observation_observed_at": obs.observed_at.isoformat(),
-            "observation_effective_at": obs.effective_at.isoformat(),
-            "observation_schema_version": obs.schema_version,
-            "observation_ingestion_run_id": obs.ingestion_run_id,
-        }
-
 
 # ---------------------------------------------------------------------------
 # 6.2 Specific event type: PackageVersionObserved
@@ -278,27 +260,6 @@ class PackageVersionObservedPayload(BaseModel):
             raise ValueError("package_id must be a non-empty string")
         return value
 
-    def to_parquet_row(self) -> dict[str, Any]:
-        """Flatten payload to a Parquet-compatible row dict."""
-        obs = self.observation
-        return {
-            "package_id": self.package_id,
-            "source_package": self.source_package,
-            "version": self.version,
-            "distribution": self.distribution,
-            "release": self.release,
-            "suite": self.suite,
-            "architecture": self.architecture,
-            "component": self.component,
-            "section": self.section,
-            "priority": self.priority,
-            "observation_source": obs.source,
-            "observation_observed_at": obs.observed_at.isoformat(),
-            "observation_effective_at": obs.effective_at.isoformat(),
-            "observation_schema_version": obs.schema_version,
-            "observation_ingestion_run_id": obs.ingestion_run_id,
-        }
-
 
 # ---------------------------------------------------------------------------
 # 6.2 Specific event type: ReleaseObserved
@@ -340,23 +301,6 @@ class ReleaseObservedPayload(BaseModel):
         if not value or not isinstance(value, str):
             raise ValueError("Field must be a non-empty string")
         return value
-
-    def to_parquet_row(self) -> dict[str, Any]:
-        """Flatten payload to a Parquet-compatible row dict."""
-        obs = self.observation
-        return {
-            "release_id": self.release_id,
-            "name": self.name,
-            "codename": self.codename,
-            "status": self.status,
-            "release_version": self.version,
-            "description": self.description,
-            "observation_source": obs.source,
-            "observation_observed_at": obs.observed_at.isoformat(),
-            "observation_effective_at": obs.effective_at.isoformat(),
-            "observation_schema_version": obs.schema_version,
-            "observation_ingestion_run_id": obs.ingestion_run_id,
-        }
 
 
 # ---------------------------------------------------------------------------
@@ -422,21 +366,3 @@ class MigrationObservedPayload(BaseModel):
         if not value or not isinstance(value, str):
             raise ValueError("Field must be a non-empty string")
         return value
-
-    def to_parquet_row(self) -> dict[str, Any]:
-        """Flatten payload to a Parquet-compatible row dict."""
-        obs = self.observation
-        return {
-            "migration_id": self.migration_id,
-            "source": self.source,
-            "target": self.target,
-            "package": self.package,
-            "version": self.version,
-            "architecture": self.architecture,
-            "status": self.status.value,
-            "observation_source": obs.source,
-            "observation_observed_at": obs.observed_at.isoformat(),
-            "observation_effective_at": obs.effective_at.isoformat(),
-            "observation_schema_version": obs.schema_version,
-            "observation_ingestion_run_id": obs.ingestion_run_id,
-        }

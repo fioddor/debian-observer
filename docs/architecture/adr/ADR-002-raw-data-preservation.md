@@ -55,6 +55,12 @@ It is responsible for
  5. creating the manifest,
  6. and triggering downstream processing.
 
+Each manifest is persisted as a JSON file next to the raw
+artifact (`raw/<source>-<timestamp>-<run>.manifest.json`), so the
+provenance chain survives the run. The manifest format is JSON;
+the YAML block in the project spec is illustrative of the fields
+only.
+
 Where the data source permits, R1 will support incremental processing,
 distinguishing new, changed, unchanged, and invalid data to avoid unnecessary reprocessing.
 

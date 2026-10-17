@@ -274,7 +274,7 @@ Data is stored in **Parquet** format with a **DuckDB** analytical layer for SQL 
 
 ## Pipeline
 
-The ingestion pipeline integrates ParquetWriter for optional persistent storage. After running `debian-observer ingest`, raw artifacts and Parquet events are available in `data/`.
+The ingestion pipeline integrates ParquetWriter for optional persistent storage. After running `debian-observer ingest`, raw artifacts, the run manifest (JSON, `*.manifest.json` next to each raw artifact) and Parquet events are available in `data/`.
 
 The pipeline can also project `PackageVersionObserved` events into the normalized dataset (spec §10.2, ADR-003, ADR-011):
 

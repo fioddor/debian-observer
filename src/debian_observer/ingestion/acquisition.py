@@ -462,7 +462,7 @@ class SourcesDebianOrgDataSource(DataSource):
                         "distribution": "debian",
                         "suite": suite_role,
                         "release": release,
-                        "area": v.get("area", "main"),
+                        "component": v.get("area", "main"),
                         "source": self.name,
                         "observed_at": datetime.now(timezone.utc).isoformat(),
                     }
@@ -713,7 +713,7 @@ class UDDDataSource(DataSource):
         with conn.cursor() as cursor:
             cursor.execute(
                 f"SELECT package, source, version, distribution, release, "
-                f"architecture, section, priority FROM {self._table} "
+                f"architecture, section, priority, component FROM {self._table} "
                 f"LIMIT %s",
                 (self._limit,),
             )
@@ -731,6 +731,7 @@ class UDDDataSource(DataSource):
                     "release": row[4] or "unknown",
                     "suite": None,  # UDD exposes pockets, not suite roles
                     "architecture": row[5] or "unknown",
+                    "component": row[8] or "unknown",
                     "section": row[6],
                     "priority": row[7],
                     "source": self.name,

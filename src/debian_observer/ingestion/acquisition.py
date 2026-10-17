@@ -623,33 +623,56 @@ class DebianMirrorDataSource(DataSource):
             elif line.startswith("Priority: "):
                 current["priority"] = line.split(": ", 1)[1]
             elif line == "" and current:
-                records.append(
-                    {
-                        "package": current.get("package", ""),
-                        "version": current.get("version", ""),
-                        "distribution": self._distribution,
-                        "suite": self._suite_role,
-                        "release": self._release_path,
-                        "architecture": current.get("architecture", self._architecture),
-                        "component": self._component,
-                        "section": current.get("section"),
-                        "priority": current.get("priority"),
-                        "source": self.name,
-                        "observed_at": datetime.now(timezone.utc).isoformat(),
-                    }
-                )
+                # Corrupt-stanza guard: no Package: field means the record
+                # cannot be identified — drop it instead of emitting
+                # package='' garbage (gzip mojibake, parse drift).
+                if "package" in current:
+                    records.append(
+                        {
+                            "package": current["package"],
+                            "version": current.get("version", ""),
+                            "distribution": self._distribution,
+                            "suite": self._suite_role,
+                            "release": self._release_path,
+                            "architecture": current.get("architecture", self._architecture),
+                            "component": self._component,
+                            "section": current.get("section"),
+                            "priority": current.get("priority"),
+                            "source": self.name,
+                            "observed_at": datetime.now(timezone.utc).isoformat(),
+                        }
+                    )
+                    count += 1
                 current = {}
-                count += 1
                 if self._limit is not None and count >= self._limit:
                     break
+
+        # Trailing-stanza guard: a Packages file that does not end with a
+        # blank line (truncated download, partial mirror, --limit cut) still
+        # carries one unparsed stanza — emit it instead of losing it.
+        if current and "package" in current:
+            records.append(
+                {
+                    "package": current["package"],
+                    "version": current.get("version", ""),
+                    "distribution": self._distribution,
+                    "suite": self._suite_role,
+                    "release": self._release_path,
+                    "architecture": current.get("architecture", self._architecture),
+                    "component": self._component,
+                    "section": current.get("section"),
+                    "priority": current.get("priority"),
+                    "source": self.name,
+                    "observed_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
 
         self._records = records
         return records
 
     def compute_checksum(self) -> str:
         """Compute SHA-256 of canonical JSON representation."""
-        canonical = json.dumps(self.retrieve(), sort_keys=True, ensure_ascii=False)
-        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        return _stable_records_checksum(self.retrieve())
 
 
 # ---------------------------------------------------------------------------

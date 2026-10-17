@@ -54,7 +54,7 @@ class TestEventEnvelope:
             effective_at=now - timedelta(hours=1),
             entity_id="pkg:python3:3.11.2-1",
             ingestion_run_id="run-001",
-            payload={"version": "3.11.2-1", "distribution": "debian", "release": "sid"},
+            payload={"version": "3.11.2-1", "distribution": "sid"},
         )
         assert env.payload["version"] == "3.11.2-1"
         assert env.ingestion_run_id == "run-001"
@@ -111,6 +111,22 @@ class TestEventEnvelope:
         parsed = json.loads(raw)
         assert parsed["event_type"] == "PackageObserved"
         assert parsed["payload"]["key"] == "value"
+
+    def test_to_parquet_row(self) -> None:
+        env = EventEnvelope(
+            event_type="MigrationObserved",
+            source="udd",
+            entity_id="mig:test",
+            payload={"migration_id": "mig-001", "source": "sid", "target": "trixie"},
+        )
+        row = env.to_parquet_row()
+        assert row["event_type"] == "MigrationObserved"
+        assert row["schema_version"] == 1
+        assert (
+            row["payload_json"]
+            == '{"migration_id": "mig-001", "source": "sid", "target": "trixie"}'
+        )
+        assert isinstance(row["observed_at"], str)
 
     def test_get_payload_model_package(self) -> None:
         obs = ObservationMeta(source="udd")
@@ -203,6 +219,19 @@ class TestPackageObservedPayload:
                 name="UPPERCASE",
                 observation=obs,
             )
+
+    def test_to_parquet_row(self) -> None:
+        obs = ObservationMeta(source="udd")
+        payload = PackageObservedPayload(
+            package_id="libc6:amd64",
+            name="libc6",
+            architecture="amd64",
+            observation=obs,
+        )
+        row = payload.to_parquet_row()
+        assert row["package_id"] == "libc6:amd64"
+        assert row["observation_source"] == "udd"
+        assert isinstance(row["observation_observed_at"], str)
 
 
 class TestPackageVersionObservedPayload:
@@ -371,6 +400,19 @@ class TestDatasetManifest:
             record_count=0,
         )
         assert manifest.retrieved_at.tzinfo == timezone.utc
+
+    def test_to_parquet_row(self) -> None:
+        manifest = DatasetManifest(
+            name="udd-test",
+            source="udd.debian.net",
+            checksum=Checksum(algorithm="sha256", value="e" * 64),
+            size_bytes=5000,
+            record_count=50,
+        )
+        row = manifest.to_parquet_row()
+        assert row["name"] == "udd-test"
+        assert row["checksum_algorithm"] == "sha256"
+        assert row["tags"] == []
 
     def test_to_from_yaml(self) -> None:
         pytest.importorskip("yaml")
@@ -555,6 +597,11 @@ class TestPackageVersionObservedExtendedFields:
         assert payload.release == "bullseye-security"
         assert payload.section == "libs"
 
+        row = payload.to_parquet_row()
+        assert row["source_package"] == "dpdk"
+        assert row["release"] == "bullseye-security"
+        assert row["section"] == "libs"
+
 
 class TestPackageVersionObservedSuiteField:
     """PackageVersionObserved payload carries the suite role."""
@@ -573,3 +620,6 @@ class TestPackageVersionObservedSuiteField:
             observation=obs,
         )
         assert payload.suite == "stable"
+
+        row = payload.to_parquet_row()
+        assert row["suite"] == "stable"

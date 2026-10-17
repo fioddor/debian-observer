@@ -64,20 +64,6 @@ class TestPackage:
         pkg = Package(package_id="r", name="r")
         assert pkg.name == "r"
 
-    def test_to_parquet_row(self) -> None:
-        pkg = Package(
-            package_id="python3",
-            name="python3",
-            section="python",
-            architecture="all",
-        )
-        row = pkg.to_parquet_row()
-        assert row["package_id"] == "python3"
-        assert row["name"] == "python3"
-        assert row["section"] == "python"
-        assert row["architecture"] == "all"
-        assert row["source_package"] is None
-
     def test_hashable(self) -> None:
         pkg1 = Package(package_id="aa", name="aa")
         pkg2 = Package(package_id="aa", name="aa")
@@ -150,20 +136,6 @@ class TestPackageVersion:
         )
         assert pv.observed_at.tzinfo == timezone.utc
 
-    def test_to_parquet_row(self) -> None:
-        pv = PackageVersion(
-            package_id="python3",
-            version="3.11.2-1",
-            distribution="debian",
-            release="sid",
-            source="udd",
-        )
-        row = pv.to_parquet_row()
-        assert row["package_id"] == "python3"
-        assert row["version"] == "3.11.2-1"
-        assert row["distribution"] == "debian"
-        assert isinstance(row["observed_at"], str)
-
     def test_hashable(self) -> None:
         now = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
         pv1 = PackageVersion(
@@ -203,12 +175,6 @@ class TestRelease:
         assert rel.codename == "bookworm"
         assert rel.status == "stable"
         assert rel.version == "12.0"
-
-    def test_to_parquet_row(self) -> None:
-        rel = Release(release_id="trixie", name="testing", codename="trixie")
-        row = rel.to_parquet_row()
-        assert row["release_id"] == "trixie"
-        assert row["status"] is None
 
     def test_immutability(self) -> None:
         rel = Release(release_id="stable", name="stable")
@@ -261,19 +227,6 @@ class TestMigration:
                 package="bad",
                 version="invalid",
             )
-
-    def test_to_parquet_row(self) -> None:
-        mig = Migration(
-            migration_id="mig-001",
-            source="unstable",
-            target="testing",
-            package="python3",
-            version="3.11.2-1",
-            status=MigrationStatus.COMPLETED,
-        )
-        row = mig.to_parquet_row()
-        assert row["status"] == "completed"
-        assert row["source"] == "unstable"
 
     def test_immutability(self) -> None:
         mig = Migration(
@@ -343,23 +296,6 @@ class TestObservation:
             observed_at=naive,
         )
         assert obs.observed_at.tzinfo == timezone.utc
-
-    def test_to_parquet_row(self) -> None:
-        now = datetime.now(timezone.utc)
-        obs = Observation(
-            observation_id="obs-005",
-            entity_id="pkg:test",
-            entity_type="package",
-            source="udd",
-            observed_at=now,
-            effective_at=now,
-            payload_reference="s3://bucket/raw/udd-2024-01-01.csv",
-            ingestion_run_id="run-001",
-        )
-        row = obs.to_parquet_row()
-        assert row["observation_id"] == "obs-005"
-        assert row["payload_reference"] == "s3://bucket/raw/udd-2024-01-01.csv"
-        assert row["ingestion_run_id"] == "run-001"
 
     def test_hashable(self) -> None:
         now = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)

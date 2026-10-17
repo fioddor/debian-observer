@@ -86,6 +86,10 @@ class IngestionResult(BaseModel):
     parquet_path: Path | None = Field(
         default=None, description="Path to the written Parquet file."
     )
+    dataset_path: Path | None = Field(
+        default=None,
+        description="Path to the written normalized dataset file.",
+    )
     manifest: DatasetManifest = Field(..., description="Dataset manifest.")
     events: list[EventEnvelope] = Field(
         default_factory=list, description="Domain events produced."
@@ -144,6 +148,7 @@ class IngestionPipeline:
         self,
         raw_dir: Path = Path("data/raw"),
         parquet_dir: Path | None = None,
+        dataset_dir: Path | None = None,
     ) -> None:
         """Initialize the pipeline.
 
@@ -153,9 +158,14 @@ class IngestionPipeline:
             parquet_dir: Optional directory for Parquet output. If
                          provided, events are written to Parquet after
                          normalization.
+            dataset_dir: Optional directory for the normalized
+                         package_versions dataset (spec 10.2). If
+                         provided, PackageVersionObserved events are
+                         projected into the dataset after normalization.
         """
         self.raw_dir = raw_dir
         self.parquet_dir = parquet_dir
+        self.dataset_dir = dataset_dir
         self._acquisition = AcquisitionService()
         self._manifest_builder = ManifestBuilder()
         self._provenance = ProvenanceRecorder()
@@ -233,6 +243,21 @@ class IngestionPipeline:
                     writer = ParquetWriter(output_dir=self.parquet_dir)
                     parquet_path = writer.write_events(events, ingestion_run_id=run_id)
 
+            # Step 6b: Write the normalized dataset (if configured)
+            dataset_path: Path | None = None
+            if self.dataset_dir is not None and events:
+                with tracer.start_as_current_span("ingestion.write_dataset"):
+                    from debian_observer.storage.dataset import (
+                        PackageVersionDatasetWriter,
+                    )
+
+                    dataset_writer = PackageVersionDatasetWriter(
+                        output_dir=self.dataset_dir
+                    )
+                    dataset_path = dataset_writer.write_events(
+                        events, ingestion_run_id=run_id
+                    )
+
             # Record metrics
             duration = time.perf_counter() - start
             self._metrics.record_duration(duration, source=source.name)
@@ -246,6 +271,7 @@ class IngestionPipeline:
                 checksum=acquisition_meta["checksum"],
                 artifact_path=artifact_path,
                 parquet_path=parquet_path,
+                dataset_path=dataset_path,
                 manifest=manifest,
                 events=events,
                 acquired_at=datetime.fromisoformat(acquisition_meta["acquired_at"]),

@@ -203,8 +203,7 @@ class IngestionHandler:
     Usage::
 
         async def storage_processor(event: EventEnvelope) -> None:
-            row = event.to_parquet_row()
-            write_to_parquet(row)
+            writer.write_events([event])
 
         handler = IngestionHandler(processor=storage_processor)
         await handler.handle(event, ack)

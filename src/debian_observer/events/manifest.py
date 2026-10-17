@@ -216,25 +216,6 @@ class DatasetManifest(BaseModel):
     # Serialization helpers
     # -----------------------------------------------------------------------
 
-    def to_parquet_row(self) -> dict[str, Any]:
-        """Flatten to a Parquet/Arrow-compatible row dict."""
-        return {
-            "name": self.name,
-            "source": self.source,
-            "source_version": self.source_version,
-            "retrieved_at": self.retrieved_at.isoformat(),
-            "checksum_algorithm": self.checksum.algorithm,
-            "checksum_value": self.checksum.value,
-            "size_bytes": self.size_bytes,
-            "record_count": self.record_count,
-            "license": self.license,
-            "description": self.description,
-            "ingestion_run_id": self.ingestion_run_id,
-            "parent_manifest_id": self.parent_manifest_id,
-            "tags": list(self.tags),
-            "metadata": self.metadata,
-        }
-
     def to_yaml(self) -> str:
         """Serialize to a YAML-compatible string representation.
 

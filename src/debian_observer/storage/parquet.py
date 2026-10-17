@@ -25,7 +25,9 @@ from debian_observer.events import EventEnvelope
 # Schema definition (R1 — PackageVersionObserved)
 # ---------------------------------------------------------------------------
 
-# Inferred from to_parquet_row + EventEnvelope fields.
+# Writer-owned schema (ADR-011): the event file layout lives
+# here, in the storage layer; domain and event models do not
+# serialize.
 # suite is appended last: files written before the column existed
 # (13- and 16-column layouts) still load positionally.
 _DEFAULT_SCHEMA = pa.schema(

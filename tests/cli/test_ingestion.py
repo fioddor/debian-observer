@@ -17,7 +17,13 @@ def test_ingest_help():
 
 
 def _make_mock_result(
-    *, record_count: int = 3, ingestion_run_id: str = "run-abc", checksum: str = "sha256-xyz", events: list | None = None, parquet_path: str | None = None
+    *,
+    record_count: int = 3,
+    ingestion_run_id: str = "run-abc",
+    checksum: str = "sha256-xyz",
+    events: list | None = None,
+    parquet_path: str | None = None,
+    dataset_path: str | None = None,
 ):
     """Build a minimal mock IngestionResult-like object."""
     mock = MagicMock()
@@ -26,6 +32,7 @@ def _make_mock_result(
     mock.checksum = checksum
     mock.events = events or []
     mock.parquet_path = Path(parquet_path) if parquet_path else None
+    mock.dataset_path = Path(dataset_path) if dataset_path else None
     return mock
 
 
@@ -67,7 +74,9 @@ def test_ingest_mirror_source():
     assert data_source._architecture == "amd64"
     assert data_source._limit == 2
     # Verify raw_dir passed to pipeline
-    MockPipeline.assert_called_once_with(raw_dir=Path("/tmp/raw"), parquet_dir=None)
+    MockPipeline.assert_called_once_with(
+        raw_dir=Path("/tmp/raw"), parquet_dir=None, dataset_dir=None
+    )
 
 
 def test_ingest_udd_source():
@@ -126,7 +135,9 @@ def test_ingest_with_parquet_dir():
         ])
 
     assert result.exit_code == 0
-    MockPipeline.assert_called_once_with(raw_dir=Path("data/raw"), parquet_dir=Path("/tmp/pq"))
+    MockPipeline.assert_called_once_with(
+        raw_dir=Path("data/raw"), parquet_dir=Path("/tmp/pq"), dataset_dir=None
+    )
     assert "Parquet written" in result.output
 
 
@@ -201,3 +212,43 @@ def test_ingest_e2e_with_mock_source(tmp_path: Path):
     assert "Ingested 3 records" in cli_result.output
     assert "Events produced: 3" in cli_result.output
     assert "Parquet written" in cli_result.output
+
+
+def test_ingest_with_dataset_dir():
+    runner = CliRunner()
+    mock_result = _make_mock_result(
+        record_count=5, dataset_path="/tmp/norm/package_versions/run.parquet"
+    )
+
+    with patch("debian_observer.cli.commands.ingest.IngestionPipeline") as MockPipeline:
+        MockPipeline.return_value.run.return_value = mock_result
+        result = runner.invoke(cli, [
+            "ingest", "--source", "sources", "--url", "hello",
+            "--dataset-dir", "/tmp/norm"
+        ])
+
+    assert result.exit_code == 0
+    MockPipeline.assert_called_once_with(
+        raw_dir=Path("data/raw"), parquet_dir=None, dataset_dir=Path("/tmp/norm")
+    )
+    assert "Dataset written" in result.output
+
+
+def test_pipeline_writes_dataset_when_configured(tmp_path: Path):
+    """Real pipeline + mock source: dataset file written when dataset_dir set."""
+    from debian_observer.ingestion.acquisition import MockDebianDataSource
+    from debian_observer.ingestion.pipeline import IngestionPipeline
+    import pyarrow.parquet as pq
+
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    dataset_dir = tmp_path / "normalized" / "package_versions"
+
+    source = MockDebianDataSource(package_count=3)
+    pipeline = IngestionPipeline(raw_dir=raw_dir, dataset_dir=dataset_dir)
+    result = pipeline.run(source, ingestion_run_id="run-ds-e2e")
+
+    assert result.dataset_path is not None
+    assert result.dataset_path.exists()
+    table = pq.read_table(result.dataset_path)
+    assert table.num_rows == len(result.events)

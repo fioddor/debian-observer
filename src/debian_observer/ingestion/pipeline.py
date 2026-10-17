@@ -65,6 +65,7 @@ class IngestionResult(BaseModel):
             checksum: SHA-256 checksum of the raw data.
             artifact_path: Path to the stored raw artifact.
             manifest: Dataset manifest describing the acquisition.
+            manifest_path: Path to the persisted manifest JSON file.
             events: Domain events produced from the ingested records.
             acquired_at: UTC timestamp when acquisition completed.
     """
@@ -91,6 +92,10 @@ class IngestionResult(BaseModel):
         description="Path to the written normalized dataset file.",
     )
     manifest: DatasetManifest = Field(..., description="Dataset manifest.")
+    manifest_path: Path | None = Field(
+        default=None,
+        description="Path to the persisted manifest JSON file.",
+    )
     events: list[EventEnvelope] = Field(
         default_factory=list, description="Domain events produced."
     )
@@ -213,6 +218,16 @@ class IngestionPipeline:
                     dataset_name=f"{source.name}-{run_id}",
                 )
 
+            manifest_path: Path | None = None
+            with tracer.start_as_current_span("ingestion.store_manifest"):
+                # Step 3b: Persist the manifest as JSON next to the
+                # raw artifact so the provenance chain survives the
+                # run and later audits need no captured stdout.
+                manifest_path = artifact_path.with_suffix(".manifest.json")
+                manifest_path.write_text(
+                    manifest.to_json(), encoding="utf-8"
+                )
+
             with tracer.start_as_current_span("ingestion.record_provenance"):
                 # Step 4: Record provenance
                 artifact_meta = RawArtifact(
@@ -273,6 +288,7 @@ class IngestionPipeline:
                 parquet_path=parquet_path,
                 dataset_path=dataset_path,
                 manifest=manifest,
+                manifest_path=manifest_path,
                 events=events,
                 acquired_at=datetime.fromisoformat(acquisition_meta["acquired_at"]),
             )

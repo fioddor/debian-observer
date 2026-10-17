@@ -113,3 +113,25 @@ class TestSourcesDistributionSuiteSemantics:
         assert stable_rec["distribution"] == "debian"
         bookworm_rec = next(r for r in records if r["release"] == "bookworm")
         assert bookworm_rec["suite"] is None
+
+
+class TestSourcesComponentKey:
+    """The archive component arrives under the component key."""
+
+    @patch("urllib.request.urlopen")
+    def test_area_lands_in_component_field(self, mock_urlopen: MagicMock) -> None:
+        _mock_urlopen_response(
+            mock_urlopen,
+            {
+                "package": "hello",
+                "versions": [
+                    {"version": "1.0", "suites": ["sid"], "area": "main"},
+                ],
+            },
+        )
+
+        source = SourcesDebianOrgDataSource(package_name="hello")
+        records = source.retrieve()
+
+        assert records[0]["component"] == "main"
+        assert "area" not in records[0]

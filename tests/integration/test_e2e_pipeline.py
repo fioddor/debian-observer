@@ -65,9 +65,9 @@ async def test_ingest_normalize_publish_consume(mock_nats_client: MagicMock) -> 
     mock_conn = MagicMock()
     mock_cursor = MagicMock()
     mock_cursor.fetchall.return_value = [
-        ("hello", "2.10-3", "debian", "sid", "amd64"),
-        ("world", "1.0", "debian", "trixie", "arm64"),
-        ("foo", "3.0-1", "debian", "bookworm", "all"),
+        ("hello", "hello", "2.10-3", "debian", "sid", "amd64", "devel", "optional", "main"),
+        ("world", "world", "1.0", "debian", "trixie", "arm64", "devel", "optional", "main"),
+        ("foo", "foo", "3.0-1", "debian", "bookworm", "all", "devel", "optional", "main"),
     ]
     mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
     mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)

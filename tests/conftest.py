@@ -34,7 +34,8 @@ def sample_package_version_data() -> dict[str, Any]:
     return {
         "package_id": "package:libc6",
         "version": "2.37-12",
-        "distribution": "trixie",
+        "distribution": "debian",
+        "release": "trixie",
         "architecture": "amd64",
         "observed_at": datetime(2025, 12, 31, 0, 0, 0, tzinfo=timezone.utc),
         "source": "udd",
@@ -69,7 +70,8 @@ def sample_event_payload() -> dict[str, Any]:
     return {
         "name": "libc6",
         "version": "2.37-12",
-        "distribution": "trixie",
+        "distribution": "debian",
+        "release": "trixie",
     }
 
 
@@ -147,7 +149,8 @@ def invalid_version_empty() -> dict[str, Any]:
     return {
         "package_id": "package:libc6",
         "version": "",
-        "distribution": "trixie",
+        "distribution": "debian",
+        "release": "trixie",
         "architecture": "amd64",
         "observed_at": datetime(2025, 12, 31, 0, 0, 0, tzinfo=timezone.utc),
         "source": "udd",

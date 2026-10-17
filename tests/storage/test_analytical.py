@@ -24,7 +24,8 @@ class TestAnalyticalStorage:
                 payload={
                     "package_id": "vim:amd64",
                     "version": "2:9.0-1",
-                    "distribution": "sid",
+                    "distribution": "debian",
+                    "release": "sid",
                     "architecture": "amd64",
                 },
                 observed_at=now,
@@ -37,7 +38,8 @@ class TestAnalyticalStorage:
                 payload={
                     "package_id": "emacs:all",
                     "version": "1:28.2+1",
-                    "distribution": "bookworm",
+                    "distribution": "debian",
+                    "release": "bookworm",
                 },
                 observed_at=now,
                 effective_at=now,
@@ -47,7 +49,7 @@ class TestAnalyticalStorage:
 
         analytics = AnalyticalStorage(tmp_path)
         result = analytics.query(
-            "SELECT distribution, COUNT(*) as n FROM events GROUP BY distribution ORDER BY distribution"
+            "SELECT release, COUNT(*) as n FROM events GROUP BY release ORDER BY release"
         )
         rows = result.fetchall()
         assert len(rows) == 2

@@ -208,7 +208,8 @@ _DEBIAN_VERSIONS = [
     "1.6.40-2",
 ]
 
-_DEBIAN_DISTRIBUTIONS = ["sid", "trixie", "bookworm", "bullseye"]
+# Codenames/pockets, mirroring the UDD release column
+_DEBIAN_RELEASES = ["sid", "trixie", "bookworm", "bullseye"]
 _DEBIAN_COMPONENTS = ["main", "contrib", "non-free"]
 _DEBIAN_ARCHITECTURES = ["amd64", "i386", "arm64", "armhf", "all", "source"]
 _DEBIAN_SECTIONS = [
@@ -236,7 +237,8 @@ class MockDebianDataSource(DataSource):
 
     - package: source package name
     - version: Debian version string
-    - distribution: suite (sid, trixie, etc.)
+    - distribution: archive family (debian)
+    - release: pocket (sid, trixie, etc.)
     - architecture: target architecture
     - component: archive component
     - priority: package priority
@@ -293,7 +295,9 @@ class MockDebianDataSource(DataSource):
                         "package": pkg,
                         "source": pkg,  # simplified: source = binary name
                         "version": ver,
-                        "distribution": rng.choice(_DEBIAN_DISTRIBUTIONS),
+                        "distribution": "debian",
+                        "release": rng.choice(_DEBIAN_RELEASES),
+                        "suite": None,
                         "architecture": rng.choice(_DEBIAN_ARCHITECTURES),
                         "component": rng.choice(_DEBIAN_COMPONENTS),
                         "priority": rng.choice(_DEBIAN_PRIORITIES),
@@ -446,13 +450,19 @@ class SourcesDebianOrgDataSource(DataSource):
 
         records = []
         for v in data.get("versions", []):
-            for suite in v.get("suites", []):
+            for suite_value in v.get("suites", []):
+                # sources.debian.org mixes codenames and suite roles
+                # in its suites list: classify each value with the
+                # same rule as the mirror dists/ path.
+                suite_role, release = _classify_dists_path(suite_value)
                 records.append(
                     {
                         "package": self._package_name,
                         "version": v["version"],
-                        "distribution": suite,
-                        "area": v.get("area", "main"),
+                        "distribution": "debian",
+                        "suite": suite_role,
+                        "release": release,
+                        "component": v.get("area", "main"),
                         "source": self.name,
                         "observed_at": datetime.now(timezone.utc).isoformat(),
                     }
@@ -470,14 +480,49 @@ class SourcesDebianOrgDataSource(DataSource):
 # Debian mirror data source (Packages.gz)
 # ---------------------------------------------------------------------------
 
+# Archive families the mirror layout (dists/<suite>/...) can describe.
+# ``distribution`` in records means exactly this family, never a suite.
+_ARCHIVE_FAMILIES = frozenset({"debian", "ubuntu"})
+
+# Debian suite roles: the lifecycle aliases usable in the dists/ path
+# (dists/stable, dists/testing). Every other path value is a codename
+# or pocket (bookworm, sid, bookworm-security) and belongs in the
+# ``release`` field, not in ``suite``.
+_SUITE_ROLES = frozenset(
+    {
+        "oldoldstable",
+        "oldstable",
+        "stable",
+        "testing",
+        "unstable",
+        "experimental",
+    }
+)
+
+
+def _classify_dists_path(value: str) -> tuple[str | None, str | None]:
+    """Split a dists/ path segment or API suite value into (suite, release).
+
+    A suite role (oldstable, stable, testing) is a lifecycle alias and
+    belongs in ``suite``; any other value (codename or pocket: bookworm,
+    sid, bookworm-security) belongs in ``release``.
+    """
+    if value in _SUITE_ROLES:
+        return value, None
+    return None, value
 
 class DebianMirrorDataSource(DataSource):
     """Fetches real Debian package metadata from a Debian mirror.
 
     Downloads and parses a ``Packages.gz`` file from any Debian mirror,
-    producing records that match the UDD structure. The parser is
-    deliberately minimal: it extracts core fields (package, version,
-    architecture, distribution) and ignores optional fields.
+    producing records that match the UDD structure. The parser extracts
+    package, version, architecture, Section and Priority.
+
+    ``distribution`` is the archive family: ``debian``, or ``ubuntu``
+    for Ubuntu mirrors (same dists/ layout). The ``dists/<suite>/``
+    path value lands in ``suite`` when it is a suite role (oldstable,
+    stable, testing) and in ``release`` when it is a codename or pocket
+    (bookworm, sid, bookworm-security).
 
     The ``limit`` parameter truncates the result to a fixed number of
     packages, making the first ingestion fast enough for smoke tests
@@ -501,12 +546,23 @@ class DebianMirrorDataSource(DataSource):
         architecture: str = "amd64",
         limit: int = 5,
         mirror: str = MIRROR_DEFAULT,
+        distribution: str = "debian",
     ) -> None:
+        if distribution not in _ARCHIVE_FAMILIES:
+            raise ValueError(
+                f"distribution must be one of {sorted(_ARCHIVE_FAMILIES)}, "
+                f"got {distribution!r}"
+            )
         self._suite = suite
         self._component = component
         self._architecture = architecture
         self._limit = limit
         self._mirror = mirror.rstrip("/")
+        self._distribution = distribution
+        # The dists/<suite>/ path segment is either a suite role (stable,
+        # testing) or a codename/pocket (bookworm, sid): classify once
+        # so every record lands the value in the correct field.
+        self._suite_role, self._release_path = _classify_dists_path(suite)
         self._url = f"{self._mirror}/dists/{suite}/{component}/binary-{architecture}/Packages.gz"
         self._records: list[dict[str, Any]] | None = None
 
@@ -540,14 +596,22 @@ class DebianMirrorDataSource(DataSource):
                 current["version"] = line.split(": ", 1)[1]
             elif line.startswith("Architecture: "):
                 current["architecture"] = line.split(": ", 1)[1]
+            elif line.startswith("Section: "):
+                current["section"] = line.split(": ", 1)[1]
+            elif line.startswith("Priority: "):
+                current["priority"] = line.split(": ", 1)[1]
             elif line == "" and current:
                 records.append(
                     {
                         "package": current.get("package", ""),
                         "version": current.get("version", ""),
-                        "distribution": self._suite,
+                        "distribution": self._distribution,
+                        "suite": self._suite_role,
+                        "release": self._release_path,
                         "architecture": current.get("architecture", self._architecture),
                         "component": self._component,
+                        "section": current.get("section"),
+                        "priority": current.get("priority"),
                         "source": self.name,
                         "observed_at": datetime.now(timezone.utc).isoformat(),
                     }
@@ -648,7 +712,9 @@ class UDDDataSource(DataSource):
         )
         with conn.cursor() as cursor:
             cursor.execute(
-                f"SELECT source, version, distribution, release, architecture FROM {self._table} LIMIT %s",
+                f"SELECT package, source, version, distribution, release, "
+                f"architecture, section, priority, component FROM {self._table} "
+                f"LIMIT %s",
                 (self._limit,),
             )
             rows = cursor.fetchall()
@@ -658,11 +724,16 @@ class UDDDataSource(DataSource):
         for row in rows:
             records.append(
                 {
-                    "package": row[0],
-                    "version": row[1],
-                    "distribution": row[2] or "unknown",
-                    "release": row[3] or "unknown",
-                    "architecture": row[4] or "unknown",
+                    "package": row[0] or "unknown",
+                    "source_package": row[1],
+                    "version": row[2] or "unknown",
+                    "distribution": row[3] or "unknown",
+                    "release": row[4] or "unknown",
+                    "suite": None,  # UDD exposes pockets, not suite roles
+                    "architecture": row[5] or "unknown",
+                    "component": row[8] or "unknown",
+                    "section": row[6],
+                    "priority": row[7],
                     "source": self.name,
                     "observed_at": datetime.now(timezone.utc).isoformat(),
                 }

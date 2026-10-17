@@ -483,3 +483,28 @@ class TestAcquisitionCoverage:
             MockDebianDataSource(package_count=0)
         with pytest.raises(ValueError):
             MockDebianDataSource(package_count=1, versions_per_package=0)
+
+
+class TestMockDistributionSemantics:
+    """Mock records follow the archive-family/release field semantics."""
+
+    def test_records_carry_archive_family(self) -> None:
+        source = MockDebianDataSource(package_count=5, seed=42)
+        records = source.retrieve()
+        assert all(r["distribution"] == "debian" for r in records)
+
+    def test_codenames_land_in_release(self) -> None:
+        source = MockDebianDataSource(
+            package_count=5, versions_per_package=2, seed=7
+        )
+        records = source.retrieve()
+        assert records
+        assert all(
+            r["release"] in {"sid", "trixie", "bookworm", "bullseye"}
+            for r in records
+        )
+
+    def test_suite_is_none(self) -> None:
+        source = MockDebianDataSource(package_count=3, seed=1)
+        records = source.retrieve()
+        assert all(r["suite"] is None for r in records)

@@ -154,13 +154,14 @@ class TestPackageVersion:
         pv = PackageVersion(
             package_id="python3",
             version="3.11.2-1",
-            distribution="sid",
+            distribution="debian",
+            release="sid",
             source="udd",
         )
         row = pv.to_parquet_row()
         assert row["package_id"] == "python3"
         assert row["version"] == "3.11.2-1"
-        assert row["distribution"] == "sid"
+        assert row["distribution"] == "debian"
         assert isinstance(row["observed_at"], str)
 
     def test_hashable(self) -> None:
@@ -380,3 +381,60 @@ class TestObservation:
         )
         assert hash(obs1) == hash(obs2)
         assert obs1 == obs2
+
+
+class TestPackageVersionExtendedFields:
+    """PackageVersion carries the full package-version fact fields."""
+
+    def test_full_construction_with_extended_fields(self) -> None:
+        now = datetime.now(timezone.utc)
+        pv = PackageVersion(
+            package_id="librte-dpdk:amd64",
+            source_package="dpdk",
+            version="25.11.3-1",
+            distribution="debian",
+            release="bullseye-security",
+            architecture="amd64",
+            component="main",
+            section="libs",
+            priority="optional",
+            observed_at=now,
+            source="udd",
+        )
+        assert pv.source_package == "dpdk"
+        assert pv.release == "bullseye-security"
+        assert pv.section == "libs"
+
+    def test_extended_fields_default_to_none(self) -> None:
+        pv = PackageVersion(
+            package_id="python3",
+            version="3.11.2-1",
+            source="udd",
+        )
+        assert pv.source_package is None
+        assert pv.release is None
+        assert pv.section is None
+
+
+class TestPackageVersionSuiteField:
+    """PackageVersion carries the suite role field."""
+
+    def test_full_construction_with_suite(self) -> None:
+        pv = PackageVersion(
+            package_id="vim:amd64",
+            version="2:9.0-1",
+            distribution="debian",
+            release="bookworm",
+            suite="stable",
+            architecture="amd64",
+            source="debian.mirror",
+        )
+        assert pv.suite == "stable"
+
+    def test_suite_defaults_to_none(self) -> None:
+        pv = PackageVersion(
+            package_id="vim:amd64",
+            version="2:9.0-1",
+            source="udd",
+        )
+        assert pv.suite is None

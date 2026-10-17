@@ -10,8 +10,8 @@ Usage::
     writer = ParquetWriter(output_dir="data/parquet")
     writer.write_events(events)
 
-    analytics = AnalyticalStorage(writer.dataset_dir)
-    df = analytics.query("SELECT * FROM package_versions WHERE distribution = 'sid'")
+    analytics = AnalyticalStorage("data/parquet")
+    result = analytics.query("SELECT * FROM events WHERE release = 'sid'")
 """
 
 from __future__ import annotations

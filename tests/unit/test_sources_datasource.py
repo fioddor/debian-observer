@@ -43,7 +43,10 @@ class TestSourcesDebianOrgDataSource:
         assert len(records) == 2
         assert records[0]["package"] == "hello"
         assert records[0]["version"] == "2.0-1"
-        assert records[0]["distribution"] == "sid"
+        assert records[0]["distribution"] == "debian"
+        assert records[0]["release"] == "sid"
+        assert records[0]["suite"] is None
+        assert records[1]["release"] == "bookworm"
 
     @patch("urllib.request.urlopen")
     def test_multi_suite_expands_records(self, mock_urlopen: MagicMock) -> None:
@@ -61,8 +64,9 @@ class TestSourcesDebianOrgDataSource:
         records = source.retrieve()
 
         assert len(records) == 2
-        assert records[0]["distribution"] == "sid"
-        assert records[1]["distribution"] == "trixie"
+        assert all(r["distribution"] == "debian" for r in records)
+        assert records[0]["release"] == "sid"
+        assert records[1]["release"] == "trixie"
 
     @patch("urllib.request.urlopen")
     def test_compute_checksum_deterministic(self, mock_urlopen: MagicMock) -> None:
@@ -79,3 +83,55 @@ class TestSourcesDebianOrgDataSource:
         checksum2 = source.compute_checksum()
         assert checksum1 == checksum2
         assert len(checksum1) == 64  # SHA-256 hex length
+
+
+class TestSourcesDistributionSuiteSemantics:
+    """sources.debian.org rows follow the archive-family field semantics."""
+
+    @patch("urllib.request.urlopen")
+    def test_suite_role_lands_in_suite_field(self, mock_urlopen: MagicMock) -> None:
+        _mock_urlopen_response(
+            mock_urlopen,
+            {
+                "package": "hello",
+                "versions": [
+                    {
+                        "version": "2.0-1",
+                        "suites": ["stable", "bookworm"],
+                        "area": "main",
+                    },
+                ],
+            },
+        )
+
+        source = SourcesDebianOrgDataSource(package_name="hello")
+        records = source.retrieve()
+
+        assert len(records) == 2
+        stable_rec = next(r for r in records if r["suite"] == "stable")
+        assert stable_rec["release"] is None
+        assert stable_rec["distribution"] == "debian"
+        bookworm_rec = next(r for r in records if r["release"] == "bookworm")
+        assert bookworm_rec["suite"] is None
+
+
+class TestSourcesComponentKey:
+    """The archive component arrives under the component key."""
+
+    @patch("urllib.request.urlopen")
+    def test_area_lands_in_component_field(self, mock_urlopen: MagicMock) -> None:
+        _mock_urlopen_response(
+            mock_urlopen,
+            {
+                "package": "hello",
+                "versions": [
+                    {"version": "1.0", "suites": ["sid"], "area": "main"},
+                ],
+            },
+        )
+
+        source = SourcesDebianOrgDataSource(package_name="hello")
+        records = source.retrieve()
+
+        assert records[0]["component"] == "main"
+        assert "area" not in records[0]

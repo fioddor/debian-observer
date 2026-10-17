@@ -25,7 +25,9 @@ from debian_observer.events import EventEnvelope
 # Schema definition (R1 — PackageVersionObserved)
 # ---------------------------------------------------------------------------
 
-# Inferred from to_parquet_row + EventEnvelope fields
+# Inferred from to_parquet_row + EventEnvelope fields.
+# suite is appended last: files written before the column existed
+# (13- and 16-column layouts) still load positionally.
 _DEFAULT_SCHEMA = pa.schema(
     [
         ("event_id", pa.string()),
@@ -36,11 +38,15 @@ _DEFAULT_SCHEMA = pa.schema(
         ("effective_at", pa.string()),
         ("ingestion_run_id", pa.string()),
         ("package_id", pa.string()),
+        ("source_package", pa.string()),
         ("version", pa.string()),
         ("distribution", pa.string()),
+        ("release", pa.string()),
         ("architecture", pa.string()),
         ("component", pa.string()),
+        ("section", pa.string()),
         ("priority", pa.string()),
+        ("suite", pa.string()),
     ]
 )
 
@@ -89,11 +95,15 @@ class ParquetWriter:
             "effective_at": event.effective_at.isoformat(),
             "ingestion_run_id": event.ingestion_run_id or "",
             "package_id": payload.get("package_id", ""),
+            "source_package": payload.get("source_package", ""),
             "version": payload.get("version", ""),
             "distribution": payload.get("distribution", ""),
+            "release": payload.get("release", ""),
             "architecture": payload.get("architecture", ""),
             "component": payload.get("component", ""),
+            "section": payload.get("section", ""),
             "priority": payload.get("priority", ""),
+            "suite": payload.get("suite", ""),
         }
 
     def write_events(

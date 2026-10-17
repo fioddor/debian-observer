@@ -54,7 +54,7 @@ class TestEventEnvelope:
             effective_at=now - timedelta(hours=1),
             entity_id="pkg:python3:3.11.2-1",
             ingestion_run_id="run-001",
-            payload={"version": "3.11.2-1", "distribution": "sid"},
+            payload={"version": "3.11.2-1", "distribution": "debian", "release": "sid"},
         )
         assert env.payload["version"] == "3.11.2-1"
         assert env.ingestion_run_id == "run-001"
@@ -574,3 +574,52 @@ class TestDomainToEventFlow:
         )
         assert env1.event_id == env2.event_id
         assert env1 == env2
+
+
+class TestPackageVersionObservedExtendedFields:
+    """PackageVersionObserved payload carries the full fact fields."""
+
+    def test_construction_and_parquet_row(self) -> None:
+        obs = ObservationMeta(source="udd")
+        payload = PackageVersionObservedPayload(
+            package_id="librte-dpdk:amd64",
+            source_package="dpdk",
+            version="25.11.3-1",
+            distribution="debian",
+            release="bullseye-security",
+            architecture="amd64",
+            component="main",
+            section="libs",
+            priority="optional",
+            observation=obs,
+        )
+        assert payload.source_package == "dpdk"
+        assert payload.release == "bullseye-security"
+        assert payload.section == "libs"
+
+        row = payload.to_parquet_row()
+        assert row["source_package"] == "dpdk"
+        assert row["release"] == "bullseye-security"
+        assert row["section"] == "libs"
+
+
+class TestPackageVersionObservedSuiteField:
+    """PackageVersionObserved payload carries the suite role."""
+
+    def test_construction_and_parquet_row(self) -> None:
+        obs = ObservationMeta(source="debian.mirror")
+        payload = PackageVersionObservedPayload(
+            package_id="vim:amd64",
+            version="2:9.0-1",
+            distribution="debian",
+            release="bookworm",
+            suite="stable",
+            architecture="amd64",
+            component="main",
+            priority="optional",
+            observation=obs,
+        )
+        assert payload.suite == "stable"
+
+        row = payload.to_parquet_row()
+        assert row["suite"] == "stable"

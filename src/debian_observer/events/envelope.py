@@ -32,7 +32,6 @@ Usage::
 
 from __future__ import annotations
 
-import json
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -67,7 +66,8 @@ class EventEnvelope(BaseModel):
     * **Provenance-rich** — observed_at + source + ingestion_run_id
       preserve lineage
     * **Idempotent**      — event_id allows duplicate detection
-    * **Storage-ready**   — serializes to Parquet via ``to_parquet_row()``
+    * **Storage-ready**   — consumed by the storage layer's writers
+      (ADR-011)
 
     The ``payload`` field is intentionally a ``dict[str, Any]`` at the
     envelope level to allow generic handling (routing, logging,
@@ -258,28 +258,6 @@ class EventEnvelope(BaseModel):
     def to_json_bytes(self) -> bytes:
         """Serialize to JSON bytes for messaging (NATS, HTTP, etc.)."""
         return self.model_dump_json().encode("utf-8")
-
-    def to_parquet_row(self) -> dict[str, Any]:
-        """Flatten to a Parquet/Arrow-compatible row dict.
-
-        The ``payload`` dict is serialized as a JSON string so that
-        Parquet can store it in a single string column without
-        complex nested schema requirements. This preserves the full
-        event for replay while keeping the analytical schema flat.
-        """
-        return {
-            "event_id": str(self.event_id),
-            "event_type": self.event_type,
-            "schema_version": self.schema_version,
-            "source": self.source,
-            "observed_at": self.observed_at.isoformat(),
-            "effective_at": self.effective_at.isoformat(),
-            "entity_id": self.entity_id,
-            "ingestion_run_id": self.ingestion_run_id,
-            "payload_json": json.dumps(
-                self.payload, sort_keys=True, ensure_ascii=False
-            ),
-        }
 
     def get_payload_model(self) -> Any:
         """Attempt to deserialize the payload into a typed model.

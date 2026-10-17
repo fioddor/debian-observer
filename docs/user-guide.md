@@ -276,6 +276,21 @@ Data is stored in **Parquet** format with a **DuckDB** analytical layer for SQL 
 
 The ingestion pipeline integrates ParquetWriter for optional persistent storage. After running `debian-observer ingest`, raw artifacts and Parquet events are available in `data/`.
 
+The pipeline can also project `PackageVersionObserved` events into the normalized dataset (spec §10.2, ADR-003, ADR-011):
+
+```bash
+debian-observer ingest --source udd --url packages --limit 400 \
+  --dataset-dir data/normalized/package_versions
+```
+
+The dataset holds one row per observed package version (query surface); the event log remains the replay surface. Query it with DuckDB (ADR-003 example, on the dataset schema):
+
+```sql
+SELECT package_id, version, release
+FROM read_parquet('data/normalized/package_versions/*.parquet')
+WHERE release = 'sid'
+```
+
 
 ## Messaging (NATS JetStream)
 

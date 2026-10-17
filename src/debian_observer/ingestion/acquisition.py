@@ -208,7 +208,8 @@ _DEBIAN_VERSIONS = [
     "1.6.40-2",
 ]
 
-_DEBIAN_DISTRIBUTIONS = ["sid", "trixie", "bookworm", "bullseye"]
+# Codenames/pockets, mirroring the UDD release column
+_DEBIAN_RELEASES = ["sid", "trixie", "bookworm", "bullseye"]
 _DEBIAN_COMPONENTS = ["main", "contrib", "non-free"]
 _DEBIAN_ARCHITECTURES = ["amd64", "i386", "arm64", "armhf", "all", "source"]
 _DEBIAN_SECTIONS = [
@@ -236,7 +237,8 @@ class MockDebianDataSource(DataSource):
 
     - package: source package name
     - version: Debian version string
-    - distribution: suite (sid, trixie, etc.)
+    - distribution: archive family (debian)
+    - release: pocket (sid, trixie, etc.)
     - architecture: target architecture
     - component: archive component
     - priority: package priority
@@ -293,7 +295,9 @@ class MockDebianDataSource(DataSource):
                         "package": pkg,
                         "source": pkg,  # simplified: source = binary name
                         "version": ver,
-                        "distribution": rng.choice(_DEBIAN_DISTRIBUTIONS),
+                        "distribution": "debian",
+                        "release": rng.choice(_DEBIAN_RELEASES),
+                        "suite": None,
                         "architecture": rng.choice(_DEBIAN_ARCHITECTURES),
                         "component": rng.choice(_DEBIAN_COMPONENTS),
                         "priority": rng.choice(_DEBIAN_PRIORITIES),
@@ -446,12 +450,18 @@ class SourcesDebianOrgDataSource(DataSource):
 
         records = []
         for v in data.get("versions", []):
-            for suite in v.get("suites", []):
+            for suite_value in v.get("suites", []):
+                # sources.debian.org mixes codenames and suite roles
+                # in its suites list: classify each value with the
+                # same rule as the mirror dists/ path.
+                suite_role, release = _classify_dists_path(suite_value)
                 records.append(
                     {
                         "package": self._package_name,
                         "version": v["version"],
-                        "distribution": suite,
+                        "distribution": "debian",
+                        "suite": suite_role,
+                        "release": release,
                         "area": v.get("area", "main"),
                         "source": self.name,
                         "observed_at": datetime.now(timezone.utc).isoformat(),
@@ -489,6 +499,17 @@ _SUITE_ROLES = frozenset(
     }
 )
 
+
+def _classify_dists_path(value: str) -> tuple[str | None, str | None]:
+    """Split a dists/ path segment or API suite value into (suite, release).
+
+    A suite role (oldstable, stable, testing) is a lifecycle alias and
+    belongs in ``suite``; any other value (codename or pocket: bookworm,
+    sid, bookworm-security) belongs in ``release``.
+    """
+    if value in _SUITE_ROLES:
+        return value, None
+    return None, value
 
 class DebianMirrorDataSource(DataSource):
     """Fetches real Debian package metadata from a Debian mirror.
@@ -541,7 +562,7 @@ class DebianMirrorDataSource(DataSource):
         # The dists/<suite>/ path segment is either a suite role (stable,
         # testing) or a codename/pocket (bookworm, sid): classify once
         # so every record lands the value in the correct field.
-        self._suite_role = suite if suite in _SUITE_ROLES else None
+        self._suite_role, self._release_path = _classify_dists_path(suite)
         self._url = f"{self._mirror}/dists/{suite}/{component}/binary-{architecture}/Packages.gz"
         self._records: list[dict[str, Any]] | None = None
 
@@ -586,7 +607,7 @@ class DebianMirrorDataSource(DataSource):
                         "version": current.get("version", ""),
                         "distribution": self._distribution,
                         "suite": self._suite_role,
-                        "release": None if self._suite_role else self._suite,
+                        "release": self._release_path,
                         "architecture": current.get("architecture", self._architecture),
                         "component": self._component,
                         "section": current.get("section"),

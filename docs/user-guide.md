@@ -240,7 +240,7 @@ Run DuckDB SQL queries over ingested Parquet events:
 
 ```bash
 debian-observer query \
-  "SELECT package_id, version, distribution FROM events WHERE distribution = 'sid'" \
+  "SELECT package_id, version, release FROM events WHERE release = 'sid'" \
   --parquet-dir data/parquet
 ```
 

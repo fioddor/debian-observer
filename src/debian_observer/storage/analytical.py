@@ -5,7 +5,7 @@ Lightweight analytical queries over Parquet via DuckDB.
 Usage::
 
     analytics = AnalyticalStorage("data/parquet")
-    df = analytics.query("SELECT * FROM events WHERE distribution = 'sid'")
+    result = analytics.query("SELECT * FROM events WHERE release = 'sid'")
     count = analytics.count_events()
 """
 

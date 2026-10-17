@@ -327,3 +327,154 @@ class TestEvents:
     def test_get_event_not_found(self, test_client_for_events: TestClient) -> None:
         response = test_client_for_events.get("/events/nonexistent-id")
         assert response.status_code == 404
+
+
+class TestEventLoaderExtendedFields:
+    """EventLoader restores the full fact fields from Parquet."""
+
+    def test_load_new_schema_restores_extended_fields(self, tmp_path):
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        from debian_observer.api.loader import EventLoader
+        from debian_observer.api.store import InMemoryStore
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc).isoformat()
+        columns = [
+            "event_id", "event_type", "source", "entity_id", "observed_at",
+            "effective_at", "ingestion_run_id", "package_id", "source_package",
+            "version", "distribution", "release", "architecture", "component",
+            "section", "priority",
+        ]
+        row = (
+            "550e8400-e29b-41d4-a716-446655440000", "PackageVersionObserved", "udd", "librte-dpdk:amd64",
+            now, now, "run-001", "librte-dpdk:amd64", "dpdk", "25.11.3-1",
+            "debian", "bullseye-security", "amd64", "main", "libs", "optional",
+        )
+        table = pa.Table.from_pylist(
+            [dict(zip(columns, row))],
+            schema=pa.schema([(c, pa.string()) for c in columns]),
+        )
+        pq.write_table(table, tmp_path / "run-001.parquet")
+
+        store = InMemoryStore()
+        loader = EventLoader(store)
+        count = loader.load_from_parquet(tmp_path)
+        assert count == 1
+        versions = store.list_package_versions()
+        assert len(versions) == 1
+        assert versions[0].source_package == "dpdk"
+        assert versions[0].release == "bullseye-security"
+        assert versions[0].section == "libs"
+        assert versions[0].priority == "optional"
+
+    def test_load_legacy_schema_maps_old_columns(self, tmp_path):
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        from debian_observer.api.loader import EventLoader
+        from debian_observer.api.store import InMemoryStore
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc).isoformat()
+        columns = [
+            "event_id", "event_type", "source", "entity_id", "observed_at",
+            "effective_at", "ingestion_run_id", "package_id", "version",
+            "distribution", "architecture", "component", "priority",
+        ]
+        row = (
+            "550e8400-e29b-41d4-a716-446655440001", "PackageVersionObserved", "udd", "vim:amd64",
+            now, now, "run-002", "vim:amd64", "2:9.0-1", "debian",
+            "amd64", "main", "optional",
+        )
+        table = pa.Table.from_pylist(
+            [dict(zip(columns, row))],
+            schema=pa.schema([(c, pa.string()) for c in columns]),
+        )
+        pq.write_table(table, tmp_path / "run-002.parquet")
+
+        store = InMemoryStore()
+        loader = EventLoader(store)
+        count = loader.load_from_parquet(tmp_path)
+        assert count == 1
+        version = store.list_package_versions()[0]
+        assert version.version == "2:9.0-1"
+        assert version.release is None
+        assert version.section is None
+        assert version.source_package is None
+
+
+class TestEventLoaderSuiteField:
+    """EventLoader restores the suite role; legacy files load suite None."""
+
+    def test_load_new_schema_restores_suite(self, tmp_path):
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        from debian_observer.api.loader import EventLoader
+        from debian_observer.api.store import InMemoryStore
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc).isoformat()
+        columns = [
+            "event_id", "event_type", "source", "entity_id", "observed_at",
+            "effective_at", "ingestion_run_id", "package_id", "source_package",
+            "version", "distribution", "release", "architecture", "component",
+            "section", "priority", "suite",
+        ]
+        row = (
+            "550e8400-e29b-41d4-a716-446655440002", "PackageVersionObserved",
+            "debian.mirror", "vim:amd64",
+            now, now, "run-003", "vim:amd64", "vim", "2:9.0-1",
+            "debian", "bookworm", "amd64", "main", "editors", "optional",
+            "stable",
+        )
+        table = pa.Table.from_pylist(
+            [dict(zip(columns, row))],
+            schema=pa.schema([(c, pa.string()) for c in columns]),
+        )
+        pq.write_table(table, tmp_path / "run-003.parquet")
+
+        store = InMemoryStore()
+        loader = EventLoader(store)
+        count = loader.load_from_parquet(tmp_path)
+        assert count == 1
+        version = store.list_package_versions()[0]
+        assert version.suite == "stable"
+        assert version.release == "bookworm"
+
+    def test_load_legacy_16_schema_suite_defaults_none(self, tmp_path):
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        from debian_observer.api.loader import EventLoader
+        from debian_observer.api.store import InMemoryStore
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc).isoformat()
+        columns = [
+            "event_id", "event_type", "source", "entity_id", "observed_at",
+            "effective_at", "ingestion_run_id", "package_id", "source_package",
+            "version", "distribution", "release", "architecture", "component",
+            "section", "priority",
+        ]
+        row = (
+            "550e8400-e29b-41d4-a716-446655440003", "PackageVersionObserved",
+            "udd", "librte-dpdk:amd64",
+            now, now, "run-004", "librte-dpdk:amd64", "dpdk", "25.11.3-1",
+            "debian", "bullseye-security", "amd64", "main", "libs", "optional",
+        )
+        table = pa.Table.from_pylist(
+            [dict(zip(columns, row))],
+            schema=pa.schema([(c, pa.string()) for c in columns]),
+        )
+        pq.write_table(table, tmp_path / "run-004.parquet")
+
+        store = InMemoryStore()
+        loader = EventLoader(store)
+        count = loader.load_from_parquet(tmp_path)
+        assert count == 1
+        version = store.list_package_versions()[0]
+        assert version.release == "bullseye-security"
+        assert version.suite is None

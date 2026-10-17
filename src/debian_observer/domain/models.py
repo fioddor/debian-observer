@@ -118,7 +118,7 @@ class Package(BaseModel):
     )
     maintainer: str | None = Field(
         default=None,
-        description="Package maintainer name or email.",
+        description="Package maintainer name/email.",
     )
     description: str | None = Field(
         default=None,
@@ -171,10 +171,17 @@ class PackageVersion(BaseModel):
 
     Attributes:
         package_id: Canonical package identifier (references Package).
+        source_package: Source package this binary belongs to (if known).
         version: Debian version string (validated per Policy).
-        distribution: Suite/distribution where observed (e.g. "sid", "trixie").
+        distribution: Distribution family where observed ("debian",
+            "ubuntu").
+        release: Release/pocket where observed (sid, bullseye,
+            bookworm-security).
+        suite: Suite role where observed (oldstable, stable, testing);
+            None when only the release pocket is known.
         architecture: Architecture this version targets.
         component: Archive component (main, contrib, non-free).
+        section: Archive section this version belongs to.
         priority: Package priority (required, important, standard, optional,
             extra).
         observed_at: When this version was observed by the pipeline (UTC).
@@ -187,6 +194,10 @@ class PackageVersion(BaseModel):
         ...,
         description="Canonical package identifier.",
     )
+    source_package: str | None = Field(
+        default=None,
+        description="Source package this binary belongs to (if known).",
+    )
     version: DebianVersionString = Field(
         ...,
         description="Debian version string.",
@@ -194,7 +205,17 @@ class PackageVersion(BaseModel):
     )
     distribution: str | None = Field(
         default=None,
-        description="Suite/distribution where observed (sid, trixie, bookworm).",
+        description="Distribution family where observed (debian, ubuntu).",
+    )
+    release: str | None = Field(
+        default=None,
+        description="Debian release/pocket where observed (sid, bullseye, "
+        "bookworm-security).",
+    )
+    suite: str | None = Field(
+        default=None,
+        description="Suite role where observed (oldstable, stable, testing); "
+        "None when only the release pocket is known.",
     )
     architecture: str | None = Field(
         default=None,
@@ -203,6 +224,10 @@ class PackageVersion(BaseModel):
     component: str | None = Field(
         default=None,
         description="Archive component (main, contrib, non-free).",
+    )
+    section: str | None = Field(
+        default=None,
+        description="Archive section this version belongs to (e.g. 'devel').",
     )
     priority: str | None = Field(
         default=None,
@@ -340,7 +365,7 @@ class Migration(BaseModel):
     Attributes:
         migration_id: Canonical migration identifier.
         source: Source suite (e.g. "unstable", "sid").
-        target: Target suite (e.g. "testing", "trixie").
+        target: Target suite (e.g. "testing", "trixie", "stable").
         package: Package name.
         version: Version string being migrated.
         architecture: Architecture being migrated.

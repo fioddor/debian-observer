@@ -68,7 +68,7 @@ class ObservationMeta(BaseModel):
         source: Data source identifier.
         observed_at: When the fact was observed by the pipeline.
         effective_at: When the fact became true in the domain.
-        schema_version: Schema version used for normalization.
+        schema_version: Version of the schema used for normalization.
         ingestion_run_id: Ingestion run that produced this observation.
     """
 
@@ -218,10 +218,14 @@ class PackageVersionObservedPayload(BaseModel):
 
     Attributes:
         package_id: Canonical package identifier.
+        source_package: Source package this binary belongs to.
         version: Debian version string.
-        distribution: Suite where observed.
+        distribution: Distribution family where observed.
+        release: Debian release/pocket where observed.
+        suite: Suite role where observed (oldstable, stable, testing).
         architecture: Architecture this version targets.
         component: Archive component.
+        section: Archive section.
         priority: Package priority.
         observation: Provenance metadata.
     """
@@ -229,15 +233,31 @@ class PackageVersionObservedPayload(BaseModel):
     model_config = FrozenModelConfig
 
     package_id: str = Field(..., description="Canonical package identifier.")
+    source_package: str | None = Field(
+        default=None, description="Source package this binary belongs to."
+    )
     version: str = Field(..., description="Debian version string.")
     distribution: str | None = Field(
-        default=None, description="Suite where observed (sid, trixie, etc.)."
+        default=None, description="Distribution family where observed."
+    )
+    release: str | None = Field(
+        default=None,
+        description="Debian release/pocket where observed (sid, bullseye, "
+        "etc.).",
+    )
+    suite: str | None = Field(
+        default=None,
+        description="Suite role where observed (oldstable, stable, testing); "
+        "None when only the release pocket is known.",
     )
     architecture: str | None = Field(
         default=None, description="Architecture this version targets."
     )
     component: str | None = Field(
         default=None, description="Archive component (main, contrib, non-free)."
+    )
+    section: str | None = Field(
+        default=None, description="Archive section (devel, net, utils)."
     )
     priority: str | None = Field(default=None, description="Package priority.")
     observation: ObservationMeta = Field(
@@ -263,10 +283,14 @@ class PackageVersionObservedPayload(BaseModel):
         obs = self.observation
         return {
             "package_id": self.package_id,
+            "source_package": self.source_package,
             "version": self.version,
             "distribution": self.distribution,
+            "release": self.release,
+            "suite": self.suite,
             "architecture": self.architecture,
             "component": self.component,
+            "section": self.section,
             "priority": self.priority,
             "observation_source": obs.source,
             "observation_observed_at": obs.observed_at.isoformat(),

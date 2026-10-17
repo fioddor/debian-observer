@@ -11,6 +11,7 @@ These tests verify that the ingestion layer correctly:
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -508,3 +509,35 @@ class TestMockDistributionSemantics:
         source = MockDebianDataSource(package_count=3, seed=1)
         records = source.retrieve()
         assert all(r["suite"] is None for r in records)
+
+
+class TestManifestPersistence:
+    """The dataset manifest is persisted as JSON next to the raw artifact."""
+
+    def test_run_writes_manifest_json(self, tmp_path: Path) -> None:
+        raw_dir = tmp_path / "raw"
+        pipeline = IngestionPipeline(raw_dir=raw_dir)
+        result = pipeline.run(MockDebianDataSource())
+
+        manifest_files = list(raw_dir.glob("*.manifest.json"))
+        assert len(manifest_files) == 1
+
+        data = json.loads(manifest_files[0].read_text(encoding="utf-8"))
+        assert data["dataset_name"] == result.manifest.dataset_name
+        assert data["source"] == result.manifest.source
+        assert data["checksum"] == result.manifest.checksum
+        assert data["record_count"] == result.manifest.record_count
+
+    def test_manifest_path_sits_beside_raw_artifact(self, tmp_path: Path) -> None:
+        raw_dir = tmp_path / "raw"
+        pipeline = IngestionPipeline(raw_dir=raw_dir)
+        result = pipeline.run(MockDebianDataSource())
+
+        assert result.manifest_path is not None
+        assert result.artifact_path is not None
+        assert result.manifest_path.parent == result.artifact_path.parent
+        assert (
+            result.manifest_path
+            == result.artifact_path.with_suffix(".manifest.json")
+        )
+        assert result.manifest_path.exists()

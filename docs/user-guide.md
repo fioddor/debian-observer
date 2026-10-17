@@ -87,6 +87,12 @@ Events produced: 5
 Parquet written: /tmp/mirror-parquet/run-xxxxxx.parquet
 ```
 
+Mirror records carry `distribution` as the archive family (`debian`,
+or `ubuntu` for Ubuntu mirrors), and split the `--url` suite path:
+suite roles (`oldstable`, `stable`, `testing`) land in `suite`,
+codenames and pockets (`bookworm`, `sid`, `bookworm-security`) land in
+`release`.
+
 **UDD public mirror (real PostgreSQL):**
 
 For querying the actual UDD public mirror:
@@ -101,7 +107,7 @@ debian-observer ingest \
 ```
 
 This queries the `packages` table from `udd-mirror.debian.net:5432`.
-The default table is `packages`, which includes release (suite) and architecture columns.
+The default table is `packages`, which includes package (binary), source, version, distribution, release (suite/pocket), architecture, component, section and priority columns.
 
 **Expected output (udd):**
 ```
@@ -234,7 +240,7 @@ Run DuckDB SQL queries over ingested Parquet events:
 
 ```bash
 debian-observer query \
-  "SELECT package_id, version, distribution FROM events WHERE distribution = 'sid'" \
+  "SELECT package_id, version, release FROM events WHERE release = 'sid'" \
   --parquet-dir data/parquet
 ```
 

@@ -11,19 +11,27 @@ class TestPackageVersionTransformer:
         transformer = PackageVersionTransformer(source_name="udd")
         record = {
             "package": "vim",
+            "source_package": "vim",
             "version": "2:9.0-1",
-            "distribution": "sid",
+            "distribution": "debian",
+            "release": "sid",
+            "suite": "unstable",
             "architecture": "amd64",
             "component": "main",
+            "section": "editors",
             "priority": "optional",
         }
         version = transformer.transform(record)
         assert isinstance(version, PackageVersion)
         assert version.package_id == "vim:amd64"
+        assert version.source_package == "vim"
         assert version.version == "2:9.0-1"
-        assert version.distribution == "sid"
+        assert version.distribution == "debian"
+        assert version.release == "sid"
+        assert version.suite == "unstable"
         assert version.architecture == "amd64"
         assert version.component == "main"
+        assert version.section == "editors"
         assert version.priority == "optional"
         assert version.source == "udd"
         assert version.observed_at.tzinfo is not None
@@ -47,7 +55,11 @@ class TestPackageVersionTransformer:
         assert version.package_id == "minimal:all"
         assert version.architecture is None
         assert version.distribution is None
+        assert version.release is None
+        assert version.suite is None
         assert version.component is None
+        assert version.section is None
+        assert version.source_package is None
         assert version.priority is None
 
     def test_transform_all(self):

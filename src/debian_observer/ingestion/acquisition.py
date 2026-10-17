@@ -470,14 +470,38 @@ class SourcesDebianOrgDataSource(DataSource):
 # Debian mirror data source (Packages.gz)
 # ---------------------------------------------------------------------------
 
+# Archive families the mirror layout (dists/<suite>/...) can describe.
+# ``distribution`` in records means exactly this family, never a suite.
+_ARCHIVE_FAMILIES = frozenset({"debian", "ubuntu"})
+
+# Debian suite roles: the lifecycle aliases usable in the dists/ path
+# (dists/stable, dists/testing). Every other path value is a codename
+# or pocket (bookworm, sid, bookworm-security) and belongs in the
+# ``release`` field, not in ``suite``.
+_SUITE_ROLES = frozenset(
+    {
+        "oldoldstable",
+        "oldstable",
+        "stable",
+        "testing",
+        "unstable",
+        "experimental",
+    }
+)
+
 
 class DebianMirrorDataSource(DataSource):
     """Fetches real Debian package metadata from a Debian mirror.
 
     Downloads and parses a ``Packages.gz`` file from any Debian mirror,
-    producing records that match the UDD structure. The parser is
-    deliberately minimal: it extracts core fields (package, version,
-    architecture, distribution) and ignores optional fields.
+    producing records that match the UDD structure. The parser extracts
+    package, version, architecture, Section and Priority.
+
+    ``distribution`` is the archive family: ``debian``, or ``ubuntu``
+    for Ubuntu mirrors (same dists/ layout). The ``dists/<suite>/``
+    path value lands in ``suite`` when it is a suite role (oldstable,
+    stable, testing) and in ``release`` when it is a codename or pocket
+    (bookworm, sid, bookworm-security).
 
     The ``limit`` parameter truncates the result to a fixed number of
     packages, making the first ingestion fast enough for smoke tests
@@ -501,12 +525,23 @@ class DebianMirrorDataSource(DataSource):
         architecture: str = "amd64",
         limit: int = 5,
         mirror: str = MIRROR_DEFAULT,
+        distribution: str = "debian",
     ) -> None:
+        if distribution not in _ARCHIVE_FAMILIES:
+            raise ValueError(
+                f"distribution must be one of {sorted(_ARCHIVE_FAMILIES)}, "
+                f"got {distribution!r}"
+            )
         self._suite = suite
         self._component = component
         self._architecture = architecture
         self._limit = limit
         self._mirror = mirror.rstrip("/")
+        self._distribution = distribution
+        # The dists/<suite>/ path segment is either a suite role (stable,
+        # testing) or a codename/pocket (bookworm, sid): classify once
+        # so every record lands the value in the correct field.
+        self._suite_role = suite if suite in _SUITE_ROLES else None
         self._url = f"{self._mirror}/dists/{suite}/{component}/binary-{architecture}/Packages.gz"
         self._records: list[dict[str, Any]] | None = None
 
@@ -549,7 +584,9 @@ class DebianMirrorDataSource(DataSource):
                     {
                         "package": current.get("package", ""),
                         "version": current.get("version", ""),
-                        "distribution": self._suite,
+                        "distribution": self._distribution,
+                        "suite": self._suite_role,
+                        "release": None if self._suite_role else self._suite,
                         "architecture": current.get("architecture", self._architecture),
                         "component": self._component,
                         "section": current.get("section"),
@@ -671,6 +708,7 @@ class UDDDataSource(DataSource):
                     "version": row[2] or "unknown",
                     "distribution": row[3] or "unknown",
                     "release": row[4] or "unknown",
+                    "suite": None,  # UDD exposes pockets, not suite roles
                     "architecture": row[5] or "unknown",
                     "section": row[6],
                     "priority": row[7],

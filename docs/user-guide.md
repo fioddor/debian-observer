@@ -87,6 +87,12 @@ Events produced: 5
 Parquet written: /tmp/mirror-parquet/run-xxxxxx.parquet
 ```
 
+Mirror records carry `distribution` as the archive family (`debian`,
+or `ubuntu` for Ubuntu mirrors), and split the `--url` suite path:
+suite roles (`oldstable`, `stable`, `testing`) land in `suite`,
+codenames and pockets (`bookworm`, `sid`, `bookworm-security`) land in
+`release`.
+
 **UDD public mirror (real PostgreSQL):**
 
 For querying the actual UDD public mirror:

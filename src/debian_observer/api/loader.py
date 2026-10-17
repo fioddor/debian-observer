@@ -61,13 +61,15 @@ class EventLoader:
         # DuckDB column order matches the Parquet schema:
         # event_id, event_type, source, entity_id, observed_at, effective_at,
         # ingestion_run_id, package_id, source_package, version,
-        # distribution, release, architecture, component, section, priority.
-        # Files written before release/section/source_package exist carry
-        # the 13-column legacy layout; those rows load with the new fields
-        # as None (DuckDB union_by_name fills NULL for missing columns).
+        # distribution, release, architecture, component, section,
+        # priority, suite. suite is the last column: files written
+        # before it existed (13- and 16-column legacy layouts) load
+        # with suite as None (DuckDB union_by_name fills NULL for
+        # missing columns).
         if len(row) < 13:
             return None
         legacy = len(row) < 16
+        suite = None if len(row) < 17 else row[16]
         source_package = None if legacy else row[8]
         version = row[8] if legacy else row[9]
         distribution = row[9] if legacy else row[10]
@@ -90,6 +92,7 @@ class EventLoader:
                 "version": version or "",
                 "distribution": distribution or "",
                 "release": release,
+                "suite": suite,
                 "architecture": architecture or "",
                 "component": component,
                 "section": section,
@@ -135,6 +138,7 @@ class EventLoader:
                     version=payload.get("version", ""),
                     distribution=payload.get("distribution"),
                     release=payload.get("release"),
+                    suite=payload.get("suite"),
                     architecture=payload.get("architecture"),
                     component=payload.get("component"),
                     section=payload.get("section"),

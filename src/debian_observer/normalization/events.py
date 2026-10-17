@@ -53,6 +53,7 @@ class EventFactory:
             version=version.version,
             distribution=version.distribution,
             release=version.release,
+            suite=version.suite,
             architecture=version.architecture,
             component=version.component,
             section=version.section,

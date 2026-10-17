@@ -50,6 +50,7 @@ class PackageVersionTransformer:
             version=record.get("version", "0.0-1"),
             distribution=record.get("distribution"),
             release=record.get("release"),
+            suite=record.get("suite"),
             architecture=record.get("architecture"),
             component=record.get("component"),
             section=record.get("section"),

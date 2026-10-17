@@ -68,7 +68,7 @@ class ObservationMeta(BaseModel):
         source: Data source identifier.
         observed_at: When the fact was observed by the pipeline.
         effective_at: When the fact became true in the domain.
-        schema_version: Schema version used for normalization.
+        schema_version: Version of the schema used for normalization.
         ingestion_run_id: Ingestion run that produced this observation.
     """
 
@@ -222,6 +222,7 @@ class PackageVersionObservedPayload(BaseModel):
         version: Debian version string.
         distribution: Distribution family where observed.
         release: Debian release/pocket where observed.
+        suite: Suite role where observed (oldstable, stable, testing).
         architecture: Architecture this version targets.
         component: Archive component.
         section: Archive section.
@@ -243,6 +244,11 @@ class PackageVersionObservedPayload(BaseModel):
         default=None,
         description="Debian release/pocket where observed (sid, bullseye, "
         "etc.).",
+    )
+    suite: str | None = Field(
+        default=None,
+        description="Suite role where observed (oldstable, stable, testing); "
+        "None when only the release pocket is known.",
     )
     architecture: str | None = Field(
         default=None, description="Architecture this version targets."
@@ -281,6 +287,7 @@ class PackageVersionObservedPayload(BaseModel):
             "version": self.version,
             "distribution": self.distribution,
             "release": self.release,
+            "suite": self.suite,
             "architecture": self.architecture,
             "component": self.component,
             "section": self.section,

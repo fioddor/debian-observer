@@ -25,7 +25,9 @@ from debian_observer.events import EventEnvelope
 # Schema definition (R1 — PackageVersionObserved)
 # ---------------------------------------------------------------------------
 
-# Inferred from to_parquet_row + EventEnvelope fields
+# Inferred from to_parquet_row + EventEnvelope fields.
+# suite is appended last: files written before the column existed
+# (13- and 16-column layouts) still load positionally.
 _DEFAULT_SCHEMA = pa.schema(
     [
         ("event_id", pa.string()),
@@ -44,6 +46,7 @@ _DEFAULT_SCHEMA = pa.schema(
         ("component", pa.string()),
         ("section", pa.string()),
         ("priority", pa.string()),
+        ("suite", pa.string()),
     ]
 )
 
@@ -100,6 +103,7 @@ class ParquetWriter:
             "component": payload.get("component", ""),
             "section": payload.get("section", ""),
             "priority": payload.get("priority", ""),
+            "suite": payload.get("suite", ""),
         }
 
     def write_events(

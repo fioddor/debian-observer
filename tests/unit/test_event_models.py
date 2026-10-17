@@ -574,3 +574,30 @@ class TestDomainToEventFlow:
         )
         assert env1.event_id == env2.event_id
         assert env1 == env2
+
+
+class TestPackageVersionObservedExtendedFields:
+    """PackageVersionObserved payload carries the full fact fields."""
+
+    def test_construction_and_parquet_row(self) -> None:
+        obs = ObservationMeta(source="udd")
+        payload = PackageVersionObservedPayload(
+            package_id="librte-dpdk:amd64",
+            source_package="dpdk",
+            version="25.11.3-1",
+            distribution="debian",
+            release="bullseye-security",
+            architecture="amd64",
+            component="main",
+            section="libs",
+            priority="optional",
+            observation=obs,
+        )
+        assert payload.source_package == "dpdk"
+        assert payload.release == "bullseye-security"
+        assert payload.section == "libs"
+
+        row = payload.to_parquet_row()
+        assert row["source_package"] == "dpdk"
+        assert row["release"] == "bullseye-security"
+        assert row["section"] == "libs"

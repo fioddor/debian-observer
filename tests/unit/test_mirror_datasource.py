@@ -92,3 +92,32 @@ class TestDebianMirrorDataSource:
         checksum2 = source.compute_checksum()
         assert checksum1 == checksum2
         assert len(checksum1) == 64
+
+
+class TestDebianMirrorSectionPriority:
+    """Mirror Packages.gz parser must keep Section and Priority."""
+
+    @patch("urllib.request.urlopen")
+    def test_retrieve_includes_section_priority(
+        self, mock_urlopen: MagicMock
+    ) -> None:
+        _mock_urlopen_response(
+            mock_urlopen,
+            [
+                {
+                    "Package": "hello",
+                    "Version": "2.10-3",
+                    "Architecture": "amd64",
+                    "Section": "devel",
+                    "Priority": "optional",
+                },
+            ],
+        )
+
+        source = DebianMirrorDataSource(
+            suite="stable", component="main", architecture="amd64", limit=5
+        )
+        records = source.retrieve()
+
+        assert records[0]["section"] == "devel"
+        assert records[0]["priority"] == "optional"

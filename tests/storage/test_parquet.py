@@ -62,10 +62,13 @@ class TestParquetWriter:
             "effective_at",
             "ingestion_run_id",
             "package_id",
+            "source_package",
             "version",
             "distribution",
+            "release",
             "architecture",
             "component",
+            "section",
             "priority",
         ]
 
@@ -89,3 +92,35 @@ class TestParquetWriter:
         writer.write_events([event], ingestion_run_id="run-002")
         files = writer.list_files()
         assert len(files) == 2
+
+
+class TestParquetExtendedFactColumns:
+    """Parquet output carries release/section/source_package columns."""
+
+    def test_written_row_contains_extended_fields(self, tmp_path: Path):
+        writer = ParquetWriter(output_dir=tmp_path)
+        now = datetime.now(timezone.utc)
+        event = EventEnvelope(
+            event_type="PackageVersionObserved",
+            source="udd",
+            entity_id="librte-dpdk:amd64",
+            payload={
+                "package_id": "librte-dpdk:amd64",
+                "source_package": "dpdk",
+                "version": "25.11.3-1",
+                "distribution": "debian",
+                "release": "bullseye-security",
+                "architecture": "amd64",
+                "component": "main",
+                "section": "libs",
+                "priority": "optional",
+            },
+            observed_at=now,
+            effective_at=now,
+        )
+        path = writer.write_events([event], ingestion_run_id="run-ext-001")
+        table = pq.read_table(path)
+        row = table.to_pylist()[0]
+        assert row["source_package"] == "dpdk"
+        assert row["release"] == "bullseye-security"
+        assert row["section"] == "libs"

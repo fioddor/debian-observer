@@ -380,3 +380,36 @@ class TestObservation:
         )
         assert hash(obs1) == hash(obs2)
         assert obs1 == obs2
+
+
+class TestPackageVersionExtendedFields:
+    """PackageVersion carries the full package-version fact fields."""
+
+    def test_full_construction_with_extended_fields(self) -> None:
+        now = datetime.now(timezone.utc)
+        pv = PackageVersion(
+            package_id="librte-dpdk:amd64",
+            source_package="dpdk",
+            version="25.11.3-1",
+            distribution="debian",
+            release="bullseye-security",
+            architecture="amd64",
+            component="main",
+            section="libs",
+            priority="optional",
+            observed_at=now,
+            source="udd",
+        )
+        assert pv.source_package == "dpdk"
+        assert pv.release == "bullseye-security"
+        assert pv.section == "libs"
+
+    def test_extended_fields_default_to_none(self) -> None:
+        pv = PackageVersion(
+            package_id="python3",
+            version="3.11.2-1",
+            source="udd",
+        )
+        assert pv.source_package is None
+        assert pv.release is None
+        assert pv.section is None

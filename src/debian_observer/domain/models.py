@@ -12,8 +12,8 @@ All models are designed to be:
 
 * **Immutable**      — frozen Pydantic models (or frozen dataclasses)
 * **Validatable**    — field validators enforce domain constraints
-* **Serializable**   — JSON via ``model_dump_json()``, Parquet via
-  ``to_arrow_record()`` / ``to_parquet_row()`` helpers
+* **Serializable**   — JSON via ``model_dump_json()``; Parquet
+  serialization is owned by the storage layer (ADR-011)
 * **Comparable**     — hashable and equality-tested on value
 
 Design notes
@@ -139,22 +139,6 @@ class Package(BaseModel):
             raise ValueError("package_id must be a non-empty string")
         return value
 
-    def to_parquet_row(self) -> dict[str, Any]:
-        """Flatten to a Parquet/Arrow-compatible row dict.
-
-        All nested structures are flattened; None values are preserved
-        so that Arrow can infer nullability.
-        """
-        return {
-            "package_id": self.package_id,
-            "name": self.name,
-            "source_package": self.source_package,
-            "section": self.section,
-            "architecture": self.architecture,
-            "maintainer": self.maintainer,
-            "description": self.description,
-        }
-
 
 # ---------------------------------------------------------------------------
 # 5.1.2 PackageVersion
@@ -263,19 +247,6 @@ class PackageVersion(BaseModel):
             return value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc)
 
-    def to_parquet_row(self) -> dict[str, Any]:
-        """Flatten to a Parquet/Arrow-compatible row dict."""
-        return {
-            "package_id": self.package_id,
-            "version": self.version,
-            "distribution": self.distribution,
-            "architecture": self.architecture,
-            "component": self.component,
-            "priority": self.priority,
-            "observed_at": self.observed_at.isoformat(),
-            "source": self.source,
-        }
-
 
 # ---------------------------------------------------------------------------
 # 5.1.3 Release
@@ -332,17 +303,6 @@ class Release(BaseModel):
         if not value or not isinstance(value, str):
             raise ValueError("Field must be a non-empty string")
         return value
-
-    def to_parquet_row(self) -> dict[str, Any]:
-        """Flatten to a Parquet/Arrow-compatible row dict."""
-        return {
-            "release_id": self.release_id,
-            "name": self.name,
-            "codename": self.codename,
-            "status": self.status,
-            "version": self.version,
-            "description": self.description,
-        }
 
 
 # ---------------------------------------------------------------------------
@@ -435,19 +395,6 @@ class Migration(BaseModel):
         if value.tzinfo is None:
             return value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc)
-
-    def to_parquet_row(self) -> dict[str, Any]:
-        """Flatten to a Parquet/Arrow-compatible row dict."""
-        return {
-            "migration_id": self.migration_id,
-            "source": self.source,
-            "target": self.target,
-            "package": self.package,
-            "version": self.version,
-            "architecture": self.architecture,
-            "status": self.status.value,
-            "observed_at": self.observed_at.isoformat(),
-        }
 
 
 # ---------------------------------------------------------------------------
@@ -573,17 +520,3 @@ class Observation(BaseModel):
                 f"effective={value.isoformat()}, observed={observed.isoformat()}"
             )
         return value
-
-    def to_parquet_row(self) -> dict[str, Any]:
-        """Flatten to a Parquet/Arrow-compatible row dict."""
-        return {
-            "observation_id": self.observation_id,
-            "entity_id": self.entity_id,
-            "entity_type": self.entity_type,
-            "source": self.source,
-            "observed_at": self.observed_at.isoformat(),
-            "effective_at": self.effective_at.isoformat(),
-            "payload_reference": self.payload_reference,
-            "schema_version": self.schema_version,
-            "ingestion_run_id": self.ingestion_run_id,
-        }

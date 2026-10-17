@@ -58,12 +58,24 @@ class EventLoader:
 
     def _row_to_event(self, row: tuple[Any, ...]) -> EventEnvelope | None:
         """Convert a DuckDB result row back to an EventEnvelope."""
-        # DuckDB column order matches Parquet schema:
+        # DuckDB column order matches the Parquet schema:
         # event_id, event_type, source, entity_id, observed_at, effective_at,
-        # ingestion_run_id, package_id, version, distribution, architecture,
-        # component, priority
+        # ingestion_run_id, package_id, source_package, version,
+        # distribution, release, architecture, component, section, priority.
+        # Files written before release/section/source_package exist carry
+        # the 13-column legacy layout; those rows load with the new fields
+        # as None (DuckDB union_by_name fills NULL for missing columns).
         if len(row) < 13:
             return None
+        legacy = len(row) < 16
+        source_package = None if legacy else row[8]
+        version = row[8] if legacy else row[9]
+        distribution = row[9] if legacy else row[10]
+        release = None if legacy else row[11]
+        architecture = row[10] if legacy else row[12]
+        component = row[11] if legacy else row[13]
+        section = None if legacy else row[14]
+        priority = row[12] if legacy else row[15]
         return EventEnvelope(
             event_id=row[0],
             event_type=row[1],
@@ -74,11 +86,14 @@ class EventLoader:
             ingestion_run_id=row[6],
             payload={
                 "package_id": row[7] or "",
-                "version": row[8] or "",
-                "distribution": row[9] or "",
-                "architecture": row[10] or "",
-                "component": row[11],
-                "priority": row[12],
+                "source_package": source_package,
+                "version": version or "",
+                "distribution": distribution or "",
+                "release": release,
+                "architecture": architecture or "",
+                "component": component,
+                "section": section,
+                "priority": priority,
                 "observation": {
                     "source": row[2] or "",
                     "observed_at": row[4] or "",
@@ -107,7 +122,7 @@ class EventLoader:
                         package_id=pkg_id,
                         name=pkg_name,
                         source_package=pkg_name,
-                        section="unknown",
+                        section=payload.get("section") or "unknown",
                         architecture=arch,
                     )
                 )
@@ -116,10 +131,13 @@ class EventLoader:
             self.store.add_package_version(
                 PackageVersion(
                     package_id=pkg_id,
+                    source_package=payload.get("source_package"),
                     version=payload.get("version", ""),
                     distribution=payload.get("distribution"),
+                    release=payload.get("release"),
                     architecture=payload.get("architecture"),
                     component=payload.get("component"),
+                    section=payload.get("section"),
                     priority=payload.get("priority"),
                     source=event.source,
                 )

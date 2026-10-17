@@ -46,10 +46,13 @@ class PackageVersionTransformer:
 
         return PackageVersion(
             package_id=package_id,
+            source_package=record.get("source_package"),
             version=record.get("version", "0.0-1"),
             distribution=record.get("distribution"),
+            release=record.get("release"),
             architecture=record.get("architecture"),
             component=record.get("component"),
+            section=record.get("section"),
             priority=record.get("priority"),
             source=self.source_name,
             observed_at=datetime.now(timezone.utc),

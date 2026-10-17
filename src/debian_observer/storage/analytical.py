@@ -59,7 +59,10 @@ class AnalyticalStorage:
         con = duckdb.connect(":memory:")
         # Create a view over all parquet files
         file_list = ", ".join(f"'{f}'" for f in files)
-        con.execute(f"CREATE VIEW events AS SELECT * FROM read_parquet([{file_list}])")
+        con.execute(
+            f"CREATE VIEW events AS SELECT * FROM "
+            f"read_parquet([{file_list}], union_by_name=true)"
+        )
         return con.execute(sql)
 
     def count_events(self) -> int:

@@ -187,6 +187,10 @@ class PackageVersion(BaseModel):
         ...,
         description="Canonical package identifier.",
     )
+    source_package: str | None = Field(
+        default=None,
+        description="Source package this binary belongs to (if known).",
+    )
     version: DebianVersionString = Field(
         ...,
         description="Debian version string.",
@@ -194,7 +198,13 @@ class PackageVersion(BaseModel):
     )
     distribution: str | None = Field(
         default=None,
-        description="Suite/distribution where observed (sid, trixie, bookworm).",
+        description="Distribution family where observed (UDD: 'debian'; "
+        "mirror: suite name).",
+    )
+    release: str | None = Field(
+        default=None,
+        description="Debian release/pocket where observed (sid, bullseye, "
+        "bookworm-security).",
     )
     architecture: str | None = Field(
         default=None,
@@ -203,6 +213,10 @@ class PackageVersion(BaseModel):
     component: str | None = Field(
         default=None,
         description="Archive component (main, contrib, non-free).",
+    )
+    section: str | None = Field(
+        default=None,
+        description="Archive section this version belongs to (e.g. 'devel').",
     )
     priority: str | None = Field(
         default=None,

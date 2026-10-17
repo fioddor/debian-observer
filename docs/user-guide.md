@@ -101,7 +101,7 @@ debian-observer ingest \
 ```
 
 This queries the `packages` table from `udd-mirror.debian.net:5432`.
-The default table is `packages`, which includes release (suite) and architecture columns.
+The default table is `packages`, which includes package (binary), source, version, distribution, release (suite/pocket), architecture, section and priority columns.
 
 **Expected output (udd):**
 ```

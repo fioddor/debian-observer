@@ -540,6 +540,10 @@ class DebianMirrorDataSource(DataSource):
                 current["version"] = line.split(": ", 1)[1]
             elif line.startswith("Architecture: "):
                 current["architecture"] = line.split(": ", 1)[1]
+            elif line.startswith("Section: "):
+                current["section"] = line.split(": ", 1)[1]
+            elif line.startswith("Priority: "):
+                current["priority"] = line.split(": ", 1)[1]
             elif line == "" and current:
                 records.append(
                     {
@@ -548,6 +552,8 @@ class DebianMirrorDataSource(DataSource):
                         "distribution": self._suite,
                         "architecture": current.get("architecture", self._architecture),
                         "component": self._component,
+                        "section": current.get("section"),
+                        "priority": current.get("priority"),
                         "source": self.name,
                         "observed_at": datetime.now(timezone.utc).isoformat(),
                     }
@@ -648,7 +654,9 @@ class UDDDataSource(DataSource):
         )
         with conn.cursor() as cursor:
             cursor.execute(
-                f"SELECT source, version, distribution, release, architecture FROM {self._table} LIMIT %s",
+                f"SELECT package, source, version, distribution, release, "
+                f"architecture, section, priority FROM {self._table} "
+                f"LIMIT %s",
                 (self._limit,),
             )
             rows = cursor.fetchall()
@@ -658,11 +666,14 @@ class UDDDataSource(DataSource):
         for row in rows:
             records.append(
                 {
-                    "package": row[0],
-                    "version": row[1],
-                    "distribution": row[2] or "unknown",
-                    "release": row[3] or "unknown",
-                    "architecture": row[4] or "unknown",
+                    "package": row[0] or "unknown",
+                    "source_package": row[1],
+                    "version": row[2] or "unknown",
+                    "distribution": row[3] or "unknown",
+                    "release": row[4] or "unknown",
+                    "architecture": row[5] or "unknown",
+                    "section": row[6],
+                    "priority": row[7],
                     "source": self.name,
                     "observed_at": datetime.now(timezone.utc).isoformat(),
                 }

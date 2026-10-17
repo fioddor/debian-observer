@@ -49,10 +49,13 @@ class EventFactory:
         )
         payload = PackageVersionObservedPayload(
             package_id=version.package_id,
+            source_package=version.source_package,
             version=version.version,
             distribution=version.distribution,
+            release=version.release,
             architecture=version.architecture,
             component=version.component,
+            section=version.section,
             priority=version.priority,
             observation=observation,
         )

@@ -23,7 +23,8 @@ class TestParquetWriter:
             payload={
                 "package_id": "vim:amd64",
                 "version": "2:9.0-1",
-                "distribution": "sid",
+                "distribution": "debian",
+                "release": "sid",
                 "architecture": "amd64",
                 "component": "main",
                 "priority": "optional",
@@ -45,7 +46,8 @@ class TestParquetWriter:
             payload={
                 "package_id": "vim:amd64",
                 "version": "2:9.0-1",
-                "distribution": "sid",
+                "distribution": "debian",
+                "release": "sid",
             },
             observed_at=now,
             effective_at=now,

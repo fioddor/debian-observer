@@ -154,13 +154,14 @@ class TestPackageVersion:
         pv = PackageVersion(
             package_id="python3",
             version="3.11.2-1",
-            distribution="sid",
+            distribution="debian",
+            release="sid",
             source="udd",
         )
         row = pv.to_parquet_row()
         assert row["package_id"] == "python3"
         assert row["version"] == "3.11.2-1"
-        assert row["distribution"] == "sid"
+        assert row["distribution"] == "debian"
         assert isinstance(row["observed_at"], str)
 
     def test_hashable(self) -> None:

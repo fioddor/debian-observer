@@ -54,7 +54,7 @@ class TestEventEnvelope:
             effective_at=now - timedelta(hours=1),
             entity_id="pkg:python3:3.11.2-1",
             ingestion_run_id="run-001",
-            payload={"version": "3.11.2-1", "distribution": "sid"},
+            payload={"version": "3.11.2-1", "distribution": "debian", "release": "sid"},
         )
         assert env.payload["version"] == "3.11.2-1"
         assert env.ingestion_run_id == "run-001"

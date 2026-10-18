@@ -224,7 +224,7 @@ A limitation is acceptable when:
 
 This release deliberately creates the foundation required by the next one.
 
-#### R3 consumes
+#### R2 consumes
 
  - normalized package data,
  - package versions,
@@ -234,7 +234,7 @@ This release deliberately creates the foundation required by the next one.
  - provenance,
  - historical datasets.
 
-#### R3 adds
+#### R2 adds
 
  - dependency graph construction,
  - reverse dependency analysis,
@@ -989,7 +989,7 @@ We aim to make the deployment:
 Patterns:
 
  - Containerization provides this, and Docker Compose provides the initial orchestration layer.
- - Infrastructure as Code (IaC) improoooves consistency and scalability.
+ - Infrastructure as Code (IaC) improves consistency and scalability.
 
 
 The goal is not to recreate an entire cloud provider locally. Locally, the IaC layer should demonstrate:
@@ -1083,13 +1083,13 @@ Thus, the system must detect:
 ---
 ## 16. Benchmarked Performance
 
-Benchmarking enables quantitative awarness on the system's performance.
+Benchmarking enables quantitative awareness on the system's performance.
 
 It enables:
 
  - incident response,
  - incident prevention,
- - suply planning,
+ - supply planning,
  - analysis (trends, correlation, ...),
  - and quantitative estimations (dimensioning, budgeting, forecasting...).
 

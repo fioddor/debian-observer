@@ -72,3 +72,41 @@ def test_unknown_source_rejected(tmp_path):
     )
     assert result.exit_code == 2
     assert "Invalid value" in result.output
+
+
+def test_validate_accepts_csv_xz_input(tmp_path):
+    """Validate reads xz-compressed CSV raw artifacts (ADR-002)."""
+    from debian_observer.ingestion.raw import write_raw_artifact
+
+    runner = CliRunner()
+    path = tmp_path / "udd-20261020-run-x.csv.xz"
+    write_raw_artifact(
+        [
+            {"package": "vim", "version": "1.0-1", "source": "udd"},
+            {"package": "awk", "version": "1:5.2", "source": "udd"},
+        ],
+        path,
+    )
+    result = runner.invoke(cli, ["validate", "--input", str(path)])
+    assert result.exit_code == 0
+    assert "Valid: 2, Invalid: 0" in result.output
+
+
+def test_normalize_accepts_csv_xz_input(tmp_path):
+    """Normalize reads xz-compressed CSV raw artifacts (ADR-002)."""
+    from debian_observer.ingestion.raw import write_raw_artifact
+
+    runner = CliRunner()
+    path = tmp_path / "udd-20261020-run-y.csv.xz"
+    write_raw_artifact(
+        [{"package": "vim", "version": "1.0-1", "source": "udd"}],
+        path,
+    )
+    result = runner.invoke(
+        cli, ["normalize", "--source", "udd", "--input", str(path)]
+    )
+    assert result.exit_code == 0
+    lines = [l for l in result.output.strip().split("\n") if l.startswith("{")]
+    assert len(lines) == 1
+    event = json.loads(lines[0])
+    assert event["event_type"] == "PackageVersionObserved"

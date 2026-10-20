@@ -9,6 +9,7 @@ import json
 
 import click
 
+from debian_observer.ingestion.raw import read_raw_input
 from debian_observer.normalization.normalizer import Normalizer
 
 
@@ -20,7 +21,10 @@ from debian_observer.normalization.normalizer import Normalizer
     "input_file",
     type=click.File("r"),
     default="-",
-    help="Input JSON lines file (default: stdin).",
+    help=(
+        "Input raw records: JSON lines (stdin or .jsonl) or "
+        "xz-compressed CSV artifact (.csv.xz); default stdin."
+    ),
 )
 @click.option(
     "--output",
@@ -45,12 +49,8 @@ def normalize(
 ) -> None:
     """Normalize raw records to domain events; records failing
     validation are written to --invalid (or dropped)."""
-    # Read records from JSON lines
-    records = []
-    for line in input_file:
-        line = line.strip()
-        if line:
-            records.append(json.loads(line))
+    # Read raw records (JSON lines or xz-compressed CSV)
+    records = read_raw_input(input_file)
 
     normalizer = Normalizer(
         source_name=source, ingestion_run_id=run_id or "cli-normalize"

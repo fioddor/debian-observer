@@ -146,9 +146,9 @@ UDD_HOST=192.168.1.218 UDD_USER=udd UDD_PASSWORD=udd \
 
 **Verify outputs:**
 
-Raw JSONL artifact:
+Raw artifact (xz-compressed CSV):
 ```bash
-cat /tmp/smoke-raw/sources.debian.org-*.jsonl | head -n 3
+xz -dc /tmp/smoke-raw/sources.debian.org-*.csv.xz | head -n 3
 ```
 
 Parquet schema:
@@ -205,10 +205,12 @@ short-lived CLI commands show no telemetry output.
 
 ## Normalization
 
-Transform raw JSONL records into canonical domain events:
+Transform raw records into canonical domain events. Raw inputs
+are JSON lines (stdin or `.jsonl`) or xz-compressed CSV
+artifacts (`.csv.xz`):
 
 ```bash
-cat records.jsonl | debian-observer normalize > events.jsonl
+debian-observer normalize --input data/raw/<file>.csv.xz > events.jsonl
 ```
 
 Run `debian-observer normalize --help` for all options (source, run
@@ -225,10 +227,10 @@ stays 0 even when invalid records are found — validation is a
 report, not a gate.
 
 ```bash
-debian-observer validate --input data/raw/<file>.jsonl
+debian-observer validate --input data/raw/<file>.csv.xz
 ```
 
-Mock artifacts (`mock-debian-*.jsonl`) hold synthetic rows that
+Mock artifacts (`mock-debian-*.csv.xz`) hold synthetic rows that
 mirror the UDD `packages` shape, so `validate` counts them valid —
 they are test rows, not real UDD data.
 
@@ -274,7 +276,10 @@ Data is stored in **Parquet** format with a **DuckDB** analytical layer for SQL 
 
 ## Pipeline
 
-The ingestion pipeline integrates ParquetWriter for optional persistent storage. After running `debian-observer ingest`, raw artifacts, the run manifest (JSON, `*.manifest.json` next to each raw artifact) and Parquet events are available in `data/`.
+The ingestion pipeline integrates ParquetWriter for optional persistent storage. After running `debian-observer ingest`, raw artifacts
+(xz-compressed CSV, `*.csv.xz`), the run manifest (JSON,
+`*.manifest.json` next to each raw artifact) and Parquet events
+are available in `data/`.
 
 The pipeline can also project `PackageVersionObserved` events into the normalized dataset (spec §10.2, ADR-003, ADR-011):
 

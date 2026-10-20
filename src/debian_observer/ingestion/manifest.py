@@ -27,11 +27,13 @@ Design notes
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from debian_observer.ingestion.acquisition import DataSource
+from debian_observer.ingestion.raw import sha256_raw
 
 # ---------------------------------------------------------------------------
 # Dataset manifest model
@@ -182,6 +184,7 @@ class ManifestBuilder:
         dataset_name: str,
         source_version: str | None = None,
         license: str | None = None,
+        artifact_path: Path | None = None,
     ) -> DatasetManifest:
         """Build a manifest from a data source.
 
@@ -190,15 +193,27 @@ class ManifestBuilder:
             dataset_name: Human-readable name for the dataset.
             source_version: Optional version/snapshot identifier.
             license: Optional license string.
+            artifact_path: Path to the stored raw artifact. When
+                given, the manifest checksum and size describe the
+                stored (compressed) file; else the source-data
+                checksum (ADR-002).
 
         Returns:
             A frozen DatasetManifest with computed checksum and record count.
         """
+        if artifact_path is not None:
+            checksum = sha256_raw(artifact_path)
+            size_bytes = artifact_path.stat().st_size
+        else:
+            checksum = source.compute_checksum()
+            size_bytes = None
+
         return DatasetManifest(
             dataset_name=dataset_name,
             source=source.name,
             source_version=source_version,
-            checksum=source.compute_checksum(),
+            checksum=checksum,
+            size_bytes=size_bytes,
             record_count=source.record_count(),
             license=license,
         )

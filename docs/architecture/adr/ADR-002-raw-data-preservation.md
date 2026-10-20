@@ -61,6 +61,29 @@ provenance chain survives the run. The manifest format is JSON;
 the YAML block in the project spec is illustrative of the fields
 only.
 
+### Raw artifact format
+
+Raw artifacts are stored as **xz-compressed CSV** files
+(`raw/<source>-<timestamp>-<run>.csv.xz`), written with the
+Python standard library only (`csv` + `lzma`, preset 9). No
+third-party dependency is added.
+
+Rules:
+
+ - The CSV header is the union of the record keys, in
+   first-seen order; a row carries the record's values.
+ - `None` and the empty string are conflated: `None` is
+   written as an empty field and read back as `None`.
+   A record missing a key of the union reads it back as
+   `None`; raw records are uniform maps of strings per run
+   and the sources emit no empty-string values.
+ - The manifest `checksum` and `size_bytes` describe the
+   stored compressed file, so an auditor verifies the
+   artifact at rest. Acquisition validation keeps using
+   the source-data checksum.
+ - Legacy `*.jsonl` raw artifacts remain readable by the
+   raw reader.
+
 Where the data source permits, R1 will support incremental processing,
 distinguishing new, changed, unchanged, and invalid data to avoid unnecessary reprocessing.
 

@@ -30,7 +30,6 @@ Design notes
 
 from __future__ import annotations
 
-import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -42,6 +41,7 @@ from debian_observer.events import EventEnvelope
 from debian_observer.ingestion.acquisition import AcquisitionService, DataSource
 from debian_observer.ingestion.manifest import DatasetManifest, ManifestBuilder
 from debian_observer.ingestion.provenance import ProvenanceRecorder, RawArtifact
+from debian_observer.ingestion.raw import RAW_SUFFIX, sha256_raw, write_raw_artifact
 from debian_observer.normalization.normalizer import Normalizer
 from debian_observer.observability.metrics import IngestionMetrics
 from debian_observer.observability.tracing import get_tracer, span
@@ -216,6 +216,7 @@ class IngestionPipeline:
                 manifest = self._manifest_builder.build(
                     source=source,
                     dataset_name=f"{source.name}-{run_id}",
+                    artifact_path=artifact_path,
                 )
 
             manifest_path: Path | None = None
@@ -234,7 +235,7 @@ class IngestionPipeline:
                     artifact_id=f"artifact-{run_id}",
                     source=source.name,
                     path=artifact_path,
-                    checksum=acquisition_meta["checksum"],
+                    checksum=sha256_raw(artifact_path),
                     size_bytes=artifact_path.stat().st_size,
                 )
                 self._provenance.record_artifact(artifact_meta, ingestion_run_id=run_id)
@@ -302,18 +303,16 @@ class IngestionPipeline:
         run_id: str,
         source_name: str,
     ) -> Path:
-        """Store records as a JSON-lines raw artifact.
+        """Store records as one xz-compressed CSV raw artifact.
 
         Returns:
             Path to the created artifact file.
         """
         self.raw_dir.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-        filename = f"{source_name}-{timestamp}-{run_id}.jsonl"
+        filename = f"{source_name}-{timestamp}-{run_id}{RAW_SUFFIX}"
         artifact_path = self.raw_dir / filename
 
-        with open(artifact_path, "w", encoding="utf-8") as f:
-            for record in records:
-                f.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+        write_raw_artifact(records, artifact_path)
 
         return artifact_path

@@ -541,3 +541,93 @@ class TestManifestPersistence:
             == result.artifact_path.with_suffix(".manifest.json")
         )
         assert result.manifest_path.exists()
+
+
+class TestRawArtifactXZCSV:
+    """Raw artifacts land as xz-compressed CSV (ADR-002)."""
+
+    def test_artifact_written_as_csv_xz(self, tmp_path: Path) -> None:
+        from debian_observer.ingestion.raw import read_raw_artifact
+
+        raw_dir = tmp_path / "raw"
+        raw_dir.mkdir()
+        source = MockDebianDataSource(package_count=2)
+        pipeline = IngestionPipeline(raw_dir=raw_dir)
+        result = pipeline.run(source, ingestion_run_id="run-xz-1")
+
+        assert result.artifact_path is not None
+        assert result.artifact_path.name.endswith(".csv.xz")
+        assert result.artifact_path.exists()
+        # The stored rows read back exactly as the source records.
+        assert read_raw_artifact(result.artifact_path) == source.retrieve()
+
+    def test_none_survives_round_trip(self, tmp_path: Path) -> None:
+        from debian_observer.ingestion.raw import (
+            read_raw_artifact,
+            write_raw_artifact,
+        )
+
+        path = tmp_path / "mock-1-run-x.csv.xz"
+        rows = [
+            {
+                "package": "librte-dpdk",
+                "version": "25.11.3-1",
+                "suite": None,
+                "component": "main",
+            }
+        ]
+        write_raw_artifact(rows, path)
+        back = read_raw_artifact(path)
+        assert back == rows
+        assert back[0]["suite"] is None
+
+    def test_legacy_jsonl_remains_readable(self, tmp_path: Path) -> None:
+        from debian_observer.ingestion.raw import read_raw_artifact
+
+        legacy = tmp_path / "udd-20260930-run-old.jsonl"
+        rows = [
+            {"package": "vim", "version": "1.0", "suite": None},
+            {"package": "awk", "version": "1:5.2"},
+        ]
+        legacy.write_text(
+            "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8"
+        )
+        assert read_raw_artifact(legacy) == rows
+
+    def test_manifest_checksum_describes_stored_file(self, tmp_path: Path) -> None:
+        import hashlib
+
+        raw_dir = tmp_path / "raw"
+        raw_dir.mkdir()
+        source = MockDebianDataSource(package_count=2)
+        pipeline = IngestionPipeline(raw_dir=raw_dir)
+        result = pipeline.run(source, ingestion_run_id="run-xz-3")
+
+        assert result.manifest_path is not None
+        assert result.artifact_path is not None
+        stored = result.artifact_path.read_bytes()
+        assert result.manifest.checksum == hashlib.sha256(stored).hexdigest()
+        assert result.manifest.size_bytes == len(stored)
+
+    def test_provenance_checksum_describes_stored_file(
+        self, tmp_path: Path
+    ) -> None:
+        import hashlib
+        from unittest.mock import patch
+
+        raw_dir = tmp_path / "raw"
+        raw_dir.mkdir()
+        source = MockDebianDataSource(package_count=2)
+        pipeline = IngestionPipeline(raw_dir=raw_dir)
+        with patch.object(
+            pipeline._provenance,
+            "record_artifact",
+            side_effect=lambda artifact, **kwargs: artifact,
+        ) as recorder:
+            result = pipeline.run(source, ingestion_run_id="run-xz-4")
+
+        meta = recorder.call_args.args[0]
+        assert result.artifact_path is not None
+        stored = result.artifact_path.read_bytes()
+        assert meta.checksum == hashlib.sha256(stored).hexdigest()
+        assert meta.size_bytes == len(stored)

@@ -4,8 +4,8 @@
   "service": "debian-observer-development",
   "workspaceFolder": "/workspace",
   "shutdownAction": "stopCompose",
-  "postCreateCommand": "pip install -e '.[dev]' && pytest tests/ -q",
-  "postStartCommand": "git config --global --add safe.directory /workspace",
+  "postCreateCommand": "sudo mkdir -p /workspace/.pytest_cache && sudo chown -R vscode:vscode /workspace/.pytest_cache && pip install -e '.[dev]' && pytest tests/ -q",
+  "postStartCommand": "sudo mkdir -p /workspace/.pytest_cache && sudo chown -R vscode:vscode /workspace/.pytest_cache && git config --global --add safe.directory /workspace",
   "customizations": {
     "vscode": {
       "extensions": [

@@ -83,13 +83,13 @@ def test_validate_accepts_csv_xz_input(tmp_path):
     write_raw_artifact(
         [
             {"package": "vim", "version": "1.0-1", "source": "udd"},
-            {"package": "bad"},
+            {"package": "awk", "version": "1:5.2", "source": "udd"},
         ],
         path,
     )
     result = runner.invoke(cli, ["validate", "--input", str(path)])
     assert result.exit_code == 0
-    assert "Valid: 1, Invalid: 1" in result.output
+    assert "Valid: 2, Invalid: 0" in result.output
 
 
 def test_normalize_accepts_csv_xz_input(tmp_path):

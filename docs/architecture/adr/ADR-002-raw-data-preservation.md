@@ -74,8 +74,9 @@ Rules:
    first-seen order; a row carries the record's values.
  - `None` and the empty string are conflated: `None` is
    written as an empty field and read back as `None`.
-   Raw records are flat maps of strings; the sources emit
-   no empty-string values.
+   A record missing a key of the union reads it back as
+   `None`; raw records are uniform maps of strings per run
+   and the sources emit no empty-string values.
  - The manifest `checksum` and `size_bytes` describe the
    stored compressed file, so an auditor verifies the
    artifact at rest. Acquisition validation keeps using

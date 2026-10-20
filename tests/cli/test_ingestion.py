@@ -260,7 +260,7 @@ class TestIngestUnlimited:
     @patch("debian_observer.cli.commands.ingest.IngestionPipeline")
     def test_default_limit_is_none_and_warns(self, MockPipeline: MagicMock) -> None:
         MockPipeline.return_value.run.return_value = _make_mock_result()
-        runner = CliRunner(mix_stderr=False)
+        runner = CliRunner()
         result = runner.invoke(cli, ["ingest", "--source", "udd", "--url", "packages"])
 
         assert result.exit_code == 0
@@ -274,7 +274,7 @@ class TestIngestUnlimited:
         self, MockPipeline: MagicMock
     ) -> None:
         MockPipeline.return_value.run.return_value = _make_mock_result()
-        runner = CliRunner(mix_stderr=False)
+        runner = CliRunner()
         result = runner.invoke(
             cli, ["ingest", "--source", "mirror", "--url", "stable", "--limit", "5"]
         )

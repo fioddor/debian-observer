@@ -8,7 +8,6 @@ Verifies that the serve command:
 
 from __future__ import annotations
 
-import os
 from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
@@ -61,8 +60,9 @@ class TestServeInvocation:
 class TestServeParquetLoading:
     """Validate Parquet data loading via CLI or environment."""
 
-    def test_serve_loads_parquet_when_flag_provided(self):
+    def test_serve_loads_parquet_when_flag_provided(self, tmp_path, monkeypatch):
         runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
         with (
             patch("debian_observer.cli.commands.serve.uvicorn.run") as mock_uvicorn_run,
             patch("debian_observer.cli.commands.serve.EventLoader") as mock_loader_cls,
@@ -71,9 +71,8 @@ class TestServeParquetLoading:
             mock_loader.load_from_parquet.return_value = 42
             mock_loader_cls.return_value = mock_loader
 
-            with runner.isolated_filesystem():
-                os.makedirs("data/parquet")
-                result = runner.invoke(cli, ["serve", "--parquet-dir", "data/parquet"])
+            (tmp_path / "data" / "parquet").mkdir(parents=True)
+            result = runner.invoke(cli, ["serve", "--parquet-dir", "data/parquet"])
 
             assert result.exit_code == 0
             mock_loader_cls.assert_called_once()

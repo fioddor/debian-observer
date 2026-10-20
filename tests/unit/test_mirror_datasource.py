@@ -201,3 +201,27 @@ class TestMirrorDistributionSuiteSemantics:
     def test_invalid_distribution_rejected(self) -> None:
         with pytest.raises(ValueError, match="distribution"):
             DebianMirrorDataSource(suite="stable", distribution="kali")
+
+
+class TestMirrorUnlimited:
+    """Unlimited ingestion (limit=None) retrieves the whole Packages file."""
+
+    @patch("urllib.request.urlopen")
+    def test_limit_none_retrieves_all_records(self, mock_urlopen: MagicMock) -> None:
+        packages = [
+            {"Package": f"pkg{i}", "Version": "1.0", "Architecture": "amd64"}
+            for i in range(8)
+        ]
+        _mock_urlopen_response(mock_urlopen, packages)
+
+        source = DebianMirrorDataSource(suite="stable", limit=None)
+        records = source.retrieve()
+
+        assert len(records) == 8
+
+    @patch("urllib.request.urlopen")
+    def test_limit_none_is_the_default(self, mock_urlopen: MagicMock) -> None:
+        _mock_urlopen_response(mock_urlopen, [])
+        source = DebianMirrorDataSource(suite="stable")
+
+        assert source._limit is None

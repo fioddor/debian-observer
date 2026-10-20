@@ -252,3 +252,34 @@ def test_pipeline_writes_dataset_when_configured(tmp_path: Path):
     assert result.dataset_path.exists()
     table = pq.read_table(result.dataset_path)
     assert table.num_rows == len(result.events)
+
+
+class TestIngestUnlimited:
+    """--limit defaults to the whole source with a stderr warning."""
+
+    @patch("debian_observer.cli.commands.ingest.IngestionPipeline")
+    def test_default_limit_is_none_and_warns(self, MockPipeline: MagicMock) -> None:
+        MockPipeline.return_value.run.return_value = _make_mock_result()
+        runner = CliRunner()
+        result = runner.invoke(cli, ["ingest", "--source", "udd", "--url", "packages"])
+
+        assert result.exit_code == 0
+        data_source = MockPipeline.return_value.run.call_args[0][0]
+        assert data_source._limit is None
+        assert "Warning" in result.stderr
+        assert "--limit" in result.stderr
+
+    @patch("debian_observer.cli.commands.ingest.IngestionPipeline")
+    def test_explicit_limit_keeps_value_without_warning(
+        self, MockPipeline: MagicMock
+    ) -> None:
+        MockPipeline.return_value.run.return_value = _make_mock_result()
+        runner = CliRunner()
+        result = runner.invoke(
+            cli, ["ingest", "--source", "mirror", "--url", "stable", "--limit", "5"]
+        )
+
+        assert result.exit_code == 0
+        data_source = MockPipeline.return_value.run.call_args[0][0]
+        assert data_source._limit == 5
+        assert "Warning" not in result.stderr

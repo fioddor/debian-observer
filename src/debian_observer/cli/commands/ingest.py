@@ -26,7 +26,12 @@ from debian_observer.ingestion.pipeline import IngestionPipeline
     help="Data source to ingest from.",
 )
 @click.option("--url", required=True, help="URL or package/suite/table name.")
-@click.option("--limit", default=5, help="Max records to ingest (mirror/udd; default: 5).")
+@click.option(
+    "--limit",
+    type=int,
+    default=None,
+    help="Max records to ingest (mirror/udd); unset ingests the whole source.",
+)
 @click.option("--raw-dir", default="data/raw", help="Directory for raw artifacts (default: data/raw).")
 @click.option(
     "--parquet-dir", default=None, help="Optional directory for Parquet output."
@@ -41,7 +46,7 @@ def ingest(
     ctx: click.Context,
     source: str,
     url: str,
-    limit: int,
+    limit: int | None,
     raw_dir: str,
     parquet_dir: str | None,
     dataset_dir: str | None,
@@ -53,7 +58,8 @@ def ingest(
     `--url` is the package name), `mirror` (Packages.gz from a Debian
     mirror; `--url` is the suite) and `udd` (UDD PostgreSQL mirror,
     udd-mirror.debian.net; `--url` is the table name); `--limit`
-    caps records for mirror/udd. Synthetic sources (in-memory,
+    caps records for mirror/udd; unset ingests the whole source
+    with a warning on stderr. Synthetic sources (in-memory,
     mock) emit synthetic rows for tests, not real Debian data.
     """
     acquisition = AcquisitionService()
@@ -76,6 +82,12 @@ def ingest(
         raise click.BadParameter(
             f"unknown source {source!r}; valid: sources, mirror, udd",
             param_hint="--source",
+        )
+
+    if limit is None and source in ("mirror", "udd"):
+        click.echo(
+            "Warning: --limit unset; ingesting the whole source.",
+            err=True,
         )
 
     pipeline = IngestionPipeline(

@@ -213,3 +213,28 @@ class TestUDDComponentField:
         mock_cursor.execute.assert_called_once()
         sql = mock_cursor.execute.call_args[0][0]
         assert "component" in sql
+
+
+class TestUDDUnlimited:
+    """Unlimited ingestion (limit=None) omits the LIMIT clause."""
+
+    @patch("psycopg2.connect")
+    def test_limit_none_omits_limit_clause(self, mock_connect: MagicMock) -> None:
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = []
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        mock_connect.return_value = mock_conn
+
+        source = UDDDataSource(table="packages", limit=None)
+        source.retrieve()
+
+        mock_cursor.execute.assert_called_once()
+        sql = mock_cursor.execute.call_args[0][0]
+        assert "LIMIT" not in sql.upper()
+
+    def test_limit_none_is_the_default(self) -> None:
+        source = UDDDataSource(table="packages")
+
+        assert source._limit is None

@@ -524,9 +524,8 @@ class DebianMirrorDataSource(DataSource):
     stable, testing) and in ``release`` when it is a codename or pocket
     (bookworm, sid, bookworm-security).
 
-    The ``limit`` parameter truncates the result to a fixed number of
-    packages, making the first ingestion fast enough for smoke tests
-    on slow connections.
+    The ``limit`` parameter truncates the result to a fixed number
+    of packages. The default ``None`` ingests the whole file.
 
     Usage:
 
@@ -544,7 +543,7 @@ class DebianMirrorDataSource(DataSource):
         suite: str = "stable",
         component: str = "main",
         architecture: str = "amd64",
-        limit: int = 5,
+        limit: int | None = None,
         mirror: str = MIRROR_DEFAULT,
         distribution: str = "debian",
     ) -> None:
@@ -618,7 +617,7 @@ class DebianMirrorDataSource(DataSource):
                 )
                 current = {}
                 count += 1
-                if count >= self._limit:
+                if self._limit is not None and count >= self._limit:
                     break
 
         self._records = records
@@ -676,7 +675,7 @@ class UDDDataSource(DataSource):
         self,
         *,
         table: str = "packages",
-        limit: int = 5,
+        limit: int | None = None,
         host: str | None = None,
         port: str | None = None,
         database: str | None = None,
@@ -711,12 +710,15 @@ class UDDDataSource(DataSource):
             password=self._password,
         )
         with conn.cursor() as cursor:
-            cursor.execute(
+            query = (
                 f"SELECT package, source, version, distribution, release, "
-                f"architecture, section, priority, component FROM {self._table} "
-                f"LIMIT %s",
-                (self._limit,),
+                f"architecture, section, priority, component FROM {self._table}"
             )
+            if self._limit is not None:
+                query += " LIMIT %s"
+                cursor.execute(query, (self._limit,))
+            else:
+                cursor.execute(query)
             rows = cursor.fetchall()
         conn.close()
 

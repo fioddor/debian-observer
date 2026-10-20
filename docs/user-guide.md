@@ -191,7 +191,7 @@ debian-observer ingest \
   --raw-dir data/raw
 ```
 
-Options: `--limit` (max records), `--parquet-dir` (Parquet output).
+Options: `--limit` (max records; unset ingests the whole source with a warning), `--parquet-dir` (Parquet output).
 See `debian-observer ingest --help` for full options.
 
 ## Observability

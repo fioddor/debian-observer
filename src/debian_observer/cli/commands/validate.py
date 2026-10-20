@@ -9,6 +9,7 @@ import json
 
 import click
 
+from debian_observer.ingestion.raw import read_raw_input
 from debian_observer.normalization.validator import UDDValidator
 
 
@@ -18,7 +19,10 @@ from debian_observer.normalization.validator import UDDValidator
     "input_file",
     type=click.File("r"),
     default="-",
-    help="Input JSON lines file (default: stdin).",
+    help=(
+        "Input raw records: JSON lines (stdin or .jsonl) or "
+        "xz-compressed CSV artifact (.csv.xz); default stdin."
+    ),
 )
 @click.option(
     "--source",
@@ -34,11 +38,7 @@ def validate(input_file: click.File, source: str) -> None:
     with invalid records — validation is a report, not a gate; run it
     before `normalize`.
     """
-    records = []
-    for line in input_file:
-        line = line.strip()
-        if line:
-            records.append(json.loads(line))
+    records = read_raw_input(input_file)
 
     validator = UDDValidator()
 

@@ -73,7 +73,9 @@ cannot reconstruct without reading everything.
 - **Exposes**: `click` commands; the operator's entry point into
   ingestion and the API service. `ingest` is a command group with one
   subcommand per source (`sources`, `mirror`, `udd`; mandatory filter
-  flags, ADR-012).
+  flags, ADR-012); `validate`/`normalize` take raw artifacts
+  (positional, one or more) and read each artifact's manifest sidecar
+  for source and run id.
 
 ## `consumer_app`
 

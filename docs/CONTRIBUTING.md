@@ -148,6 +148,25 @@ pipx install dist/debian_observer.whl
 
 # Rules
 
+## Design documentation
+
+Documentation lives in four kinds of docs, each owning one kind of
+truth:
+
+- User docs (`docs/user-guide.md`, CLI `--help`, API docs) - how to
+  use the system. Users never need development docs; developers
+  must keep user docs true to behaviour.
+- `docs/architecture/` - component map and ADRs (decisions).
+- `docs/design/` - intent: data-model invariants, module contracts,
+  cross-module flows. Only what neither architecture nor code
+  reveals.
+- the code - the *how*: signatures, schemas, migrations.
+
+The design documentation rules live in
+`docs/design/README.md` - single source of truth, never restate the
+code, docs move with code, cite the standard, a contract per
+top-level module.
+
 ## Feature Branches
 
 Use an ad-hoc branch for each feature (a feature branch).

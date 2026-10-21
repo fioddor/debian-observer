@@ -201,29 +201,34 @@ short-lived CLI commands show no telemetry output.
 
 ## Normalization
 
-Transform raw records into canonical domain events. Raw inputs
-are JSON lines (stdin or `.jsonl`) or xz-compressed CSV
-artifacts (`.csv.xz`):
+Transform raw artifacts into canonical domain events. Artifacts are
+xz-compressed CSV files (`.csv.xz`) written by `ingest`; `normalize`
+takes one or more artifacts and reads the source name and run id
+from each artifact's manifest sidecar (`.manifest.json`):
 
 ```bash
-debian-observer normalize --input data/raw/<file>.csv.xz > events.jsonl
+debian-observer normalize data/raw/<file>.csv.xz > events.jsonl
 ```
 
-Run `debian-observer normalize --help` for all options (source, run
-id, invalid-records file).
+Multiple artifacts may be given; their events are concatenated in
+order, each stamped with its own source and run id.
+
+Run `debian-observer normalize --help` for all options (output
+file, invalid-records file).
 
 
 ## Validate raw records
 
-Validate raw records against the expected UDD shape before
+Validate raw artifacts against the expected UDD shape before
 normalization: a record needs a `version` and a `package` or
-`source` name. Invalid records are reported with a reason on
-stderr and the run prints valid/invalid counts; the exit code
-stays 0 even when invalid records are found — validation is a
-report, not a gate.
+`source` name. `validate` takes one or more raw artifacts and reads
+each artifact's source from its manifest sidecar. Invalid records
+are reported with a reason on stderr and the run prints
+valid/invalid counts per artifact; the exit code stays 0 even when
+invalid records are found — validation is a report, not a gate.
 
 ```bash
-debian-observer validate --input data/raw/<file>.csv.xz
+debian-observer validate data/raw/<file>.csv.xz
 ```
 
 Mock artifacts (`mock-debian-*.csv.xz`) hold synthetic rows that

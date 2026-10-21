@@ -41,9 +41,12 @@ class UDDValidator:
         """
         if not isinstance(record, dict):
             return False
-        if not self.REQUIRED_FIELDS.issubset(record.keys()):
+        # Presence is not validity: CSV round-trips write missing
+        # fields as ``None``/empty (ADR-002), and a ``None`` version
+        # would crash the transformer's pydantic models.
+        if not all(record.get(field) for field in self.REQUIRED_FIELDS):
             return False
-        if not any(field in record for field in self.PACKAGE_FIELDS):
+        if not any(record.get(field) for field in self.PACKAGE_FIELDS):
             return False
         return True
 
@@ -73,9 +76,11 @@ class UDDValidator:
         """
         if not isinstance(record, dict):
             return "Record is not a dict"
-        missing_required = self.REQUIRED_FIELDS - record.keys()
+        missing_required = {
+            field for field in self.REQUIRED_FIELDS if not record.get(field)
+        }
         if missing_required:
             return f"Missing required fields: {missing_required}"
-        if not any(field in record for field in self.PACKAGE_FIELDS):
+        if not any(record.get(field) for field in self.PACKAGE_FIELDS):
             return f"Missing package identifier field ({self.PACKAGE_FIELDS})"
         return None

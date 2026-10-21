@@ -10,7 +10,8 @@ cannot reconstruct without reading everything.
   <https://udd.debian.org/>, Debian mirror, sources.debian.org, mock)
   and the `ingest` pipeline: raw artifacts as xz-compressed CSV + JSON
   manifest persisted beside each artifact + provenance record.
-- **Expects**: source selection (`--source`), optional row `--limit`
+- **Expects**: a source subcommand (`ingest sources | mirror | udd`)
+  with its mandatory filter flags (ADR-012), optional row `--limit`
   window; UDD requires reachable PostgreSQL credentials.
 - **Guarantees**: raw data is preserved verbatim (ADR-002) before any
   transformation — as RFC 4180 CSV compressed with LZMA
@@ -69,8 +70,10 @@ cannot reconstruct without reading everything.
 
 ## `cli`
 
-- **Exposes**: `click` commands (`ingest`, `serve`, …); the operator's
-  entry point into ingestion and the API service.
+- **Exposes**: `click` commands; the operator's entry point into
+  ingestion and the API service. `ingest` is a command group with one
+  subcommand per source (`sources`, `mirror`, `udd`; mandatory filter
+  flags, ADR-012).
 
 ## `consumer_app`
 

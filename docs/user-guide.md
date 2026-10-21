@@ -47,9 +47,8 @@ docker exec -ti debian-observer bash
 For a quick end-to-end test using a real public Debian data source:
 
 ```bash
-debian-observer ingest \
-  --source sources \
-  --url hello \
+debian-observer ingest sources \
+  --package hello \
   --raw-dir /tmp/smoke-raw \
   --parquet-dir /tmp/smoke-parquet
 ```
@@ -70,9 +69,8 @@ Parquet written: /tmp/smoke-parquet/run-xxxxxx.parquet
 For a quick test with actual Debian Archive `Packages.gz` data:
 
 ```bash
-debian-observer ingest \
-  --source mirror \
-  --url stable \
+debian-observer ingest mirror \
+  --suite stable \
   --limit 5 \
   --raw-dir /tmp/mirror-raw \
   --parquet-dir /tmp/mirror-parquet
@@ -88,7 +86,7 @@ Parquet written: /tmp/mirror-parquet/run-xxxxxx.parquet
 ```
 
 Mirror records carry `distribution` as the archive family (`debian`,
-or `ubuntu` for Ubuntu mirrors), and split the `--url` suite path:
+or `ubuntu` for Ubuntu mirrors), and split the `--suite` path:
 suite roles (`oldstable`, `stable`, `testing`) land in `suite`,
 codenames and pockets (`bookworm`, `sid`, `bookworm-security`) land in
 `release`.
@@ -98,9 +96,8 @@ codenames and pockets (`bookworm`, `sid`, `bookworm-security`) land in
 For querying the actual UDD public mirror:
 
 ```bash
-debian-observer ingest \
-  --source udd \
-  --url packages \
+debian-observer ingest udd \
+  --table packages \
   --limit 3 \
   --raw-dir /tmp/udd-raw \
   --parquet-dir /tmp/udd-parquet
@@ -136,9 +133,8 @@ Example for a local mirror at `192.168.1.218`:
 
 ```bash
 UDD_HOST=192.168.1.218 UDD_USER=udd UDD_PASSWORD=udd \
-  debian-observer ingest \
-  --source udd \
-  --url packages \
+  debian-observer ingest udd \
+  --table packages \
   --limit 3 \
   --raw-dir /tmp/udd-raw \
   --parquet-dir /tmp/udd-parquet
@@ -167,9 +163,8 @@ print(f'Columns: {table.column_names}')
 For larger datasets (e.g. complete UDD), the acquisition layer supports configurable sources.
 
 ```bash
-debian-observer ingest \
-  --source udd \
-  --url "https://udd.debian.org/dmd/?" \
+debian-observer ingest udd \
+  --table packages \
   --raw-dir data/raw \
   --parquet-dir data/parquet
 ```
@@ -185,14 +180,15 @@ debian-observer --help
 Run a basic ingestion using a configured data source:
 
 ```bash
-debian-observer ingest \
-  --source sources \
-  --url <package> \
+debian-observer ingest sources \
+  --package <package> \
   --raw-dir data/raw
 ```
 
-Options: `--limit` (max records; unset ingests the whole source with a warning), `--parquet-dir` (Parquet output).
-See `debian-observer ingest --help` for full options.
+Options: `--limit` (mirror/udd; unset ingests the whole source with a
+warning), `--component`/`--architecture` (mirror; default `main`/`amd64`),
+`--parquet-dir` (Parquet output), `--dataset-dir`.
+See `debian-observer ingest <source> --help` for full options.
 
 ## Observability
 
@@ -284,7 +280,7 @@ are available in `data/`.
 The pipeline can also project `PackageVersionObserved` events into the normalized dataset (spec §10.2, ADR-003, ADR-011):
 
 ```bash
-debian-observer ingest --source udd --url packages --limit 400 \
+debian-observer ingest udd --table packages --limit 400 \
   --dataset-dir data/normalized/package_versions
 ```
 

@@ -1,8 +1,15 @@
-"""CLI tests for ingestion command."""
+"""CLI tests for the `ingest` command group.
+
+One subcommand per data source (ADR-012): `ingest sources`,
+`ingest mirror`, `ingest udd`. Each source's selector is a
+mandatory filter flag.
+"""
 
 from __future__ import annotations
+
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
 from click.testing import CliRunner
 
 from debian_observer.cli.main import cli
@@ -12,8 +19,9 @@ def test_ingest_help():
     runner = CliRunner()
     result = runner.invoke(cli, ["ingest", "--help"])
     assert result.exit_code == 0
-    assert "--source" in result.output
-    assert "--url" in result.output
+    # One subcommand per source is listed in the synopsis.
+    for subcommand in ("sources", "mirror", "udd"):
+        assert subcommand in result.output
 
 
 def _make_mock_result(
@@ -42,7 +50,7 @@ def test_ingest_sources_source():
 
     with patch("debian_observer.cli.commands.ingest.IngestionPipeline") as MockPipeline:
         MockPipeline.return_value.run.return_value = mock_result
-        result = runner.invoke(cli, ["ingest", "--source", "sources", "--url", "bash"])
+        result = runner.invoke(cli, ["ingest", "sources", "--package", "bash"])
 
     assert result.exit_code == 0
     # Verify pipeline was instantiated
@@ -60,16 +68,22 @@ def test_ingest_mirror_source():
 
     with patch("debian_observer.cli.commands.ingest.IngestionPipeline") as MockPipeline:
         MockPipeline.return_value.run.return_value = mock_result
-        result = runner.invoke(cli, [
-            "ingest", "--source", "mirror", "--url", "stable",
-            "--limit", "2", "--raw-dir", "/tmp/raw"
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "ingest", "mirror",
+                "--suite", "stable",
+                "--limit", "2",
+                "--raw-dir", "/tmp/raw",
+            ],
+        )
 
     assert result.exit_code == 0
     call_args = MockPipeline.return_value.run.call_args
     data_source = call_args[0][0]
     assert data_source.name == "debian.mirror"
     assert data_source._suite == "stable"
+    # --component/--architecture default to the archive's main pair.
     assert data_source._component == "main"
     assert data_source._architecture == "amd64"
     assert data_source._limit == 2
@@ -79,16 +93,38 @@ def test_ingest_mirror_source():
     )
 
 
+def test_ingest_mirror_component_architecture():
+    """mirror exposes --component/--architecture (defaults: main/amd64)."""
+    runner = CliRunner()
+    mock_result = _make_mock_result()
+
+    with patch("debian_observer.cli.commands.ingest.IngestionPipeline") as MockPipeline:
+        MockPipeline.return_value.run.return_value = mock_result
+        result = runner.invoke(
+            cli,
+            [
+                "ingest", "mirror",
+                "--suite", "sid",
+                "--component", "contrib",
+                "--architecture", "arm64",
+            ],
+        )
+
+    assert result.exit_code == 0
+    data_source = MockPipeline.return_value.run.call_args[0][0]
+    assert data_source._component == "contrib"
+    assert data_source._architecture == "arm64"
+
+
 def test_ingest_udd_source():
     runner = CliRunner()
     mock_result = _make_mock_result(record_count=10, events=[MagicMock()] * 3)
 
     with patch("debian_observer.cli.commands.ingest.IngestionPipeline") as MockPipeline:
         MockPipeline.return_value.run.return_value = mock_result
-        result = runner.invoke(cli, [
-            "ingest", "--source", "udd", "--url", "packages",
-            "--limit", "10"
-        ])
+        result = runner.invoke(
+            cli, ["ingest", "udd", "--table", "packages", "--limit", "10"]
+        )
 
     assert result.exit_code == 0
     call_args = MockPipeline.return_value.run.call_args
@@ -98,29 +134,26 @@ def test_ingest_udd_source():
     assert data_source._limit == 10
 
 
-def test_ingest_invalid_source():
-    """Unknown --source values are usage errors: exit 2, one line, no traceback."""
+def test_ingest_unknown_subcommand():
+    """`ingest <unknown>` is a usage error: exit 2, no traceback."""
     runner = CliRunner()
-    result = runner.invoke(cli, ["ingest", "--source", "unknown", "--url", "http://x"])
-    # A bad parameter value is a usage error, not a runtime crash.
+    result = runner.invoke(cli, ["ingest", "unknown"])
+    # A bad subcommand is a usage error, not a runtime crash.
     assert result.exit_code == 2
     # The message names the offending value...
     assert "unknown" in result.output
-    # ...and the accepted sources.
-    for valid in ("sources", "mirror", "udd"):
-        assert valid in result.output
-    # No Python traceback leaks to the user.
+    # ...and no Python traceback leaks to the user.
     assert "Traceback" not in result.output
     assert "TypeError" not in result.output
 
 
-def test_ingest_help_lists_source_choices():
-    """`ingest --help` shows the accepted --source values in the synopsis."""
+def test_ingest_help_lists_subcommands():
+    """`ingest --help` shows one subcommand per source."""
     runner = CliRunner()
     result = runner.invoke(cli, ["ingest", "--help"])
     assert result.exit_code == 0
-    # click.Choice renders the option metavar as [sources|mirror|udd].
-    assert "[sources|mirror|udd]" in result.output
+    for subcommand in ("sources", "mirror", "udd"):
+        assert subcommand in result.output
 
 
 def test_ingest_with_parquet_dir():
@@ -129,10 +162,14 @@ def test_ingest_with_parquet_dir():
 
     with patch("debian_observer.cli.commands.ingest.IngestionPipeline") as MockPipeline:
         MockPipeline.return_value.run.return_value = mock_result
-        result = runner.invoke(cli, [
-            "ingest", "--source", "sources", "--url", "hello",
-            "--parquet-dir", "/tmp/pq"
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "ingest", "sources",
+                "--package", "hello",
+                "--parquet-dir", "/tmp/pq",
+            ],
+        )
 
     assert result.exit_code == 0
     MockPipeline.assert_called_once_with(
@@ -152,7 +189,7 @@ def test_ingest_output_format():
 
     with patch("debian_observer.cli.commands.ingest.IngestionPipeline") as MockPipeline:
         MockPipeline.return_value.run.return_value = mock_result
-        result = runner.invoke(cli, ["ingest", "--source", "sources", "--url", "vim"])
+        result = runner.invoke(cli, ["ingest", "sources", "--package", "vim"])
 
     assert result.exit_code == 0
     assert "Ingested 42 records" in result.output
@@ -177,7 +214,7 @@ def test_ingest_e2e_with_mock_source(tmp_path: Path):
     parquet_dir.mkdir()
 
     # We bypass the CLI's source dispatch and directly invoke the pipeline
-    # because the CLI expects --source/--url strings. Instead, we verify the
+    # because the CLI exposes real sources only. Instead, we verify the
     # pipeline integration by running it standalone and checking artifact creation.
     source = MockDebianDataSource(package_count=3)
     pipeline = IngestionPipeline(raw_dir=raw_dir, parquet_dir=parquet_dir)
@@ -202,11 +239,15 @@ def test_ingest_e2e_with_mock_source(tmp_path: Path):
 
     with patch("debian_observer.cli.commands.ingest.IngestionPipeline") as MockPipeline:
         MockPipeline.return_value.run.return_value = mock_result
-        cli_result = runner.invoke(cli, [
-            "ingest", "--source", "mirror", "--url", "sid",
-            "--raw-dir", str(raw_dir),
-            "--parquet-dir", str(parquet_dir),
-        ])
+        cli_result = runner.invoke(
+            cli,
+            [
+                "ingest", "mirror",
+                "--suite", "sid",
+                "--raw-dir", str(raw_dir),
+                "--parquet-dir", str(parquet_dir),
+            ],
+        )
 
     assert cli_result.exit_code == 0
     assert "Ingested 3 records" in cli_result.output
@@ -222,10 +263,14 @@ def test_ingest_with_dataset_dir():
 
     with patch("debian_observer.cli.commands.ingest.IngestionPipeline") as MockPipeline:
         MockPipeline.return_value.run.return_value = mock_result
-        result = runner.invoke(cli, [
-            "ingest", "--source", "sources", "--url", "hello",
-            "--dataset-dir", "/tmp/norm"
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "ingest", "sources",
+                "--package", "hello",
+                "--dataset-dir", "/tmp/norm",
+            ],
+        )
 
     assert result.exit_code == 0
     MockPipeline.assert_called_once_with(
@@ -261,7 +306,7 @@ class TestIngestUnlimited:
     def test_default_limit_is_none_and_warns(self, MockPipeline: MagicMock) -> None:
         MockPipeline.return_value.run.return_value = _make_mock_result()
         runner = CliRunner()
-        result = runner.invoke(cli, ["ingest", "--source", "udd", "--url", "packages"])
+        result = runner.invoke(cli, ["ingest", "udd", "--table", "packages"])
 
         assert result.exit_code == 0
         data_source = MockPipeline.return_value.run.call_args[0][0]
@@ -276,7 +321,7 @@ class TestIngestUnlimited:
         MockPipeline.return_value.run.return_value = _make_mock_result()
         runner = CliRunner()
         result = runner.invoke(
-            cli, ["ingest", "--source", "mirror", "--url", "stable", "--limit", "5"]
+            cli, ["ingest", "mirror", "--suite", "stable", "--limit", "5"]
         )
 
         assert result.exit_code == 0

@@ -6,7 +6,8 @@ reconstruct from the module contracts.
 
 ## Flow 1 — Ingestion run (UDD → raw artifact)
 
-1. Operator runs `ingest --source udd [--limit N]` (CLI → ingestion).
+1. Operator runs `ingest udd --table T [--limit N]` (CLI → ingestion;
+   one subcommand per source, ADR-012).
 2. `UDDDataSource` queries with the identity SELECT (package, source,
    version, distribution, release, architecture, section, priority,
    component).

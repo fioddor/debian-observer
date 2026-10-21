@@ -191,6 +191,9 @@ No branch keeps the real history as it actually happened.
   It holds a realistic sequence of minimum viable changes (MVCs).
   Each MVC is a (R)ed-(G)reen-(B)lue sequence:
   - R-commits add only new tests that don't pass. No application code.
+    Doc changes go in the R-commit: the docs that describe the expected
+    behaviour change together with the tests that pin it, before any
+    implementation.
   - G-commits add only add and/or modify application code to pass all the tests.
   - B-commits are not mandatory. They are pure refactoring commits.
     The purpose of B-commits might be real historic code improvements
@@ -198,6 +201,19 @@ No branch keeps the real history as it actually happened.
     Several B commits might exist in (a BBB...) sequence.
 - In `fdd` each commit holds a new complete feature. Each of them passes all its tests.
   Each commit in `fdd` is the squash of all its corresponding commits on `tdd`.
+
+- When squashing `tdd` commits into their `fdd` feature commit, record
+  the decisions of the transition where contributors can find them —
+  the `fdd` commit body:
+  - why commits that look historically unrelated were squashed together
+    (MVCs that landed in pieces but serve one feature)
+  - which glitches the port dropped
+  - which details the `tdd` commit bodies explain at length
+- When re-squashing from `tdd` into an existing `fdd` commit, the `fdd`
+  commit body may carry adjustments that must survive. Touch only the
+  changes — amend the affected parts of the body. Regenerating the
+  whole body from scratch out of the new squash is a last resort: it
+  risks losing the carried adjustments.
 
 ## Feature-Driven Development (FDD)
 
@@ -220,46 +236,6 @@ Tests first, and full coverage (with reasonable exceptions).
 
 Prefer using Gherking-like test definitions and structures.
 
-
-## Deployment: OpenTofu vs Docker Compose
-
-Two deployment options are maintained for different use cases.
-
-### OpenTofu (Production / Reproducible)
-
-Use `deploy/opentofu/` when you need:
-
-- **Declarative state management:** Infrastructure defined as code with `tofu plan` / `tofu apply`
-- **Parameterized deployments:** Ports, image names, and network settings in `variables.tf`
-- **Automated outputs:** URLs exposed as outputs (`nats_url`, `api_url`, `nats_monitoring_url`)
-- **Full lifecycle:** `tofu init` → `plan` → `apply` → `destroy`
-- **Build automation:** The observer image can be built automatically from `deploy/compose/Dockerfile`
-
-**Trade-off:** Requires OpenTofu >= 1.6 installed on the host.
-
-### Docker Compose (Development / Quick-start)
-
-Use `deploy/compose/docker-compose.yml` when you need:
-
-- **Zero additional tooling:** Only Docker Compose required
-- **Fast iterative cycles:** `docker compose up -d` / `docker compose down`
-- **Direct container access:** `docker exec -ti debian-observer bash`
-- **Development convenience:** Mounts source code for live reloading
-
-**Trade-off:** Imperative workflow (no state management), ports and settings hardcoded in YAML.
-
-### Decision Matrix
-
-| Need | OpenTofu | Docker Compose |
-|:---|:---|:---|
-| Production deployment | ✅ | ❌ |
-| CI/CD reproducibility | ✅ | ❌ |
-| Parameterized ports/settings | ✅ | ❌ |
-| Local development | ⚠️ (overkill) | ✅ |
-| Quick smoke test | ⚠️ (slower init) | ✅ |
-| Live code reloading | ❌ | ✅ |
-
-**Rule of thumb:** OpenTofu for anything that deploys to a shared environment; Compose for personal development on a single machine.
 
 ## Tiny commits
 
@@ -320,3 +296,43 @@ The script pins the `syft` version it uses, downloads it into the running
 devcontainer, scans the container's installed site-packages (path derived
 at run time) and rewrites `docs/SBOM.spdx.json`. Commit the regenerated
 SBOM together with the dependency change.
+## Deployment: OpenTofu vs Docker Compose
+
+Two deployment options are maintained for different use cases.
+
+### OpenTofu (Production / Reproducible)
+
+Use `deploy/opentofu/` when you need:
+
+- **Declarative state management:** Infrastructure defined as code with `tofu plan` / `tofu apply`
+- **Parameterized deployments:** Ports, image names, and network settings in `variables.tf`
+- **Automated outputs:** URLs exposed as outputs (`nats_url`, `api_url`, `nats_monitoring_url`)
+- **Full lifecycle:** `tofu init` → `plan` → `apply` → `destroy`
+- **Build automation:** The observer image can be built automatically from `deploy/compose/Dockerfile`
+
+**Trade-off:** Requires OpenTofu >= 1.6 installed on the host.
+
+### Docker Compose (Development / Quick-start)
+
+Use `deploy/compose/docker-compose.yml` when you need:
+
+- **Zero additional tooling:** Only Docker Compose required
+- **Fast iterative cycles:** `docker compose up -d` / `docker compose down`
+- **Direct container access:** `docker exec -ti debian-observer bash`
+- **Development convenience:** Mounts source code for live reloading
+
+**Trade-off:** Imperative workflow (no state management), ports and settings hardcoded in YAML.
+
+### Decision Matrix
+
+| Need | OpenTofu | Docker Compose |
+|:---|:---|:---|
+| Production deployment | ✅ | ❌ |
+| CI/CD reproducibility | ✅ | ❌ |
+| Parameterized ports/settings | ✅ | ❌ |
+| Local development | ⚠️ (overkill) | ✅ |
+| Quick smoke test | ⚠️ (slower init) | ✅ |
+| Live code reloading | ❌ | ✅ |
+
+**Rule of thumb:** OpenTofu for anything that deploys to a shared environment; Compose for personal development on a single machine.
+

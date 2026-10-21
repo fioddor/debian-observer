@@ -217,3 +217,32 @@ class ManifestBuilder:
             record_count=source.record_count(),
             license=license,
         )
+
+
+# ---------------------------------------------------------------------------
+# Manifest sidecar loading
+# ---------------------------------------------------------------------------
+
+
+def load_manifest(artifact_path: Path) -> DatasetManifest:
+    """Load the manifest sidecar written beside a raw artifact.
+
+    Every ingestion run persists ``<artifact>.manifest.json`` next to
+    the raw artifact (see ``IngestionPipeline``); this reads it back.
+    The manifest is the provenance record of the artifact: source
+    name, run id (via ``dataset_name``), checksums, record count.
+
+    Raises:
+        FileNotFoundError: the artifact has no manifest sidecar
+            (loose raw files have no provenance to recover).
+    """
+    manifest_path = artifact_path.with_suffix(".manifest.json")
+    if not manifest_path.exists():
+        raise FileNotFoundError(
+            f"no manifest beside {artifact_path.name}: expected "
+            f"{manifest_path.name} (manifests are written by ingest "
+            "beside every raw artifact)"
+        )
+    return DatasetManifest.model_validate_json(
+        manifest_path.read_text(encoding="utf-8")
+    )

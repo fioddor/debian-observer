@@ -15,7 +15,10 @@ cannot reconstruct without reading everything.
   udddump`) with its mandatory filter flags (ADR-012), optional row
   `--limit` window; UDD requires reachable PostgreSQL credentials,
   `udddump` requires the **host path** to a `pg_dump` file and
-  `pg_restore` on PATH (`postgresql-client`).
+  `pg_restore` on PATH (`postgresql-client`; shipped by the dev and
+  deploy images — the host stays clean); the table's COPY header must
+  match a registered shape — today `packages` (required columns
+  `package`, `version`).
 - **Guarantees**: raw data is preserved verbatim (ADR-002) before any
   transformation — as RFC 4180 CSV compressed with LZMA
   (<https://www.rfc-editor.org/rfc/rfc4180>, suffix `.csv.xz`);
@@ -25,7 +28,10 @@ cannot reconstruct without reading everything.
   `priority`) survive acquisition; `ingest udddump` validates
   `--table` against the dump's table of contents at startup —
   fail-fast, lists the restorable tables — and restores no database
-  (rows stream from `pg_restore --data-only`, ADR-006).
+  (rows stream from `pg_restore --data-only`, ADR-006); the shape
+  gate fails fast naming the cause and the supported shapes, and a
+  record that fails canonical transformation is skipped with a
+  warning naming the cause.
 
 ## `normalization`
 

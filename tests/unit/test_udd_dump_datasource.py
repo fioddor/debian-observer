@@ -257,3 +257,105 @@ class TestUDDDumpDataSource:
 
         assert first == second
         assert len(first) == 64
+
+
+class TestTableShapes:
+    """The shape registry drives the startup gate (ADR-012 perimeter).
+
+    Today the registry carries the `packages` shape only; the gate
+    must stay future-ready: adding a shape is data, not gate code.
+    """
+
+    def test_registry_pins_the_packages_shape(self) -> None:
+        registry = acquisition.SUPPORTED_TABLE_SHAPES
+        assert isinstance(registry, tuple)
+        assert [shape.name for shape in registry] == ["packages"]
+        assert registry[0].required_columns == frozenset({"package", "version"})
+
+    def test_match_accepts_packages_shaped_columns(self) -> None:
+        shape = acquisition.match_table_shape(
+            ["id", "package", "version", "architecture", "component"]
+        )
+        assert shape is not None
+        assert shape.name == "packages"
+
+    def test_match_rejects_columns_without_the_requirements(self) -> None:
+        assert acquisition.match_table_shape(["source", "count"]) is None
+
+    def test_match_is_registry_driven_not_hardcoded(self) -> None:
+        """Future-ready: a registered shape matches without new gate code."""
+        releases = acquisition.TableShape(
+            name="releases", required_columns=frozenset({"source", "version"})
+        )
+        with patch.object(acquisition, "SUPPORTED_TABLE_SHAPES", (releases,)):
+            matched = acquisition.match_table_shape(["source", "version"])
+            assert matched is not None
+            assert matched.name == "releases"
+            # and the old shape is gone with the registry, not hardcoded
+            assert acquisition.match_table_shape(["package", "version"]) is None
+            assert (
+                acquisition.assert_supported_table_shape(
+                    ["source", "version"], table="releases"
+                ).name
+                == "releases"
+            )
+
+    def test_assert_returns_the_matched_shape(self) -> None:
+        shape = acquisition.assert_supported_table_shape(
+            ["package", "version"], table="ci"
+        )
+        assert shape.name == "packages"
+
+    def test_assert_error_names_cause_and_perimeter(self) -> None:
+        with pytest.raises(UDDDumpError) as excinfo:
+            acquisition.assert_supported_table_shape(
+                ["source", "count"], table="sources_count"
+            )
+        message = str(excinfo.value)
+        # the cause: the table and its COPY header
+        assert "sources_count" in message
+        assert "source, count" in message
+        assert "not shaped like any supported table" in message
+        # the perimeter: the supported shapes and their requirements
+        assert "packages" in message
+        assert "package, version" in message
+
+
+class TestPeekDumpCopyColumns:
+    """The shape gate peeks one stdout line; no data is restored."""
+
+    def test_peek_reads_the_header_columns(self) -> None:
+        proc = MagicMock()
+        proc.stdout.readline.return_value = (
+            "COPY public.ci (package, version, architecture) FROM stdin;\n"
+        )
+        with patch.object(acquisition.subprocess, "Popen", return_value=proc):
+            columns = acquisition.peek_dump_copy_columns(
+                "/srv/udd/udd.dump", table="ci"
+            )
+        assert columns == ["package", "version", "architecture"]
+        proc.terminate.assert_called_once()
+        proc.wait.assert_called_once()
+
+    def test_peek_wraps_a_missing_runner(self) -> None:
+        with patch.object(
+            acquisition.subprocess,
+            "Popen",
+            side_effect=FileNotFoundError("pg_restore"),
+        ):
+            with pytest.raises(UDDDumpError) as excinfo:
+                acquisition.peek_dump_copy_columns(
+                    "/srv/udd/udd.dump", table="ci"
+                )
+        assert "postgresql-client" in str(excinfo.value)
+
+    def test_peek_fails_when_no_header_is_emitted(self) -> None:
+        proc = MagicMock()
+        proc.stdout.readline.return_value = ""
+        with patch.object(acquisition.subprocess, "Popen", return_value=proc):
+            with pytest.raises(UDDDumpError) as excinfo:
+                acquisition.peek_dump_copy_columns(
+                    "/srv/udd/udd.dump", table="ci"
+                )
+        assert "COPY header" in str(excinfo.value)
+        assert "ci" in str(excinfo.value)

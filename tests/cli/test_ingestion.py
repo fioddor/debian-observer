@@ -477,3 +477,84 @@ class TestIngestUdddump:
         assert "udd-postgresql" not in result.output
         assert "UDDDUMP_CONTAINER" not in result.output
         assert "UDDDUMP_USER" not in result.output
+
+    def test_udddump_gate_rejects_non_packages_shaped_tables(self) -> None:
+        """The shape gate fails fast: cause + perimeter, not a crash."""
+        runner = CliRunner()
+
+        with (
+            patch(
+                "debian_observer.cli.commands.ingest.list_dump_tables",
+                return_value=["sources_count"],
+            ),
+            patch(
+                "debian_observer.cli.commands.ingest.peek_dump_copy_columns",
+                return_value=["source", "count"],
+            ),
+            patch(
+                "debian_observer.cli.commands.ingest.IngestionPipeline"
+            ) as MockPipeline,
+        ):
+            result = runner.invoke(
+                cli,
+                [
+                    "ingest", "udddump",
+                    "--file", "/srv/udd/udd.dump",
+                    "--table", "sources_count",
+                ],
+            )
+
+        assert result.exit_code != 0
+        # the cause: the table and its COPY header
+        assert "sources_count" in result.output
+        assert "source, count" in result.output
+        assert "not shaped like any supported table" in result.output
+        # the perimeter: what is supported today
+        assert "package, version" in result.output
+        assert "Traceback" not in result.output
+        MockPipeline.return_value.run.assert_not_called()
+
+    def test_udddump_gate_accepts_packages_shaped_tables(self) -> None:
+        """A packages-shaped table passes the shape gate and runs."""
+        runner = CliRunner()
+        mock_result = _make_mock_result(record_count=3)
+
+        with (
+            patch(
+                "debian_observer.cli.commands.ingest.list_dump_tables",
+                return_value=["ci"],
+            ),
+            patch(
+                "debian_observer.cli.commands.ingest.peek_dump_copy_columns",
+                return_value=["package", "version", "architecture"],
+            ),
+            patch(
+                "debian_observer.cli.commands.ingest.IngestionPipeline"
+            ) as MockPipeline,
+        ):
+            MockPipeline.return_value.run.return_value = mock_result
+            result = runner.invoke(
+                cli,
+                [
+                    "ingest", "udddump",
+                    "--file", "/srv/udd/udd.dump",
+                    "--table", "ci",
+                    "--limit", "3",
+                ],
+            )
+
+        assert result.exit_code == 0
+        data_source = MockPipeline.return_value.run.call_args[0][0]
+        assert data_source._table == "ci"
+        assert data_source._limit == 3
+
+    def test_udddump_help_states_the_perimeter(self) -> None:
+        """--help shows the implementation perimeter (CONTRIBUTING rule):
+        what is ingestible today and what is still coming."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["ingest", "udddump", "--help"])
+
+        assert result.exit_code == 0
+        assert "packages-shaped" in result.output
+        assert "package, version" in result.output
+        assert "more table shapes" in result.output

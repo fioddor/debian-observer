@@ -148,8 +148,18 @@ Ingest one table straight from a UDD `pg_dump` custom-format file
 container indirection (ADR-006). `--file` is the **host path** to the
 dump; `--table` is validated against the dump's table of contents
 before any restore work, and an unknown table fails fast listing the
-dump's restorable tables. `pg_restore` is a host dependency: install
-`postgresql-client` if it is not on PATH.
+dump's restorable tables. `pg_restore` is a PATH dependency: the dev and
+deploy images ship `postgresql-client` (the smoke runs in them); on
+any other host install `postgresql-client` if it is not on PATH.
+
+Today only packages-shaped tables are ingested (required COPY
+columns: `package`, `version`): the startup gate peeks the table's
+COPY header — one stdout line of `pg_restore --data-only --table`,
+no data restored — and fails fast naming the cause and the supported
+shapes when the table is not shaped like any of them. Records that
+fail canonical transformation are skipped with a warning naming the
+cause — the raw artifact preserves them (ADR-002). More table shapes
+will land as new event types do.
 
 ```bash
 debian-observer ingest udddump \

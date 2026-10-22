@@ -11,7 +11,9 @@ def test_status_help():
     runner = CliRunner()
     result = runner.invoke(cli, ["status", "--help"])
     assert result.exit_code == 0
-    assert "--parquet-dir" in result.output
+    assert "--events-dir" in result.output
+    # the default event-log directory is content-named (ADR-012 amendment)
+    assert "data/events" in result.output
 
 
 def test_status_with_data():
@@ -42,7 +44,7 @@ def test_status_empty_directory():
 
     with patch("debian_observer.cli.commands.status.AnalyticalStorage") as MockStorage:
         MockStorage.return_value.summary.return_value = mock_summary
-        result = runner.invoke(cli, ["status", "--parquet-dir", "/tmp/empty"])
+        result = runner.invoke(cli, ["status", "--events-dir", "/tmp/empty"])
 
     assert result.exit_code == 0
     assert "Files: 0" in result.output
@@ -113,7 +115,7 @@ def test_status_reads_real_parquet(tmp_path: Path):
     table = pa.Table.from_pylist([row])
     pq.write_table(table, parquet_dir / "test-events.parquet")
 
-    result = runner.invoke(cli, ["status", "--parquet-dir", str(parquet_dir)])
+    result = runner.invoke(cli, ["status", "--events-dir", str(parquet_dir)])
     assert result.exit_code == 0
     assert "Files: 1" in result.output
     assert "Events: 1" in result.output

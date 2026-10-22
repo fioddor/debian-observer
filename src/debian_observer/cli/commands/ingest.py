@@ -58,13 +58,13 @@ def _run_ingest(
     data_source: Any,
     *,
     raw_dir: str,
-    parquet_dir: str | None,
+    events_dir: str | None,
     dataset_dir: str | None,
 ) -> None:
     """Run the ingestion pipeline for a data source and echo the result."""
     pipeline = IngestionPipeline(
         raw_dir=Path(raw_dir),
-        parquet_dir=Path(parquet_dir) if parquet_dir else None,
+        parquet_dir=Path(events_dir) if events_dir else None,
         dataset_dir=Path(dataset_dir) if dataset_dir else None,
     )
     result = pipeline.run(data_source)
@@ -95,7 +95,7 @@ def _warn_limit_unset() -> None:
     "--raw-dir", default="data/raw", help="Directory for raw artifacts (default: data/raw)."
 )
 @click.option(
-    "--parquet-dir", default=None, help="Optional directory for Parquet output."
+    "--events-dir", default=None, help="Optional directory for the event log (one Parquet file per run)."
 )
 @click.option(
     "--dataset-dir",
@@ -105,14 +105,14 @@ def _warn_limit_unset() -> None:
 def ingest_sources(
     package_name: str,
     raw_dir: str,
-    parquet_dir: str | None,
+    events_dir: str | None,
     dataset_dir: str | None,
 ) -> None:
     """Fetch a package's version history from sources.debian.org and ingest it."""
     _run_ingest(
         SourcesDebianOrgDataSource(package_name=package_name),
         raw_dir=raw_dir,
-        parquet_dir=parquet_dir,
+        events_dir=events_dir,
         dataset_dir=dataset_dir,
     )
 
@@ -143,7 +143,7 @@ def ingest_sources(
     "--raw-dir", default="data/raw", help="Directory for raw artifacts (default: data/raw)."
 )
 @click.option(
-    "--parquet-dir", default=None, help="Optional directory for Parquet output."
+    "--events-dir", default=None, help="Optional directory for the event log (one Parquet file per run)."
 )
 @click.option(
     "--dataset-dir",
@@ -156,7 +156,7 @@ def ingest_mirror(
     architecture: str,
     limit: int | None,
     raw_dir: str,
-    parquet_dir: str | None,
+    events_dir: str | None,
     dataset_dir: str | None,
 ) -> None:
     """Fetch a suite's Packages.gz from a Debian mirror and ingest it."""
@@ -170,7 +170,7 @@ def ingest_mirror(
             limit=limit,
         ),
         raw_dir=raw_dir,
-        parquet_dir=parquet_dir,
+        events_dir=events_dir,
         dataset_dir=dataset_dir,
     )
 
@@ -191,7 +191,7 @@ def ingest_mirror(
     "--raw-dir", default="data/raw", help="Directory for raw artifacts (default: data/raw)."
 )
 @click.option(
-    "--parquet-dir", default=None, help="Optional directory for Parquet output."
+    "--events-dir", default=None, help="Optional directory for the event log (one Parquet file per run)."
 )
 @click.option(
     "--dataset-dir",
@@ -202,7 +202,7 @@ def ingest_udd(
     table: str,
     limit: int | None,
     raw_dir: str,
-    parquet_dir: str | None,
+    events_dir: str | None,
     dataset_dir: str | None,
 ) -> None:
     """Query a table from a UDD PostgreSQL mirror and ingest it.
@@ -217,7 +217,7 @@ def ingest_udd(
     _run_ingest(
         UDDDataSource(table=table, limit=limit),
         raw_dir=raw_dir,
-        parquet_dir=parquet_dir,
+        events_dir=events_dir,
         dataset_dir=dataset_dir,
     )
 
@@ -247,7 +247,9 @@ def ingest_udd(
     "--raw-dir", default="data/raw", help="Directory for raw artifacts (default: data/raw)."
 )
 @click.option(
-    "--parquet-dir", default=None, help="Optional directory for Parquet output."
+    "--events-dir",
+    default=None,
+    help="Optional directory for the event log (one Parquet file per run).",
 )
 @click.option(
     "--dataset-dir",
@@ -259,7 +261,7 @@ def ingest_udddump(
     table: str,
     limit: int | None,
     raw_dir: str,
-    parquet_dir: str | None,
+    events_dir: str | None,
     dataset_dir: str | None,
 ) -> None:
     """Restore one table of a UDD pg_dump file through pg_restore.
@@ -302,6 +304,6 @@ def ingest_udddump(
     _run_ingest(
         UDDDumpDataSource(file=dump_file, table=table, limit=limit),
         raw_dir=raw_dir,
-        parquet_dir=parquet_dir,
+        events_dir=events_dir,
         dataset_dir=dataset_dir,
     )

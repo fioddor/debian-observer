@@ -157,7 +157,7 @@ def test_ingest_help_lists_subcommands():
         assert subcommand in result.output
 
 
-def test_ingest_with_parquet_dir():
+def test_ingest_with_events_dir():
     runner = CliRunner()
     mock_result = _make_mock_result(record_count=5, parquet_path="/tmp/pq/out.parquet")
 
@@ -168,7 +168,7 @@ def test_ingest_with_parquet_dir():
             [
                 "ingest", "sources",
                 "--package", "hello",
-                "--parquet-dir", "/tmp/pq",
+                "--events-dir", "/tmp/pq",
             ],
         )
 
@@ -211,21 +211,21 @@ def test_ingest_e2e_with_mock_source(tmp_path: Path):
     runner = CliRunner()
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
-    parquet_dir = tmp_path / "parquet"
-    parquet_dir.mkdir()
+    events_dir = tmp_path / "parquet"
+    events_dir.mkdir()
 
     # We bypass the CLI's source dispatch and directly invoke the pipeline
     # because the CLI exposes real sources only. Instead, we verify the
     # pipeline integration by running it standalone and checking artifact creation.
     source = MockDebianDataSource(package_count=3)
-    pipeline = IngestionPipeline(raw_dir=raw_dir, parquet_dir=parquet_dir)
+    pipeline = IngestionPipeline(raw_dir=raw_dir, events_dir=events_dir)
     result = pipeline.run(source, ingestion_run_id="run-e2e")
 
     assert result.record_count == 3
     assert result.artifact_path is not None
     assert result.artifact_path.exists()
     assert len(result.events) == 3
-    # Parquet output should be written when parquet_dir is provided
+    # Parquet output should be written when events_dir is provided
     if result.parquet_path:
         assert result.parquet_path.exists()
 
@@ -246,7 +246,7 @@ def test_ingest_e2e_with_mock_source(tmp_path: Path):
                 "ingest", "mirror",
                 "--suite", "sid",
                 "--raw-dir", str(raw_dir),
-                "--parquet-dir", str(parquet_dir),
+                "--events-dir", str(events_dir),
             ],
         )
 

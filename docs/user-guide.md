@@ -168,7 +168,7 @@ debian-observer ingest udddump \
   --table packages \
   --limit 3 \
   --raw-dir /tmp/udddump-raw \
-  --parquet-dir /tmp/udddump-parquet
+  --events-dir /tmp/udddump-events
 ```
 
 The output has the same shape as `ingest udd` (records, run id,

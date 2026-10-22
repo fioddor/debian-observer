@@ -218,7 +218,7 @@ def test_ingest_e2e_with_mock_source(tmp_path: Path):
     # because the CLI exposes real sources only. Instead, we verify the
     # pipeline integration by running it standalone and checking artifact creation.
     source = MockDebianDataSource(package_count=3)
-    pipeline = IngestionPipeline(raw_dir=raw_dir, events_dir=events_dir)
+    pipeline = IngestionPipeline(raw_dir=raw_dir, parquet_dir=events_dir)
     result = pipeline.run(source, ingestion_run_id="run-e2e")
 
     assert result.record_count == 3

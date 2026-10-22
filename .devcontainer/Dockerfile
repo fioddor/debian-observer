@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Purpose: Container image for Debian Observer
 # Design.: Python 3.13.
-#          Provides Python, development tooling, and NATS CLI.
+#          Provides Python, development tooling, NATS CLI, and
+#          pg_restore (ingest udddump, ADR-012).
 # Pending: Will be refined as the application entrypoint stabilizes.
 # Authors: Igor Zubiaurre <igor@zubiaurre.es>
 #-----------------------------------------------------------------------------
@@ -17,6 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     jq \
     ca-certificates \
+    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Install NATS CLI (useful for debugging JetStream during development)

@@ -17,8 +17,8 @@ cannot reconstruct without reading everything.
   `udddump` requires the **host path** to a `pg_dump` file and
   `pg_restore` on PATH (`postgresql-client`; shipped by the dev and
   deploy images — the host stays clean); the table's COPY header must
-  match a registered shape — today `packages` (required columns
-  `package`, `version`).
+  match a registered shape — today `packages` (required COPY column
+  `version` plus any of `package`/`source`).
 - **Guarantees**: raw data is preserved verbatim (ADR-002) before any
   transformation — as RFC 4180 CSV compressed with LZMA
   (<https://www.rfc-editor.org/rfc/rfc4180>, suffix `.csv.xz`);

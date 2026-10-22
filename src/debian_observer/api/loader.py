@@ -11,7 +11,7 @@ Usage::
 
     store = InMemoryStore()
     loader = EventLoader(store)
-    loader.load_from_parquet("data/parquet")
+    loader.load_from_parquet("data/events")
 
     app = create_app(store=store)
 """

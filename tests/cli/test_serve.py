@@ -2,8 +2,8 @@
 
 Verifies that the serve command:
 - Starts the API service via uvicorn
-- Loads Parquet data when --parquet-dir is provided
-- Reads PARQUET_DIR from environment when --parquet-dir is not provided
+- Loads Parquet data when --events-dir is provided
+- Reads EVENTS_DIR from environment when --events-dir is not provided
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ class TestServeHelp:
         assert result.exit_code == 0
         assert "--host" in result.output
         assert "--port" in result.output
-        assert "--parquet-dir" in result.output
+        assert "--events-dir" in result.output
 
 
 class TestServeInvocation:
@@ -72,15 +72,15 @@ class TestServeParquetLoading:
             mock_loader_cls.return_value = mock_loader
 
             (tmp_path / "data" / "parquet").mkdir(parents=True)
-            result = runner.invoke(cli, ["serve", "--parquet-dir", "data/parquet"])
+            result = runner.invoke(cli, ["serve", "--events-dir", "data/events"])
 
             assert result.exit_code == 0
             mock_loader_cls.assert_called_once()
-            mock_loader.load_from_parquet.assert_called_once_with("data/parquet")
+            mock_loader.load_from_parquet.assert_called_once_with("data/events")
             assert "Loaded 42 events" in result.output
 
     def test_serve_reads_parquet_dir_from_env(self):
-        runner = CliRunner(env={"PARQUET_DIR": "/app/data/parquet"})
+        runner = CliRunner(env={"EVENTS_DIR": "/app/data/events"})
         with (
             patch("debian_observer.cli.commands.serve.uvicorn.run") as mock_uvicorn_run,
             patch("debian_observer.cli.commands.serve.EventLoader") as mock_loader_cls,
@@ -93,11 +93,11 @@ class TestServeParquetLoading:
 
             assert result.exit_code == 0
             mock_loader_cls.assert_called_once()
-            mock_loader.load_from_parquet.assert_called_once_with("/app/data/parquet")
+            mock_loader.load_from_parquet.assert_called_once_with("/app/data/events")
             assert "Loaded 7 events" in result.output
 
     def test_serve_flag_overrides_env(self):
-        runner = CliRunner(env={"PARQUET_DIR": "/env/path"})
+        runner = CliRunner(env={"EVENTS_DIR": "/env/path"})
         with (
             patch("debian_observer.cli.commands.serve.uvicorn.run") as mock_uvicorn_run,
             patch("debian_observer.cli.commands.serve.EventLoader") as mock_loader_cls,
@@ -106,7 +106,7 @@ class TestServeParquetLoading:
             mock_loader.load_from_parquet.return_value = 3
             mock_loader_cls.return_value = mock_loader
 
-            result = runner.invoke(cli, ["serve", "--parquet-dir", "/flag/path"])
+            result = runner.invoke(cli, ["serve", "--events-dir", "/flag/path"])
 
             assert result.exit_code == 0
             mock_loader.load_from_parquet.assert_called_once_with("/flag/path")

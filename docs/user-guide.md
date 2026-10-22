@@ -50,7 +50,7 @@ For a quick end-to-end test using a real public Debian data source:
 debian-observer ingest sources \
   --package hello \
   --raw-dir /tmp/smoke-raw \
-  --parquet-dir /tmp/smoke-parquet
+  --events-dir /tmp/smoke-events
 ```
 
 This fetches version history for the `hello` package from `sources.debian.org`.
@@ -61,7 +61,7 @@ Ingested N records
 Run ID: run-xxxxxx
 Checksum: ...
 Events produced: N
-Parquet written: /tmp/smoke-parquet/run-xxxxxx.parquet
+Parquet written: /tmp/smoke-events/run-xxxxxx.parquet
 ```
 
 **Mirror package list (Packages.gz):**
@@ -73,7 +73,7 @@ debian-observer ingest mirror \
   --suite stable \
   --limit 5 \
   --raw-dir /tmp/mirror-raw \
-  --parquet-dir /tmp/mirror-parquet
+  --events-dir /tmp/mirror-events
 ```
 
 **Expected output (mirror):**
@@ -82,7 +82,7 @@ Ingested 5 records
 Run ID: run-xxxxxx
 Checksum: ...
 Events produced: 5
-Parquet written: /tmp/mirror-parquet/run-xxxxxx.parquet
+Parquet written: /tmp/mirror-events/run-xxxxxx.parquet
 ```
 
 Mirror records carry `distribution` as the archive family (`debian`,
@@ -100,7 +100,7 @@ debian-observer ingest udd \
   --table packages \
   --limit 3 \
   --raw-dir /tmp/udd-raw \
-  --parquet-dir /tmp/udd-parquet
+  --events-dir /tmp/udd-events
 ```
 
 This queries the `packages` table from `udd-mirror.debian.net:5432`.
@@ -112,7 +112,7 @@ Ingested 3 records
 Run ID: run-xxxxxx
 Checksum: ...
 Events produced: 3
-Parquet written: /tmp/udd-parquet/run-xxxxxx.parquet
+Parquet written: /tmp/udd-events/run-xxxxxx.parquet
 ```
 
 Available tables include: `packages`, `sources`, `upload_history`.
@@ -137,7 +137,7 @@ UDD_HOST=192.168.1.218 UDD_USER=udd UDD_PASSWORD=udd \
   --table packages \
   --limit 3 \
   --raw-dir /tmp/udd-raw \
-  --parquet-dir /tmp/udd-parquet
+  --events-dir /tmp/udd-events
 ```
 
 **UDD dump file (no live database):**
@@ -168,7 +168,7 @@ debian-observer ingest udddump \
   --table packages \
   --limit 3 \
   --raw-dir /tmp/udddump-raw \
-  --parquet-dir /tmp/udddump-parquet
+  --events-dir /tmp/udddump-events
 ```
 
 The output has the same shape as `ingest udd` (records, run id,
@@ -186,7 +186,7 @@ Parquet schema:
 ```bash
 python3 -c "
 import pyarrow.parquet as pq
-table = pq.read_table('/tmp/smoke-parquet/run-*.parquet')
+table = pq.read_table('/tmp/smoke-events/run-*.parquet')
 print(f'Rows: {table.num_rows}, Cols: {table.num_columns}')
 print(f'Columns: {table.column_names}')
 "
@@ -201,7 +201,7 @@ For larger datasets (e.g. complete UDD), the acquisition layer supports configur
 debian-observer ingest udd \
   --table packages \
   --raw-dir data/raw \
-  --parquet-dir data/parquet
+  --events-dir data/events
 ```
 
 ### Verify:
@@ -222,8 +222,7 @@ debian-observer ingest sources \
 
 Options: `--limit` (mirror/udd/udddump; unset ingests the whole source
 with a warning), `--component`/`--architecture` (mirror; default
-`main`/`amd64`),
-`--parquet-dir` (Parquet output), `--dataset-dir`.
+`main`/`amd64`), `--events-dir` (event log output), `--dataset-dir`.
 See `debian-observer ingest <source> --help` for full options.
 
 ## Observability
@@ -280,7 +279,7 @@ Run DuckDB SQL queries over ingested Parquet events:
 ```bash
 debian-observer query \
   "SELECT package_id, version, release FROM events WHERE release = 'sid'" \
-  --parquet-dir data/parquet
+  --events-dir data/events
 ```
 
 **Aggregations:**
@@ -288,7 +287,7 @@ debian-observer query \
 ```bash
 debian-observer query \
   "SELECT architecture, COUNT(*) as count FROM events GROUP BY architecture ORDER BY count DESC" \
-  --parquet-dir data/parquet
+  --events-dir data/events
 ```
 
 **Output formats:**
@@ -304,7 +303,7 @@ debian-observer query \
 ```bash
 debian-observer query \
   "SELECT entity_id, version, observed_at FROM events" \
-  --parquet-dir data/parquet \
+  --events-dir data/events \
   --format csv > events.csv
 ```
 
@@ -387,11 +386,14 @@ from debian_observer.consumer_app import ConsumerApp
 from debian_observer.storage.handlers import PersistingHandler
 
 app = ConsumerApp()
-handler = PersistingHandler("data/parquet", flush_threshold=100)
+handler = PersistingHandler("data/events", flush_threshold=100)
 app.register_handler("PackageVersionObserved", handler)
 ```
 
-Or via the `consume` CLI (writes to `data/parquet` by default):
+Or via the `consume` CLI — it registers a print handler per known event
+type (R1: no persistence by default). To persist consumed events into the
+event log, register a `PersistingHandler` (see the consumer testing
+example below) with your own output directory:
 
 ```bash
 debian-observer consume \
@@ -409,12 +411,12 @@ Start the FastAPI service with data loaded from Parquet:
 
 ```bash
 debian-observer serve \
-  --parquet-dir data/parquet \
+  --events-dir data/events \
   --host 0.0.0.0 \
   --port 8000
 ```
 
-Without `--parquet-dir`, the API starts with an empty store (useful for testing), unless the `PARQUET_DIR` environment variable is set.
+Without `--events-dir`, the API starts with an empty store (useful for testing), unless the `EVENTS_DIR` environment variable is set.
 
 ### Available endpoints
 
@@ -464,7 +466,7 @@ In the devcontainer, NATS is available on `localhost:4222`.
 
 ## Troubleshooting
 
-**No Parquet files found:** ensure `--parquet-dir` matches where ingestion writes.
+**No Parquet files found:** ensure `--events-dir` matches where ingestion writes.
 
 **NATS connection refused:** verify `docker compose ps` shows nats healthy.
 

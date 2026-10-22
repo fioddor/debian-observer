@@ -12,12 +12,12 @@ from debian_observer.storage.analytical import AnalyticalStorage
 
 @click.command(name="status")
 @click.option(
-    "--parquet-dir", default="data/parquet", help="Directory with Parquet files (default: data/parquet)."
+    "--events-dir", default="data/events", help="Directory with the event log (default: data/events)."
 )
-def status(parquet_dir: str) -> None:
+def status(events_dir: str) -> None:
     """Show system status and data summary."""
     try:
-        storage = AnalyticalStorage(parquet_dir)
+        storage = AnalyticalStorage(events_dir)
         summary = storage.summary()
         click.echo(f"Files: {summary['files']}")
         click.echo(f"Events: {summary['events']}")

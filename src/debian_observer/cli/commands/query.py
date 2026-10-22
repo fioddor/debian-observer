@@ -13,7 +13,7 @@ from debian_observer.storage.analytical import AnalyticalStorage
 @click.command(name="query")
 @click.argument("sql")
 @click.option(
-    "--parquet-dir", default="data/parquet", help="Directory with Parquet files (default: data/parquet)."
+    "--events-dir", default="data/events", help="Directory with the event log (default: data/events)."
 )
 @click.option(
     "--format",
@@ -22,9 +22,9 @@ from debian_observer.storage.analytical import AnalyticalStorage
     type=click.Choice(["table", "json", "csv"]),
     help="Output format (default: table).",
 )
-def query(sql: str, parquet_dir: str, output_format: str) -> None:
-    """Run a SQL query over Parquet data."""
-    storage = AnalyticalStorage(parquet_dir)
+def query(sql: str, events_dir: str, output_format: str) -> None:
+    """Run a SQL query over the stored event log."""
+    storage = AnalyticalStorage(events_dir)
     result = storage.query(sql)
 
     if output_format == "table":

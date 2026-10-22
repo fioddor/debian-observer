@@ -289,7 +289,23 @@ debian-observer ingest udd --table packages --limit 400 \
   --dataset-dir data/normalized/package_versions
 ```
 
-The dataset holds one row per observed package version (query surface); the event log remains the replay surface. Query it with DuckDB (ADR-003 example, on the dataset schema):
+The dataset holds one row per `PackageVersionObserved` event — a
+per-run projection, not consolidated state: re-ingesting the same
+source adds new observations instead of updating rows. The *current*
+state (latest observation per package version) is a query-time fold
+over the accumulated rows — the `arg_max` pattern:
+
+```sql
+SELECT package_id, version,
+       min(observed_at) AS first_observed_at,
+       max(observed_at) AS last_observed_at
+FROM read_parquet('data/normalized/package_versions/*.parquet')
+GROUP BY package_id, version
+```
+
+A `consolidate` step that materializes this fold as a dataset is
+planned; until then the event log remains the replay surface and the
+dataset the projection surface. Query it with DuckDB (ADR-003 example, on the dataset schema):
 
 ```sql
 SELECT package_id, version, release

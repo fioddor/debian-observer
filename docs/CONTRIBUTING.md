@@ -167,6 +167,15 @@ The design documentation rules live in
 code, docs move with code, cite the standard, a contract per
 top-level module.
 
+## CLI `--help`
+
+`--help` must show the possible values of every parameter that
+expects preset or measured values, including the implementation
+perimeter - the sources, table shapes and options that are actually
+implemented today. A parameter whose perimeter is narrow must say so
+and point at the gate that enforces it; planned values must not be
+listed as if they existed.
+
 ## Feature Branches
 
 Use an ad-hoc branch for each feature (a feature branch).

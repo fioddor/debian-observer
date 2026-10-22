@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import warnings
+
+import pytest
+
 from debian_observer.domain.models import PackageVersion
 from debian_observer.normalization.transformer import PackageVersionTransformer
 
@@ -72,3 +76,51 @@ class TestPackageVersionTransformer:
         assert len(versions) == 2
         assert versions[0].package_id == "a:all"
         assert versions[1].package_id == "b:all"
+
+
+class TestTransformAllResilience:
+    """The transformer never crashes on unexpected data (2026-10-22).
+
+    A record that fails canonical transformation is skipped with a
+    warning naming the cause — an error message, never a traceback.
+    """
+
+    @staticmethod
+    def _good(package: str) -> dict:
+        return {"package": package, "version": "1.0-1"}
+
+    def test_transform_all_skips_canonical_failures_with_a_warning(self):
+        transformer = PackageVersionTransformer(source_name="udd.dump")
+        records = [
+            self._good("one"),
+            # non-empty, so it passes presence validation, but not
+            # the canonical Debian-version format check
+            {"package": "bad", "version": "unknown"},
+            self._good("two"),
+        ]
+        with pytest.warns(UserWarning, match="skipped 1 record") as caught:
+            versions = transformer.transform_all(records)
+        assert [v.package_id for v in versions] == ["one:all", "two:all"]
+        message = str(caught[0].message)
+        assert "version" in message   # the cause field
+        assert "unknown" in message  # the offending value
+        assert "bad" in message      # the offending record
+
+    def test_transform_all_warns_once_per_batch_not_per_record(self):
+        transformer = PackageVersionTransformer(source_name="udd.dump")
+        records = [
+            {"package": f"p{i}", "version": "unknown"} for i in range(50)
+        ]
+        with pytest.warns(UserWarning, match="skipped 50 record") as caught:
+            versions = transformer.transform_all(records)
+        assert versions == []
+        assert len(caught) == 1
+
+    def test_transform_all_all_valid_emits_no_warning(self):
+        transformer = PackageVersionTransformer(source_name="udd.dump")
+        records = [self._good("a"), self._good("b")]
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            versions = transformer.transform_all(records)
+        assert len(versions) == 2
+        assert caught == []

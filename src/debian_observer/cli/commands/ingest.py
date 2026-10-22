@@ -5,8 +5,9 @@ dataset manifest, provenance record and domain events.
 
 One subcommand per implemented data source (ADR-012): `sources`
 (sources.debian.org API), `mirror` (Packages.gz from a Debian
-mirror), `udd` (UDD PostgreSQL mirror). Each subcommand's selector
-is a mandatory filter flag — elements are not auto-detected yet.
+mirror), `udd` (UDD PostgreSQL mirror), `udddump` (UDD `pg_dump`
+file). Each subcommand's selector is a mandatory filter flag —
+entities within a source are not auto-detected yet.
 """
 
 from __future__ import annotations
@@ -20,6 +21,11 @@ from debian_observer.ingestion.acquisition import (
     DebianMirrorDataSource,
     SourcesDebianOrgDataSource,
     UDDDataSource,
+    UDDDumpDataSource,
+    UDDDumpError,
+    assert_supported_table_shape,
+    list_dump_tables,
+    peek_dump_copy_columns,
 )
 from debian_observer.ingestion.pipeline import IngestionPipeline
 
@@ -34,7 +40,8 @@ def ingest() -> None:
     
     - `sources` (sources.debian.org API; `--package` is the source package name),
     -  `mirror` (Packages.gz from a Debian mirror; `--suite` is the suite role, codename or pocket),
-    - `udd` (UDD PostgreSQL mirror; `--table` is the table name).
+    - `udd` (UDD PostgreSQL mirror; `--table` is the table name),
+    - `udddump` (UDD `pg_dump` file) downloads the dump (`--url`).
 
     Behaviour:
 
@@ -209,6 +216,91 @@ def ingest_udd(
         _warn_limit_unset()
     _run_ingest(
         UDDDataSource(table=table, limit=limit),
+        raw_dir=raw_dir,
+        parquet_dir=parquet_dir,
+        dataset_dir=dataset_dir,
+    )
+
+
+@ingest.command(name="udddump")
+@click.option(
+    "--file",
+    "dump_file",
+    required=True,
+    help="Path to the UDD pg_dump custom-format file (host path; read by pg_restore on PATH).",
+)
+@click.option(
+    "--table",
+    required=True,
+    help=(
+        "UDD table to restore: a TABLE DATA entry of the dump "
+        "(validated at startup; the error lists the restorable tables)."
+    ),
+)
+@click.option(
+    "--limit",
+    type=int,
+    default=None,
+    help="Max records to ingest; unset ingests the whole table.",
+)
+@click.option(
+    "--raw-dir", default="data/raw", help="Directory for raw artifacts (default: data/raw)."
+)
+@click.option(
+    "--parquet-dir", default=None, help="Optional directory for Parquet output."
+)
+@click.option(
+    "--dataset-dir",
+    default=None,
+    help="Optional directory for the normalized package_versions dataset.",
+)
+def ingest_udddump(
+    dump_file: str,
+    table: str,
+    limit: int | None,
+    raw_dir: str,
+    parquet_dir: str | None,
+    dataset_dir: str | None,
+) -> None:
+    """Restore one table of a UDD pg_dump file through pg_restore.
+
+    Implementation-pinned values, surfaced so operators know what runs
+    (and what is not implemented): pg_restore executes on the host
+    (PATH dependency; install postgresql-client if absent); --file is
+    the host path to the dump; rows stream from a data-only COPY block,
+    so no database is created or restored (ADR-006) — no container and
+    no live UDD instance are involved.
+
+    Perimeter: today only packages-shaped tables are ingestible
+    (required COPY columns: version + any of: package, source); more
+    table shapes will land as new event types do. The startup gates
+    fail fast — the TOC gate lists the dump's restorable tables, and
+    the shape gate names the cause and the supported shapes.
+    """
+    if limit is None:
+        _warn_limit_unset()
+    # Startup gate (ADR-012 amendment, alpha): validate the table
+    # against the dump's TOC before any restore work — fail fast
+    # listing the restorable tables instead of crashing downstream.
+    try:
+        available = list_dump_tables(dump_file)
+    except UDDDumpError as exc:
+        raise click.ClickException(str(exc)) from exc
+    if table not in available:
+        raise click.ClickException(
+            f"table {table!r} not in dump {dump_file!r}; "
+            f"available tables: {', '.join(sorted(available))}"
+        )
+    # Perimeter gate (ADR-012, evening amendment): peek the table's
+    # COPY header — one stdout line, no data restored — and match it
+    # against the registered shapes before any ingest work.
+    try:
+        columns = peek_dump_copy_columns(dump_file, table=table)
+        assert_supported_table_shape(columns, table=table)
+    except UDDDumpError as exc:
+        raise click.ClickException(str(exc)) from exc
+    _run_ingest(
+        UDDDumpDataSource(file=dump_file, table=table, limit=limit),
         raw_dir=raw_dir,
         parquet_dir=parquet_dir,
         dataset_dir=dataset_dir,

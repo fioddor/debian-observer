@@ -8,8 +8,12 @@ add ReleaseObserved, MigrationObserved, etc.
 
 from __future__ import annotations
 
+import warnings
+
 from datetime import datetime, timezone
 from typing import Any
+
+from pydantic import ValidationError
 
 from debian_observer.domain.models import PackageVersion
 
@@ -65,7 +69,40 @@ class PackageVersionTransformer:
     ) -> list[PackageVersion]:
         """Transform a batch of records.
 
+        A record that fails canonical transformation is not a crash:
+        it is skipped with ONE warning per batch naming the cause
+        (2026-10-22) — unexpected data yields messages, never
+        tracebacks.
+
         Returns:
             List of PackageVersion instances.
         """
-        return [self.transform(record) for record in records]
+        versions: list[PackageVersion] = []
+        skipped = 0
+        first_cause: str | None = None
+        for index, record in enumerate(records):
+            try:
+                versions.append(self.transform(record))
+            except ValidationError as exc:
+                skipped += 1
+                if first_cause is None:
+                    first_cause = (
+                        f"record {index} {record!r}: "
+                        f"{_format_validation_error(exc)}"
+                    )
+        if skipped:
+            warnings.warn(
+                f"transformer skipped {skipped} record(s); "
+                f"first cause: {first_cause}",
+                stacklevel=2,
+            )
+        return versions
+
+
+def _format_validation_error(exc: ValidationError) -> str:
+    """Render a pydantic ValidationError as a readable cause."""
+    parts: list[str] = []
+    for error in exc.errors():
+        loc = ".".join(str(piece) for piece in error["loc"])
+        parts.append(f"{loc}: {error['msg']} (input: {error['input']!r})")
+    return "; ".join(parts)

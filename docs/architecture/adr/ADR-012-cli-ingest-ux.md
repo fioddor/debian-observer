@@ -100,3 +100,37 @@ Cons:
  - ADR-002 — raw data preservation (`.csv.xz` artifacts, manifests).
  - ADR-006 — no PostgreSQL in R1 (the dump-file source reads a file,
    not a database connection).
+
+
+## Amendment (2026-10-21): the dump-file source — startup gate, one table
+
+`ingest udddump --file <dump> --table <table> [--limit N]` now exists
+in the shape planned above. Two follow-up decisions:
+
+**α — validate the table at startup; an inspection flag comes later.**
+Every `udddump` run first reads the dump's table of contents
+(`pg_restore --list`, read-only) and fails fast when `--table` is
+not a restorable table — the usage error lists the dump's tables
+instead of raising raw `pg_restore` stderr or a traceback. A dedicated
+inspection flag (`--list-tables`) is deliberately deferred to a
+later MVC: the startup gate covers typos and unknown-table cases
+first.
+
+**β — one table per run.** `--table` is a single name; each run
+restores exactly one table into its own raw artifact + manifest.
+When many tables are needed, a `--tables` variant will iterate them
+one at a time — one artifact + manifest per table, never one mixed
+artifact.
+
+The file path is a **host path**. `pg_restore` runs on the host
+(plain PATH dependency — install `postgresql-client` if absent;
+no container indirection, no live UDD instance involved). Rows
+stream from `pg_restore --data-only --table`: no database is
+created or restored (ADR-006).
+
+**Correction (2026-10-22):** the first implementation of this
+amendment routed `pg_restore` through `docker exec` into the local
+`udd-postgresql` container (`UDDDUMP_CONTAINER`/`UDDDUMP_USER`). That
+coupled the ingest CLI to a deployment artifact of the UDD sandbox
+— the container has no reason to exist for reading a dump file.
+The runner is host-`pg_restore` only.

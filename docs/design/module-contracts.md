@@ -7,19 +7,25 @@ cannot reconstruct without reading everything.
 ## `ingestion`
 
 - **Exposes**: data-source adapters (UDD PostgreSQL
-  <https://udd.debian.org/>, Debian mirror, sources.debian.org, mock)
-  and the `ingest` pipeline: raw artifacts as xz-compressed CSV + JSON
-  manifest persisted beside each artifact + provenance record.
-- **Expects**: a source subcommand (`ingest sources | mirror | udd`)
-  with its mandatory filter flags (ADR-012), optional row `--limit`
-  window; UDD requires reachable PostgreSQL credentials.
+  <https://udd.debian.org/>, UDD `pg_dump` file, Debian mirror,
+  sources.debian.org, mock) and the `ingest` pipeline: raw artifacts
+  as xz-compressed CSV + JSON manifest persisted beside each artifact
+  + provenance record.
+- **Expects**: a source subcommand (`ingest sources | mirror | udd |
+  udddump`) with its mandatory filter flags (ADR-012), optional row
+  `--limit` window; UDD requires reachable PostgreSQL credentials,
+  `udddump` requires the **host path** to a `pg_dump` file and
+  `pg_restore` on PATH (`postgresql-client`).
 - **Guarantees**: raw data is preserved verbatim (ADR-002) before any
   transformation — as RFC 4180 CSV compressed with LZMA
   (<https://www.rfc-editor.org/rfc/rfc4180>, suffix `.csv.xz`);
   `None` is written as an empty field and read back lossless (sources
   emit no empty strings); manifests are persisted beside every
   artifact; identity fields (incl. `component`, `release`, `section`,
-  `priority`) survive acquisition.
+  `priority`) survive acquisition; `ingest udddump` validates
+  `--table` against the dump's table of contents at startup —
+  fail-fast, lists the restorable tables — and restores no database
+  (rows stream from `pg_restore --data-only`, ADR-006).
 
 ## `normalization`
 
@@ -79,10 +85,10 @@ cannot reconstruct without reading everything.
 
 - **Exposes**: `click` commands; the operator's entry point into
   ingestion and the API service. `ingest` is a command group with one
-  subcommand per source (`sources`, `mirror`, `udd`; mandatory filter
-  flags, ADR-012); `validate`/`normalize` take raw artifacts
-  (positional, one or more) and read each artifact's manifest sidecar
-  for source and run id.
+  subcommand per source (`sources`, `mirror`, `udd`, `udddump`;
+  mandatory filter flags, ADR-012); `validate`/`normalize` take raw
+  artifacts (positional, one or more) and read each artifact's
+  manifest sidecar for source and run id.
 
 ## `consumer_app`
 

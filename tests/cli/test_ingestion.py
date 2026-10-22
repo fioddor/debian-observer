@@ -1,8 +1,8 @@
 """CLI tests for the `ingest` command group.
 
 One subcommand per data source (ADR-012): `ingest sources`,
-`ingest mirror`, `ingest udd`. Each source's selector is a
-mandatory filter flag.
+`ingest mirror`, `ingest udd`, `ingest udddump`. Each source's
+selector is a mandatory filter flag.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 from click.testing import CliRunner
 
 from debian_observer.cli.main import cli
+from debian_observer.ingestion.acquisition import UDDDumpError
 
 
 def test_ingest_help():
@@ -20,7 +21,7 @@ def test_ingest_help():
     result = runner.invoke(cli, ["ingest", "--help"])
     assert result.exit_code == 0
     # One subcommand per source is listed in the synopsis.
-    for subcommand in ("sources", "mirror", "udd"):
+    for subcommand in ("sources", "mirror", "udd", "udddump"):
         assert subcommand in result.output
 
 
@@ -152,7 +153,7 @@ def test_ingest_help_lists_subcommands():
     runner = CliRunner()
     result = runner.invoke(cli, ["ingest", "--help"])
     assert result.exit_code == 0
-    for subcommand in ("sources", "mirror", "udd"):
+    for subcommand in ("sources", "mirror", "udd", "udddump"):
         assert subcommand in result.output
 
 
@@ -328,3 +329,151 @@ class TestIngestUnlimited:
         data_source = MockPipeline.return_value.run.call_args[0][0]
         assert data_source._limit == 5
         assert "Warning" not in result.stderr
+
+
+class TestIngestUdddump:
+    """`ingest udddump` — one table of a UDD `pg_dump` file (ADR-012).
+
+    The dump TOC is validated at startup: an unknown `--table` is a
+    usage error that lists the restorable tables, never a pg_restore
+    crash or a traceback.
+    """
+
+    def test_udddump_wires_the_dump_source(self) -> None:
+        runner = CliRunner()
+        mock_result = _make_mock_result(record_count=3)
+
+        with (
+            patch(
+                "debian_observer.cli.commands.ingest.list_dump_tables",
+                return_value=["packages"],
+            ),
+            patch(
+                "debian_observer.cli.commands.ingest.IngestionPipeline"
+            ) as MockPipeline,
+        ):
+            MockPipeline.return_value.run.return_value = mock_result
+            result = runner.invoke(
+                cli,
+                [
+                    "ingest", "udddump",
+                    "--file", "/srv/udd/udd.dump",
+                    "--table", "packages",
+                    "--limit", "3",
+                    "--raw-dir", "/tmp/udddump-raw",
+                ],
+            )
+
+        assert result.exit_code == 0
+        data_source = MockPipeline.return_value.run.call_args[0][0]
+        assert data_source.name == "udd.dump"
+        assert data_source._file == "/srv/udd/udd.dump"
+        assert data_source._table == "packages"
+        assert data_source._limit == 3
+        MockPipeline.assert_called_once_with(
+            raw_dir=Path("/tmp/udddump-raw"), parquet_dir=None, dataset_dir=None
+        )
+
+    def test_udddump_gate_rejects_an_unknown_table(self) -> None:
+        """A table outside the dump TOC fails fast, listing tables."""
+        runner = CliRunner()
+
+        with (
+            patch(
+                "debian_observer.cli.commands.ingest.list_dump_tables",
+                return_value=["packages", "sources"],
+            ),
+            patch(
+                "debian_observer.cli.commands.ingest.IngestionPipeline"
+            ) as MockPipeline,
+        ):
+            result = runner.invoke(
+                cli,
+                [
+                    "ingest", "udddump",
+                    "--file", "/srv/udd/udd.dump",
+                    "--table", "pachages",
+                ],
+            )
+
+        assert result.exit_code != 0
+        assert "pachages" in result.output
+        # the error lists the restorable tables instead of a traceback
+        assert "packages" in result.output
+        assert "sources" in result.output
+        assert "Traceback" not in result.output
+        MockPipeline.return_value.run.assert_not_called()
+
+    def test_udddump_gate_wraps_runner_errors(self) -> None:
+        """A failing pg_restore runner is a usage error, not a crash."""
+        runner = CliRunner()
+
+        with (
+            patch(
+                "debian_observer.cli.commands.ingest.list_dump_tables",
+                side_effect=UDDDumpError(
+                    "pg_restore not found on PATH; install postgresql-client"
+                ),
+            ),
+            patch(
+                "debian_observer.cli.commands.ingest.IngestionPipeline"
+            ) as MockPipeline,
+        ):
+            result = runner.invoke(
+                cli,
+                [
+                    "ingest", "udddump",
+                    "--file", "/srv/udd/udd.dump",
+                    "--table", "packages",
+                ],
+            )
+
+        assert result.exit_code != 0
+        assert "postgresql-client" in result.output
+        assert "Traceback" not in result.output
+        MockPipeline.return_value.run.assert_not_called()
+
+    def test_udddump_default_limit_is_none_and_warns(self) -> None:
+        """Unset --limit ingests the whole table with a stderr warning."""
+        runner = CliRunner()
+        mock_result = _make_mock_result()
+
+        with (
+            patch(
+                "debian_observer.cli.commands.ingest.list_dump_tables",
+                return_value=["packages"],
+            ),
+            patch(
+                "debian_observer.cli.commands.ingest.IngestionPipeline"
+            ) as MockPipeline,
+        ):
+            MockPipeline.return_value.run.return_value = mock_result
+            result = runner.invoke(
+                cli,
+                [
+                    "ingest", "udddump",
+                    "--file", "/srv/udd/udd.dump",
+                    "--table", "packages",
+                ],
+            )
+
+        assert result.exit_code == 0
+        data_source = MockPipeline.return_value.run.call_args[0][0]
+        assert data_source._limit is None
+        assert "Warning" in result.stderr
+        assert "--limit" in result.stderr
+
+    def test_udddump_help_shows_the_pinned_runner(self) -> None:
+        """--help surfaces the pinned runner so operators know what
+        runs (and what is not implemented)."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["ingest", "udddump", "--help"])
+
+        assert result.exit_code == 0
+        # host-first: pg_restore on PATH, no container indirection
+        assert "PATH" in result.output
+        assert "postgresql-client" in result.output
+        assert "no database" in result.output.lower()
+        assert "udd-postgresql" not in result.output
+        assert "UDDDUMP_CONTAINER" not in result.output
+        assert "UDDDUMP_USER" not in result.output

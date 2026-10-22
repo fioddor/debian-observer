@@ -35,8 +35,10 @@ cannot reconstruct without reading everything.
 
 ## `storage`
 
-- **Exposes**: Parquet dataset writing (`--dataset-dir`) and analytical
-  queries (DuckDB).
+- **Exposes**: the event log writer (one Parquet file per ingestion
+  run; writer-owned schema, ADR-011) and the normalized
+  `package_versions` dataset writer (`--dataset-dir`, one Parquet
+  file per run) + analytical queries (DuckDB).
 - **Expects**: normalized rows from the transformer; dataset layout as
   written by the writer.
 - **Guarantees**: writer-owned serialization (ADR-011) — the dataset
@@ -44,7 +46,12 @@ cannot reconstruct without reading everything.
   API loader still reads Parquet event files written by earlier R1
   iterations (13- and 16-column layouts, before `release`, `component`,
   `section`, `priority`, `suite` existed); fields the old files lack
-  load as `None`.
+  load as `None`. The dataset is a per-ingestion-run projection of
+  `PackageVersionObserved` events — one row per event, no cross-run
+  dedup; *current state* is not stored but derived as a query-time
+  fold (latest observation per package version) over the accumulated
+  rows; a consolidation step that materializes the fold (first/last
+  `observed_at`) is planned and must preserve idempotency (spec §15.1).
 
 ## `events`
 

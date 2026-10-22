@@ -157,3 +157,27 @@ the real `ci` table carries `source`+`version` and ingests fine). The transforme
 that slips past validation and fails canonical transformation is
 skipped with a warning naming the cause — never a traceback. `--help`
 states the perimeter (CONTRIBUTING, "CLI `--help`" rule).
+
+## Amendment (2026-10-22): name flags by content, not format — `--events-dir`
+
+The event-log flag was `--parquet-dir` on every command that touches
+it (`ingest` subcommands, `serve`, `query`, `status`; env fallback
+`PARQUET_DIR`; default directory `data/parquet` in `status`/`query`).
+Two Parquet surfaces exist (the event log and the `package_versions`
+dataset projection), and more Parquet-based surfaces may come — a
+format-named flag stops meaning anything as soon as the format has
+more than one use. Flags are named by **content/purpose**: the flag
+is `--events-dir` everywhere, the env fallback is `EVENTS_DIR`, and
+the default directory is `data/events`. What the files physically
+are (Parquet) stays an implementation detail of the storage layer.
+
+Corrections riding the same change: the `serve` help and user guide
+now describe the loader honestly, and the user guide no longer
+claims the `consume` CLI persists to a default directory (the CLI
+registers a print handler; persistence is a handler choice,
+`PersistingHandler`).
+
+**Breaking changes, no compatibility shim (ADR-012 rule):**
+`--parquet-dir` invocations and the `PARQUET_DIR` env var stop
+working; default readers (`status`, `query`) now read `data/events`
+— move existing directories manually (`mv data/parquet data/events`).

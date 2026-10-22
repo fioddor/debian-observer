@@ -9,7 +9,7 @@ Usage::
     from debian_observer.storage.handlers import PersistingHandler
 
     app = ConsumerApp()
-    handler = PersistingHandler("data/parquet", flush_threshold=100)
+    handler = PersistingHandler("data/events", flush_threshold=100)
     app.register_handler("PackageVersionObserved", handler)
     # Events consumed by app are automatically written to Parquet.
 """

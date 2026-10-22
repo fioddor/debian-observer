@@ -67,7 +67,7 @@ def test_query_runs_over_parquet_data():
             [
                 "query",
                 "SELECT entity_id, version FROM events WHERE distribution = 'sid'",
-                "--parquet-dir",
+                "--events-dir",
                 tmpdir,
                 "--format",
                 "table",
@@ -125,7 +125,7 @@ def test_query_json_output():
             [
                 "query",
                 "SELECT entity_id, version FROM events WHERE distribution = 'sid'",
-                "--parquet-dir",
+                "--events-dir",
                 tmpdir,
                 "--format",
                 "json",
@@ -187,7 +187,7 @@ def test_query_empty_json_output():
             [
                 "query",
                 "SELECT entity_id, version FROM events WHERE distribution = 'nonexistent'",
-                "--parquet-dir",
+                "--events-dir",
                 tmpdir,
                 "--format",
                 "json",
@@ -244,7 +244,7 @@ def test_query_csv_output():
             [
                 "query",
                 "SELECT entity_id, version FROM events WHERE distribution = 'sid'",
-                "--parquet-dir",
+                "--events-dir",
                 tmpdir,
                 "--format",
                 "csv",
@@ -304,7 +304,7 @@ def test_query_table_no_rows():
             [
                 "query",
                 "SELECT entity_id, version FROM events WHERE distribution = 'nonexistent'",
-                "--parquet-dir",
+                "--events-dir",
                 tmpdir,
                 "--format",
                 "table",

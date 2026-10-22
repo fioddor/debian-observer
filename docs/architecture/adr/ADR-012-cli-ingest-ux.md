@@ -134,3 +134,23 @@ amendment routed `pg_restore` through `docker exec` into the local
 coupled the ingest CLI to a deployment artifact of the UDD sandbox
 — the container has no reason to exist for reading a dump file.
 The runner is host-`pg_restore` only.
+
+**Provider (2026-10-22):** the images ship the dependency.
+`postgresql-client` is installed in the dev and deploy images —
+containers own their dependencies; the host stays untouched. The
+deploy base is pinned `python:3.11-slim-trixie`: the floating
+`3.11-slim` tag is non-deterministic (a cached bookworm-era image
+ships `pg_restore` 15, which cannot read the dump — its
+custom-format header pins `vmaj` 16, and `pg_restore` rejects
+newer-major dumps); trixie ships `postgresql-client` 17 — verified
+reading the real 2.9 GB dump's TOC in-container.
+
+**Perimeter gate (2026-10-22, evening):** the startup gate does not
+stop at the TOC. It peeks the table's COPY header — one stdout line of
+`pg_restore --data-only --table`, no data restored — and matches it
+against `SUPPORTED_TABLE_SHAPES`, a registry: new shapes are data,
+not gate code (today it carries one entry, `packages`, requiring
+`package` and `version`). The transformer is the backstop: a record
+that slips past validation and fails canonical transformation is
+skipped with a warning naming the cause — never a traceback. `--help`
+states the perimeter (CONTRIBUTING, "CLI `--help`" rule).

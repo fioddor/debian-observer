@@ -140,6 +140,30 @@ UDD_HOST=192.168.1.218 UDD_USER=udd UDD_PASSWORD=udd \
   --parquet-dir /tmp/udd-parquet
 ```
 
+**UDD dump file (no live database):**
+
+Ingest one table straight from a UDD `pg_dump` custom-format file
+(ADR-012): rows stream from `pg_restore --data-only` **on the host**
+(`pg_restore` on PATH) — no database connection, no restore, and no
+container indirection (ADR-006). `--file` is the **host path** to the
+dump; `--table` is validated against the dump's table of contents
+before any restore work, and an unknown table fails fast listing the
+dump's restorable tables. `pg_restore` is a host dependency: install
+`postgresql-client` if it is not on PATH.
+
+```bash
+debian-observer ingest udddump \
+  --file /srv/fioddor-dev.d/EngineerGame.d/udd-postgres.d/workspace/udd.dump \
+  --table packages \
+  --limit 3 \
+  --raw-dir /tmp/udddump-raw \
+  --parquet-dir /tmp/udddump-parquet
+```
+
+The output has the same shape as `ingest udd` (records, run id,
+checksum, events, Parquet path); `--limit` unset ingests the whole
+table with a warning on stderr.
+
 **Verify outputs:**
 
 Raw artifact (xz-compressed CSV):
@@ -185,8 +209,9 @@ debian-observer ingest sources \
   --raw-dir data/raw
 ```
 
-Options: `--limit` (mirror/udd; unset ingests the whole source with a
-warning), `--component`/`--architecture` (mirror; default `main`/`amd64`),
+Options: `--limit` (mirror/udd/udddump; unset ingests the whole source
+with a warning), `--component`/`--architecture` (mirror; default
+`main`/`amd64`),
 `--parquet-dir` (Parquet output), `--dataset-dir`.
 See `debian-observer ingest <source> --help` for full options.
 

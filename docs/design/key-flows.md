@@ -7,10 +7,14 @@ reconstruct from the module contracts.
 ## Flow 1 — Ingestion run (UDD → raw artifact)
 
 1. Operator runs `ingest udd --table T [--limit N]` (CLI → ingestion;
-   one subcommand per source, ADR-012).
+   one subcommand per source, ADR-012), or `ingest udddump --file D
+   --table T [--limit N]` from a UDD `pg_dump` file — the table is
+   validated against the dump's TOC at startup before any restore.
 2. `UDDDataSource` queries with the identity SELECT (package, source,
    version, distribution, release, architecture, section, priority,
-   component).
+   component); the dump source (`UDDDumpDataSource`) maps the same
+   identity columns from the `pg_restore --data-only` COPY stream —
+   no database is restored (ADR-006).
 3. **Window caveat:** `--limit` takes a nondeterministic window — fine
    for smoke runs. Reproducibility does not come from window
    selection: the raw artifact + its manifest (checksums, run id)

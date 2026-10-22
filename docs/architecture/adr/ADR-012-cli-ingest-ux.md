@@ -36,24 +36,26 @@ flag* with its own name:
 subcommand; `--limit` (mirror/udd) keeps its whole-source default
 with a stderr warning.
 
-**2. Elements vs filters.** The *element* is the thing ingested — a
-database, a mirror, a service instance. A *filter* restricts which
-part of the element is taken. Elements have to be recognizable, and
-there are no element *detectors* yet, so every source is born with
-**mandatory** filter flags that pin the element down:
+**2. The ingestion scope: sources and filters.** The *ingestion
+scope* consists of a data source and its filters — the source is
+the thing ingested (a database, a mirror, a service instance), and
+a *filter* restricts which part of the source is taken. Entities
+within a source have to be recognizable/detectable, and there are no
+*detectors* yet, so every source is born with **mandatory** filter
+flags that pin the scope down:
 
-- `udd`: without filters the element is the whole database; a future
+- `udd`: without filters the scope is the whole database; a future
   detector could ingest everything it recognizes (tables, views,
-  indexes…) and generate multiple entity types per element.
-- `mirror`: without filters the element is the whole mirror; a
+  indexes…) and generate multiple entity types per source.
+- `mirror`: without filters the scope is the whole mirror; a
   future detector could iterate the components and suites it finds.
-- `sources`: without filters the element is the service instance; a
+- `sources`: without filters the scope is the service instance; a
   future detector could ingest all packages it finds.
 
 When detectors exist, filter flags become optional and positional
-arguments may name elements. The planned dump-file source fits the
-same shape: `ingest udddump --file <dump> --table <table>` — the file
-is the mandatory element selector until dumps are detectable.
+arguments may name the entities. The planned dump-file source fits
+the same shape: `ingest udddump --file <dump> --table <table>` — the
+file is the mandatory scope selector until dumps are detectable.
 
 **3. `validate`/`normalize` take raw artifacts as positional
 arguments** (one or more), and read the source name and run id from
@@ -76,14 +78,14 @@ Pros:
  - One meaning per flag name (`--package`, `--suite`, `--table`);
    `--url`'s triple meaning disappears.
  - New sources add a subcommand instead of overloading `--url`;
-   the element/filter rule says exactly which flags a new source
+   the source/filter rule says exactly which flags a new source
    needs and which become optional later.
  - `validate`/`normalize` stop asking for data the pipeline already
    persisted (manifest sidecar); several artifacts can be processed
    in one run.
  - The CLI keeps a stable migration path: flags become filters
-   (optional) when detectors arrive; positional elements may come
-   after that.
+   (optional) when detectors arrive; positional entity arguments
+   may come after that.
 
 Cons:
 
@@ -150,7 +152,8 @@ stop at the TOC. It peeks the table's COPY header — one stdout line of
 `pg_restore --data-only --table`, no data restored — and matches it
 against `SUPPORTED_TABLE_SHAPES`, a registry: new shapes are data,
 not gate code (today it carries one entry, `packages`, requiring
-`package` and `version`). The transformer is the backstop: a record
+`version` plus any of `package`/`source` — mirroring the validator;
+the real `ci` table carries `source`+`version` and ingests fine). The transformer is the backstop: a record
 that slips past validation and fails canonical transformation is
 skipped with a warning naming the cause — never a traceback. `--help`
 states the perimeter (CONTRIBUTING, "CLI `--help`" rule).

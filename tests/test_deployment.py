@@ -105,6 +105,44 @@ class TestDockerfile:
     def test_parquet_env_handled(self, dockerfile: str):
         assert "PARQUET_DIR" in dockerfile
 
+    def test_postgresql_client_installed(self, dockerfile: str):
+        """The deploy image ships pg_restore (ingest udddump, ADR-012).
+
+        The udddump source needs pg_restore on PATH; the project
+        images are the provider — the host stays untouched.
+        """
+        assert "postgresql-client" in dockerfile
+
+    def test_base_pinned_trixie(self, dockerfile: str):
+        """Bookworm would ship pg_restore 15 — the dump's custom-format
+        header pins vmaj 16 (od-verified), and pg_restore cannot read
+        dumps from newer majors. The dev base is trixie already; trixie
+        ships postgresql-client 17, which reads the real TOC (checked).
+        """
+        assert re.search(r"FROM\s+python:3\.11-slim-trixie\b", dockerfile)
+
+
+class TestDevcontainerDockerfile:
+    """Validate the devcontainer image structure."""
+
+    @pytest.fixture
+    def devdockerfile_path(self) -> Path:
+        return Path(__file__).parent.parent / ".devcontainer" / "Dockerfile"
+
+    @pytest.fixture
+    def devdockerfile(self, devdockerfile_path: Path) -> str:
+        assert devdockerfile_path.exists()
+        with open(devdockerfile_path) as f:
+            return f.read()
+
+    def test_postgresql_client_installed(self, devdockerfile: str):
+        """The dev image ships pg_restore (ingest udddump, ADR-012).
+
+        Same PATH contract as the deploy image: udddump smoke runs
+        where the development battery runs.
+        """
+        assert "postgresql-client" in devdockerfile
+
 
 class TestDeploymentReadme:
     """Validate deployment documentation exists."""

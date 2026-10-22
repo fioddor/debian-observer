@@ -270,7 +270,8 @@ class TestTableShapes:
         registry = acquisition.SUPPORTED_TABLE_SHAPES
         assert isinstance(registry, tuple)
         assert [shape.name for shape in registry] == ["packages"]
-        assert registry[0].required_columns == frozenset({"package", "version"})
+        assert registry[0].required_columns == frozenset({"version"})
+        assert registry[0].required_any == frozenset({"package", "source"})
 
     def test_match_accepts_packages_shaped_columns(self) -> None:
         shape = acquisition.match_table_shape(
@@ -285,7 +286,9 @@ class TestTableShapes:
     def test_match_is_registry_driven_not_hardcoded(self) -> None:
         """Future-ready: a registered shape matches without new gate code."""
         releases = acquisition.TableShape(
-            name="releases", required_columns=frozenset({"source", "version"})
+            name="releases",
+            required_columns=frozenset({"version"}),
+            required_any=frozenset({"source"}),
         )
         with patch.object(acquisition, "SUPPORTED_TABLE_SHAPES", (releases,)):
             matched = acquisition.match_table_shape(["source", "version"])
@@ -318,7 +321,9 @@ class TestTableShapes:
         assert "not shaped like any supported table" in message
         # the perimeter: the supported shapes and their requirements
         assert "packages" in message
-        assert "package, version" in message
+        assert "version" in message
+        assert "any of" in message
+        assert "package, source" in message
 
 
 class TestPeekDumpCopyColumns:
@@ -326,9 +331,17 @@ class TestPeekDumpCopyColumns:
 
     def test_peek_reads_the_header_columns(self) -> None:
         proc = MagicMock()
-        proc.stdout.readline.return_value = (
-            "COPY public.ci (package, version, architecture) FROM stdin;\n"
-        )
+        # Real dumps open with a preamble: comments, `\restrict`
+        # directives and SET statements; the peek scans past all of
+        # it to the COPY header.
+        proc.stdout.readline.side_effect = [
+            "--\n",
+            "-- PostgreSQL database dump\n",
+            "--\n",
+            "\\restrict 7c9b2c1a\n",
+            "SET statement_timeout = 0;\n",
+            "COPY public.ci (package, version, architecture) FROM stdin;\n",
+        ]
         with patch.object(acquisition.subprocess, "Popen", return_value=proc):
             columns = acquisition.peek_dump_copy_columns(
                 "/srv/udd/udd.dump", table="ci"

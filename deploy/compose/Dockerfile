@@ -4,13 +4,18 @@
 # Author.: Igor Zubiaurre <igor@zubiaurre.es>
 #-----------------------------------------------------------------------------
 
-FROM python:3.11-slim
+FROM python:3.11-slim-trixie
 
 WORKDIR /app
 
 # Install system dependencies (minimal)
+# postgresql-client: pg_restore for `ingest udddump` (ADR-012). The
+# base is pinned to trixie: the floating 3.11-slim tag can resolve to
+# a cached bookworm-era image whose pg_restore 15 cannot read the
+# UDD custom dump (its header pins vmaj 16); trixie ships 17.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
+    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency definitions and source

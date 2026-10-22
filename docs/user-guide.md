@@ -153,7 +153,8 @@ deploy images ship `postgresql-client` (the smoke runs in them); on
 any other host install `postgresql-client` if it is not on PATH.
 
 Today only packages-shaped tables are ingested (required COPY
-columns: `package`, `version`): the startup gate peeks the table's
+columns: version + any of: package, source — mirroring the
+validator): the startup gate peeks the table's
 COPY header — one stdout line of `pg_restore --data-only --table`,
 no data restored — and fails fast naming the cause and the supported
 shapes when the table is not shaped like any of them. Records that

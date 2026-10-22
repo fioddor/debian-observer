@@ -349,6 +349,10 @@ class TestIngestUdddump:
                 return_value=["packages"],
             ),
             patch(
+                "debian_observer.cli.commands.ingest.peek_dump_copy_columns",
+                return_value=["package", "version", "architecture"],
+            ),
+            patch(
                 "debian_observer.cli.commands.ingest.IngestionPipeline"
             ) as MockPipeline,
         ):
@@ -444,6 +448,10 @@ class TestIngestUdddump:
                 return_value=["packages"],
             ),
             patch(
+                "debian_observer.cli.commands.ingest.peek_dump_copy_columns",
+                return_value=["package", "version"],
+            ),
+            patch(
                 "debian_observer.cli.commands.ingest.IngestionPipeline"
             ) as MockPipeline,
         ):
@@ -510,7 +518,7 @@ class TestIngestUdddump:
         assert "source, count" in result.output
         assert "not shaped like any supported table" in result.output
         # the perimeter: what is supported today
-        assert "package, version" in result.output
+        assert "version + any of: package, source" in result.output
         assert "Traceback" not in result.output
         MockPipeline.return_value.run.assert_not_called()
 
@@ -555,6 +563,8 @@ class TestIngestUdddump:
         result = runner.invoke(cli, ["ingest", "udddump", "--help"])
 
         assert result.exit_code == 0
-        assert "packages-shaped" in result.output
-        assert "package, version" in result.output
-        assert "more table shapes" in result.output
+        # click wraps help text at 80 columns: compare wrap-tolerantly
+        flat = " ".join(result.output.split())
+        assert "packages-shaped" in flat
+        assert "version + any of: package, source" in flat
+        assert "more table shapes" in flat

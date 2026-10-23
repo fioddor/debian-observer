@@ -2,18 +2,24 @@
 
 One subcommand per data source (ADR-012): `ingest sources`,
 `ingest mirror`, `ingest udd`, `ingest udddump`. Each source's
-selector is a mandatory filter flag.
+selector is a mandatory filter flag. `ingest udddump` is
+acquisition only (ADR-012 amendment, 2026-10-23): it downloads the
+dump (`--url`) and stores it byte-preserving with a manifest
+sidecar — no parsing, no events; the gates and the eventization
+live in `normalize udddump` (tests/cli/test_normalization.py).
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 from click.testing import CliRunner
 
 from debian_observer.cli.main import cli
-from debian_observer.ingestion.acquisition import UDDDumpError
 
 
 def test_ingest_help():
@@ -32,7 +38,6 @@ def _make_mock_result(
     checksum: str = "sha256-xyz",
     events: list | None = None,
     parquet_path: str | None = None,
-    dataset_path: str | None = None,
 ):
     """Build a minimal mock IngestionResult-like object."""
     mock = MagicMock()
@@ -41,7 +46,6 @@ def _make_mock_result(
     mock.checksum = checksum
     mock.events = events or []
     mock.parquet_path = Path(parquet_path) if parquet_path else None
-    mock.dataset_path = Path(dataset_path) if dataset_path else None
     return mock
 
 
@@ -90,7 +94,7 @@ def test_ingest_mirror_source():
     assert data_source._limit == 2
     # Verify raw_dir passed to pipeline
     MockPipeline.assert_called_once_with(
-        raw_dir=Path("/tmp/raw"), parquet_dir=None, dataset_dir=None
+        raw_dir=Path("/tmp/raw"), parquet_dir=None
     )
 
 
@@ -174,7 +178,7 @@ def test_ingest_with_events_dir():
 
     assert result.exit_code == 0
     MockPipeline.assert_called_once_with(
-        raw_dir=Path("data/raw"), parquet_dir=Path("/tmp/pq"), dataset_dir=None
+        raw_dir=Path("data/raw"), parquet_dir=Path("/tmp/pq")
     )
     assert "Parquet written" in result.output
 
@@ -256,48 +260,65 @@ def test_ingest_e2e_with_mock_source(tmp_path: Path):
     assert "Parquet written" in cli_result.output
 
 
-def test_ingest_with_dataset_dir():
-    runner = CliRunner()
-    mock_result = _make_mock_result(
-        record_count=5, dataset_path="/tmp/norm/package_versions/run.parquet"
-    )
+class TestIngestDatasetDeaths:
+    """The dataset projection died with the consolidate consumer
+    (MVC-2): `ingest` writes the event log only — the consolidated
+    `package_versions` table is the consumer's output.
 
-    with patch("debian_observer.cli.commands.ingest.IngestionPipeline") as MockPipeline:
-        MockPipeline.return_value.run.return_value = mock_result
-        result = runner.invoke(
-            cli,
-            [
-                "ingest", "sources",
-                "--package", "hello",
+    These pins are the deaths: the option, the pipeline kwarg and
+    the result field must be *gone*, not ignored.
+    """
+
+    @pytest.mark.parametrize("subcommand", ["sources", "mirror", "udd", "udddump"])
+    def test_dataset_dir_option_is_bad_usage(self, subcommand: str) -> None:
+        """--dataset-dir on any source subcommand → exit 2, no traceback."""
+        runner = CliRunner()
+        if subcommand == "sources":
+            args = ["ingest", "sources", "--package", "bash", "--dataset-dir", "/tmp/norm"]
+        elif subcommand == "mirror":
+            args = ["ingest", "mirror", "--suite", "sid", "--dataset-dir", "/tmp/norm"]
+        elif subcommand == "udd":
+            args = ["ingest", "udd", "--table", "packages", "--dataset-dir", "/tmp/norm"]
+        else:
+            # udddump is a downloader (MVC-1): its scope selector is --url;
+            # --file/--table died with the reading's move to `normalize`.
+            args = [
+                "ingest", "udddump",
+                "--url", "https://udd.example.org/udd.dump",
                 "--dataset-dir", "/tmp/norm",
-            ],
-        )
+            ]
 
-    assert result.exit_code == 0
-    MockPipeline.assert_called_once_with(
-        raw_dir=Path("data/raw"), parquet_dir=None, dataset_dir=Path("/tmp/norm")
-    )
-    assert "Dataset written" in result.output
+        with patch(
+            "debian_observer.cli.commands.ingest.IngestionPipeline"
+        ) as MockPipeline:
+            result = runner.invoke(cli, args)
 
+        assert result.exit_code == 2
+        assert "--dataset-dir" in result.output
+        assert "Traceback" not in result.output
+        MockPipeline.return_value.run.assert_not_called()
 
-def test_pipeline_writes_dataset_when_configured(tmp_path: Path):
-    """Real pipeline + mock source: dataset file written when dataset_dir set."""
-    from debian_observer.ingestion.acquisition import MockDebianDataSource
-    from debian_observer.ingestion.pipeline import IngestionPipeline
-    import pyarrow.parquet as pq
+    def test_pipeline_rejects_dataset_dir(self, tmp_path: Path) -> None:
+        """IngestionPipeline(dataset_dir=...) is a TypeError now."""
+        from debian_observer.ingestion.pipeline import IngestionPipeline
 
-    raw_dir = tmp_path / "raw"
-    raw_dir.mkdir()
-    dataset_dir = tmp_path / "normalized" / "package_versions"
+        with pytest.raises(TypeError):
+            IngestionPipeline(raw_dir=tmp_path, dataset_dir=tmp_path)
 
-    source = MockDebianDataSource(package_count=3)
-    pipeline = IngestionPipeline(raw_dir=raw_dir, dataset_dir=dataset_dir)
-    result = pipeline.run(source, ingestion_run_id="run-ds-e2e")
+    def test_result_has_no_dataset_path_field(self) -> None:
+        """IngestionResult lost the dataset_path field entirely."""
+        from debian_observer.ingestion.pipeline import IngestionResult
 
-    assert result.dataset_path is not None
-    assert result.dataset_path.exists()
-    table = pq.read_table(result.dataset_path)
-    assert table.num_rows == len(result.events)
+        assert "dataset_path" not in IngestionResult.model_fields
+
+    def test_pipeline_signature_has_no_dataset_dir(self) -> None:
+        """The pipeline __init__ lost the dataset_dir kwarg."""
+        import inspect
+
+        from debian_observer.ingestion.pipeline import IngestionPipeline
+
+        params = inspect.signature(IngestionPipeline.__init__).parameters
+        assert "dataset_dir" not in params
 
 
 class TestIngestUnlimited:
@@ -332,239 +353,168 @@ class TestIngestUnlimited:
 
 
 class TestIngestUdddump:
-    """`ingest udddump` — one table of a UDD `pg_dump` file (ADR-012).
+    """`ingest udddump` — acquisition only (ADR-012 amendment, 2026-10-23).
 
-    The dump TOC is validated at startup: an unknown `--table` is a
-    usage error that lists the restorable tables, never a pg_restore
-    crash or a traceback.
+    `--url` is the mandatory scope selector; the dump is stored
+    byte-preserving with a manifest sidecar and a provenance record.
+    No parsing, no gates, no events here — those live in
+    `normalize udddump` (test_normalization.py).
     """
 
-    def test_udddump_wires_the_dump_source(self) -> None:
-        runner = CliRunner()
-        mock_result = _make_mock_result(record_count=3)
+    URL = "https://udd.example.org/udd.dump"
+    PAYLOAD = b"PGDMP-fake-custom-format-dump\x00\x01\x02"
 
-        with (
-            patch(
-                "debian_observer.cli.commands.ingest.list_dump_tables",
-                return_value=["packages"],
-            ),
-            patch(
-                "debian_observer.cli.commands.ingest.peek_dump_copy_columns",
-                return_value=["package", "version", "architecture"],
-            ),
-            patch(
-                "debian_observer.cli.commands.ingest.IngestionPipeline"
-            ) as MockPipeline,
-        ):
-            MockPipeline.return_value.run.return_value = mock_result
+    def _fake_download(self):
+        """A download_dump stand-in that writes fixed dump bytes."""
+
+        def download(url: str, dest: Path) -> Path:
+            assert url == self.URL
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(self.PAYLOAD)
+            return dest
+
+        return download
+
+    def test_udddump_downloads_and_stores_byte_preserving(self, tmp_path: Path):
+        """The dump lands as-is: raw bytes, no csv.xz, no decompression."""
+        runner = CliRunner()
+        raw_dir = tmp_path / "raw"
+
+        with patch(
+            "debian_observer.cli.commands.ingest.download_dump",
+            side_effect=self._fake_download(),
+        ) as download:
             result = runner.invoke(
                 cli,
                 [
                     "ingest", "udddump",
-                    "--file", "/srv/udd/udd.dump",
-                    "--table", "packages",
-                    "--limit", "3",
-                    "--raw-dir", "/tmp/udddump-raw",
+                    "--url", self.URL,
+                    "--raw-dir", str(raw_dir),
                 ],
             )
 
         assert result.exit_code == 0
-        data_source = MockPipeline.return_value.run.call_args[0][0]
-        assert data_source.name == "udd.dump"
-        assert data_source._file == "/srv/udd/udd.dump"
-        assert data_source._table == "packages"
-        assert data_source._limit == 3
-        MockPipeline.assert_called_once_with(
-            raw_dir=Path("/tmp/udddump-raw"), parquet_dir=None, dataset_dir=None
+        download.assert_called_once()
+        artifacts = sorted(raw_dir.glob("udddump-*.dump"))
+        assert len(artifacts) == 1
+        artifact = artifacts[0]
+        # byte-preserving: the artifact is the payload as downloaded
+        assert artifact.read_bytes() == self.PAYLOAD
+
+    def test_udddump_writes_the_manifest_sidecar(self, tmp_path: Path):
+        """The sidecar carries source/checksum/size; record_count is
+        unknown until normalize (null), license unknown (null)."""
+        runner = CliRunner()
+        raw_dir = tmp_path / "raw"
+
+        with patch(
+            "debian_observer.cli.commands.ingest.download_dump",
+            side_effect=self._fake_download(),
+        ):
+            result = runner.invoke(
+                cli,
+                ["ingest", "udddump", "--url", self.URL, "--raw-dir", str(raw_dir)],
+            )
+
+        assert result.exit_code == 0
+        artifact = sorted(raw_dir.glob("udddump-*.dump"))[0]
+        manifest_path = artifact.with_suffix(".manifest.json")
+        assert manifest_path.exists()
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        assert manifest["source"] == "udddump"
+        assert manifest["dataset_name"].startswith("udddump-run-")
+        assert manifest["checksum"] == hashlib.sha256(self.PAYLOAD).hexdigest()
+        assert manifest["size_bytes"] == len(self.PAYLOAD)
+        # record_count and license are unknown until normalization
+        assert manifest["record_count"] is None
+        assert manifest["license"] is None
+        assert manifest["retrieved_at"]
+
+    def test_udddump_echoes_the_run(self, tmp_path: Path):
+        """The operator sees URL, run id, artifact, manifest, checksum, size."""
+        runner = CliRunner()
+        raw_dir = tmp_path / "raw"
+
+        with patch(
+            "debian_observer.cli.commands.ingest.download_dump",
+            side_effect=self._fake_download(),
+        ):
+            result = runner.invoke(
+                cli,
+                ["ingest", "udddump", "--url", self.URL, "--raw-dir", str(raw_dir)],
+            )
+
+        assert result.exit_code == 0
+        assert f"Downloaded {self.URL}" in result.output
+        assert "Run ID: run-" in result.output
+        assert "Raw artifact:" in result.output
+        assert "Manifest:" in result.output
+        assert f"Checksum: {hashlib.sha256(self.PAYLOAD).hexdigest()}" in result.output
+        assert f"Size: {len(self.PAYLOAD)} bytes" in result.output
+
+    def test_udddump_url_is_mandatory(self):
+        """No --url is a usage error, not a download."""
+        runner = CliRunner()
+        with patch(
+            "debian_observer.cli.commands.ingest.download_dump"
+        ) as download:
+            result = runner.invoke(cli, ["ingest", "udddump"])
+
+        assert result.exit_code == 2
+        assert "--url" in result.output
+        download.assert_not_called()
+
+    def test_udddump_has_no_table_flag(self):
+        """Eventization filters are not ingest surface: --table is a
+        usage error here (it lives in `normalize udddump`)."""
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "ingest", "udddump",
+                "--url", self.URL,
+                "--table", "packages",
+            ],
         )
+        assert result.exit_code == 2
+        assert "no such option" in result.output.lower()
 
-    def test_udddump_gate_rejects_an_unknown_table(self) -> None:
-        """A table outside the dump TOC fails fast, listing tables."""
+    def test_udddump_has_no_limit_flag(self):
         runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["ingest", "udddump", "--url", self.URL, "--limit", "3"],
+        )
+        assert result.exit_code == 2
+        assert "no such option" in result.output.lower()
 
-        with (
-            patch(
-                "debian_observer.cli.commands.ingest.list_dump_tables",
-                return_value=["packages", "sources"],
-            ),
-            patch(
-                "debian_observer.cli.commands.ingest.IngestionPipeline"
-            ) as MockPipeline,
-        ):
-            result = runner.invoke(
-                cli,
-                [
-                    "ingest", "udddump",
-                    "--file", "/srv/udd/udd.dump",
-                    "--table", "pachages",
-                ],
-            )
-
-        assert result.exit_code != 0
-        assert "pachages" in result.output
-        # the error lists the restorable tables instead of a traceback
-        assert "packages" in result.output
-        assert "sources" in result.output
-        assert "Traceback" not in result.output
-        MockPipeline.return_value.run.assert_not_called()
-
-    def test_udddump_gate_wraps_runner_errors(self) -> None:
-        """A failing pg_restore runner is a usage error, not a crash."""
+    def test_udddump_has_no_file_flag(self):
+        """The old `--file` scope selector is gone: the scope is --url."""
         runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "ingest", "udddump",
+                "--file", "/srv/udd/udd.dump",
+                "--url", self.URL,
+            ],
+        )
+        assert result.exit_code == 2
+        assert "no such option" in result.output.lower()
 
-        with (
-            patch(
-                "debian_observer.cli.commands.ingest.list_dump_tables",
-                side_effect=UDDDumpError(
-                    "pg_restore not found on PATH; install postgresql-client"
-                ),
-            ),
-            patch(
-                "debian_observer.cli.commands.ingest.IngestionPipeline"
-            ) as MockPipeline,
-        ):
-            result = runner.invoke(
-                cli,
-                [
-                    "ingest", "udddump",
-                    "--file", "/srv/udd/udd.dump",
-                    "--table", "packages",
-                ],
-            )
-
-        assert result.exit_code != 0
-        assert "postgresql-client" in result.output
-        assert "Traceback" not in result.output
-        MockPipeline.return_value.run.assert_not_called()
-
-    def test_udddump_default_limit_is_none_and_warns(self) -> None:
-        """Unset --limit ingests the whole table with a stderr warning."""
-        runner = CliRunner()
-        mock_result = _make_mock_result()
-
-        with (
-            patch(
-                "debian_observer.cli.commands.ingest.list_dump_tables",
-                return_value=["packages"],
-            ),
-            patch(
-                "debian_observer.cli.commands.ingest.peek_dump_copy_columns",
-                return_value=["package", "version"],
-            ),
-            patch(
-                "debian_observer.cli.commands.ingest.IngestionPipeline"
-            ) as MockPipeline,
-        ):
-            MockPipeline.return_value.run.return_value = mock_result
-            result = runner.invoke(
-                cli,
-                [
-                    "ingest", "udddump",
-                    "--file", "/srv/udd/udd.dump",
-                    "--table", "packages",
-                ],
-            )
-
-        assert result.exit_code == 0
-        data_source = MockPipeline.return_value.run.call_args[0][0]
-        assert data_source._limit is None
-        assert "Warning" in result.stderr
-        assert "--limit" in result.stderr
-
-    def test_udddump_help_shows_the_pinned_runner(self) -> None:
-        """--help surfaces the pinned runner so operators know what
-        runs (and what is not implemented)."""
+    def test_udddump_help_states_the_download_only_scope(self):
+        """--help is honest (CONTRIBUTING rule): what runs here (an
+        HTTPS download) and what does not (no pg_restore, no parse)."""
         runner = CliRunner()
         result = runner.invoke(cli, ["ingest", "udddump", "--help"])
 
         assert result.exit_code == 0
-        # host-first: pg_restore on PATH, no container indirection
-        assert "PATH" in result.output
-        assert "postgresql-client" in result.output
-        assert "no database" in result.output.lower()
-        assert "udd-postgresql" not in result.output
-        assert "UDDDUMP_CONTAINER" not in result.output
-        assert "UDDDUMP_USER" not in result.output
-
-    def test_udddump_gate_rejects_non_packages_shaped_tables(self) -> None:
-        """The shape gate fails fast: cause + perimeter, not a crash."""
-        runner = CliRunner()
-
-        with (
-            patch(
-                "debian_observer.cli.commands.ingest.list_dump_tables",
-                return_value=["sources_count"],
-            ),
-            patch(
-                "debian_observer.cli.commands.ingest.peek_dump_copy_columns",
-                return_value=["source", "count"],
-            ),
-            patch(
-                "debian_observer.cli.commands.ingest.IngestionPipeline"
-            ) as MockPipeline,
-        ):
-            result = runner.invoke(
-                cli,
-                [
-                    "ingest", "udddump",
-                    "--file", "/srv/udd/udd.dump",
-                    "--table", "sources_count",
-                ],
-            )
-
-        assert result.exit_code != 0
-        # the cause: the table and its COPY header
-        assert "sources_count" in result.output
-        assert "source, count" in result.output
-        assert "not shaped like any supported table" in result.output
-        # the perimeter: what is supported today
-        assert "version + any of: package, source" in result.output
-        assert "Traceback" not in result.output
-        MockPipeline.return_value.run.assert_not_called()
-
-    def test_udddump_gate_accepts_packages_shaped_tables(self) -> None:
-        """A packages-shaped table passes the shape gate and runs."""
-        runner = CliRunner()
-        mock_result = _make_mock_result(record_count=3)
-
-        with (
-            patch(
-                "debian_observer.cli.commands.ingest.list_dump_tables",
-                return_value=["ci"],
-            ),
-            patch(
-                "debian_observer.cli.commands.ingest.peek_dump_copy_columns",
-                return_value=["package", "version", "architecture"],
-            ),
-            patch(
-                "debian_observer.cli.commands.ingest.IngestionPipeline"
-            ) as MockPipeline,
-        ):
-            MockPipeline.return_value.run.return_value = mock_result
-            result = runner.invoke(
-                cli,
-                [
-                    "ingest", "udddump",
-                    "--file", "/srv/udd/udd.dump",
-                    "--table", "ci",
-                    "--limit", "3",
-                ],
-            )
-
-        assert result.exit_code == 0
-        data_source = MockPipeline.return_value.run.call_args[0][0]
-        assert data_source._table == "ci"
-        assert data_source._limit == 3
-
-    def test_udddump_help_states_the_perimeter(self) -> None:
-        """--help shows the implementation perimeter (CONTRIBUTING rule):
-        what is ingestible today and what is still coming."""
-        runner = CliRunner()
-        result = runner.invoke(cli, ["ingest", "udddump", "--help"])
-
-        assert result.exit_code == 0
-        # click wraps help text at 80 columns: compare wrap-tolerantly
-        flat = " ".join(result.output.split())
-        assert "packages-shaped" in flat
-        assert "version + any of: package, source" in flat
-        assert "more table shapes" in flat
+        assert "--url" in result.output
+        assert "--raw-dir" in result.output
+        assert "data/raw" in result.output
+        # download-only: the reading is normalize's, not ingest's
+        assert "pg_restore" not in result.output
+        assert "--table" not in result.output
+        assert "--limit" not in result.output
+        assert "--file" not in result.output
+        assert "--parquet-dir" not in result.output

@@ -1,10 +1,19 @@
-"""Tests for the UDD ``pg_dump`` file source (`ingest udddump`).
+"""Tests for the UDD ``pg_dump`` file reader (`normalize udddump`).
 
-The source ingests one table of a UDD ``pg_dump`` custom-format file
+The reader eventizes one table of a UDD ``pg_dump`` custom-format file
 through ``pg_restore`` **on the host** (PATH): no container, no live
 database (ADR-006). The table is validated against the dump's table
-of contents at startup, and rows stream from ``pg_restore
---data-only`` COPY blocks.
+of contents at startup (the TOC gate), the COPY header against the
+registered shapes (the shape gate), and rows stream from
+``pg_restore --data-only`` COPY blocks.
+
+Moved from ``tests/unit/test_udd_dump_datasource.py`` (2026-10-23,
+ADR-012 amendment): the machinery lives in
+``debian_observer.normalization.udddump`` now — there is no
+``UDDDumpDataSource``; the reading is a function
+(``read_dump_records``), and records are stamped with the raw source
+name ``udddump`` (as the manifest sidecar written by
+``ingest udddump`` does).
 """
 
 from __future__ import annotations
@@ -14,12 +23,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from debian_observer.ingestion import acquisition
-from debian_observer.ingestion.acquisition import (
-    UDDDumpDataSource,
+from debian_observer.normalization import udddump
+from debian_observer.normalization.udddump import (
     UDDDumpError,
     list_dump_tables,
     parse_dump_toc_tables,
+    read_dump_records,
 )
 
 
@@ -91,7 +100,7 @@ class TestListDumpTables:
 
     def test_lists_tables_from_the_toc(self) -> None:
         with patch(
-            "debian_observer.ingestion.acquisition._run_pg_restore",
+            "debian_observer.normalization.udddump._run_pg_restore",
             return_value=TOC_SAMPLE,
         ) as run:
             tables = list_dump_tables(DUMP)
@@ -102,7 +111,7 @@ class TestListDumpTables:
 
     def test_dump_path_passes_through_verbatim(self) -> None:
         with patch(
-            "debian_observer.ingestion.acquisition._run_pg_restore",
+            "debian_observer.normalization.udddump._run_pg_restore",
             return_value=TOC_SAMPLE,
         ) as run:
             list_dump_tables(DUMP)
@@ -118,11 +127,11 @@ class TestRunPgRestore:
 
     def test_invokes_pg_restore_directly(self) -> None:
         """No docker, no container, no user indirection — host PATH."""
-        with patch.object(acquisition.subprocess, "run") as mock_run:
+        with patch.object(udddump.subprocess, "run") as mock_run:
             mock_run.return_value = MagicMock(
                 returncode=0, stdout="TOC text", stderr=""
             )
-            out = acquisition._run_pg_restore(
+            out = udddump._run_pg_restore(
                 ["--list", "/srv/udd/udd.dump"]
             )
 
@@ -143,42 +152,38 @@ class TestRunPgRestore:
             output="",
             stderr="pg_restore: [tar archiver] unrecognized section\n",
         )
-        with patch.object(acquisition.subprocess, "run", side_effect=error):
+        with patch.object(udddump.subprocess, "run", side_effect=error):
             with pytest.raises(UDDDumpError) as excinfo:
-                acquisition._run_pg_restore(["--list", "/nope/udd.dump"])
+                udddump._run_pg_restore(["--list", "/nope/udd.dump"])
 
         assert "pg_restore" in str(excinfo.value)
 
     def test_wraps_missing_pg_restore_with_install_hint(self) -> None:
         """Absent pg_restore is a usage error that names the fix."""
         with patch.object(
-            acquisition.subprocess, "run", side_effect=FileNotFoundError("pg_restore")
+            udddump.subprocess, "run", side_effect=FileNotFoundError("pg_restore")
         ):
             with pytest.raises(UDDDumpError) as excinfo:
-                acquisition._run_pg_restore(
+                udddump._run_pg_restore(
                     ["--list", "/srv/udd/udd.dump"]
                 )
 
         assert "postgresql-client" in str(excinfo.value)
 
 
-class TestUDDDumpDataSource:
-    """The dump source maps COPY rows to the UDD record shape."""
+class TestReadDumpRecords:
+    """The reader maps COPY rows to the UDD record shape.
 
-    def _source(self, **kwargs) -> UDDDumpDataSource:
-        return UDDDumpDataSource(
-            file="/srv/udd/udd.dump", table="packages", **kwargs
-        )
+    The old ``UDDDumpDataSource`` is gone: the reading is a function
+    over the artifact, and the raw source name is ``udddump``.
+    """
 
-    def test_name_is_udd_dump(self) -> None:
-        assert self._source().name == "udd.dump"
-
-    def test_retrieve_maps_copy_columns_by_name(self) -> None:
+    def test_maps_copy_columns_by_name(self) -> None:
         with patch(
-            "debian_observer.ingestion.acquisition._run_pg_restore",
+            "debian_observer.normalization.udddump._run_pg_restore",
             return_value=COPY_SAMPLE,
         ):
-            records = self._source().retrieve()
+            records = read_dump_records(DUMP, table="packages")
 
         assert len(records) == 2
         first = records[0]
@@ -192,33 +197,33 @@ class TestUDDDumpDataSource:
         assert first["section"] == "libs"
         assert first["priority"] == "optional"
         assert first["suite"] is None
-        assert first["source"] == "udd.dump"
+        assert first["source"] == "udddump"
         assert first["observed_at"]
 
-    def test_retrieve_maps_missing_values_to_none(self) -> None:
+    def test_maps_missing_values_to_none(self) -> None:
         with patch(
-            "debian_observer.ingestion.acquisition._run_pg_restore",
+            "debian_observer.normalization.udddump._run_pg_restore",
             return_value=COPY_SAMPLE,
         ):
-            records = self._source().retrieve()
+            records = read_dump_records(DUMP, table="packages")
 
         assert records[1]["priority"] is None
 
-    def test_retrieve_limit_stops_early(self) -> None:
+    def test_limit_stops_early(self) -> None:
         with patch(
-            "debian_observer.ingestion.acquisition._run_pg_restore",
+            "debian_observer.normalization.udddump._run_pg_restore",
             return_value=COPY_SAMPLE,
         ):
-            records = self._source(limit=1).retrieve()
+            records = read_dump_records(DUMP, table="packages", limit=1)
 
         assert len(records) == 1
 
-    def test_retrieve_passes_the_table_flag(self) -> None:
+    def test_passes_the_table_flag(self) -> None:
         with patch(
-            "debian_observer.ingestion.acquisition._run_pg_restore",
+            "debian_observer.normalization.udddump._run_pg_restore",
             return_value=COPY_SAMPLE,
         ) as run:
-            self._source(limit=2).retrieve()
+            read_dump_records(DUMP, table="packages", limit=2)
 
         # host pg_restore: no container kwargs, no docker indirection
         assert not run.call_args.kwargs
@@ -230,33 +235,21 @@ class TestUDDDumpDataSource:
         assert args[3:5] == ["--file", "-"]
         assert args[-1] == "/srv/udd/udd.dump"
 
-    def test_retrieve_wraps_runner_failures(self) -> None:
+    def test_wraps_runner_failures(self) -> None:
         with patch(
-            "debian_observer.ingestion.acquisition._run_pg_restore",
+            "debian_observer.normalization.udddump._run_pg_restore",
             side_effect=UDDDumpError("pg_restore: error"),
         ):
             with pytest.raises(UDDDumpError):
-                self._source().retrieve()
+                read_dump_records(DUMP, table="packages")
 
-    def test_retrieve_without_a_copy_block_is_an_error(self) -> None:
+    def test_without_a_copy_block_is_an_error(self) -> None:
         with patch(
-            "debian_observer.ingestion.acquisition._run_pg_restore",
+            "debian_observer.normalization.udddump._run_pg_restore",
             return_value="no COPY block here\n",
         ):
             with pytest.raises(UDDDumpError):
-                self._source().retrieve()
-
-    def test_compute_checksum_is_deterministic(self) -> None:
-        with patch(
-            "debian_observer.ingestion.acquisition._run_pg_restore",
-            return_value=COPY_SAMPLE,
-        ):
-            source = self._source()
-            first = source.compute_checksum()
-            second = source.compute_checksum()
-
-        assert first == second
-        assert len(first) == 64
+                read_dump_records(DUMP, table="packages")
 
 
 class TestTableShapes:
@@ -267,51 +260,51 @@ class TestTableShapes:
     """
 
     def test_registry_pins_the_packages_shape(self) -> None:
-        registry = acquisition.SUPPORTED_TABLE_SHAPES
+        registry = udddump.SUPPORTED_TABLE_SHAPES
         assert isinstance(registry, tuple)
         assert [shape.name for shape in registry] == ["packages"]
         assert registry[0].required_columns == frozenset({"version"})
         assert registry[0].required_any == frozenset({"package", "source"})
 
     def test_match_accepts_packages_shaped_columns(self) -> None:
-        shape = acquisition.match_table_shape(
+        shape = udddump.match_table_shape(
             ["id", "package", "version", "architecture", "component"]
         )
         assert shape is not None
         assert shape.name == "packages"
 
     def test_match_rejects_columns_without_the_requirements(self) -> None:
-        assert acquisition.match_table_shape(["source", "count"]) is None
+        assert udddump.match_table_shape(["source", "count"]) is None
 
     def test_match_is_registry_driven_not_hardcoded(self) -> None:
         """Future-ready: a registered shape matches without new gate code."""
-        releases = acquisition.TableShape(
+        releases = udddump.TableShape(
             name="releases",
             required_columns=frozenset({"version"}),
             required_any=frozenset({"source"}),
         )
-        with patch.object(acquisition, "SUPPORTED_TABLE_SHAPES", (releases,)):
-            matched = acquisition.match_table_shape(["source", "version"])
+        with patch.object(udddump, "SUPPORTED_TABLE_SHAPES", (releases,)):
+            matched = udddump.match_table_shape(["source", "version"])
             assert matched is not None
             assert matched.name == "releases"
             # and the old shape is gone with the registry, not hardcoded
-            assert acquisition.match_table_shape(["package", "version"]) is None
+            assert udddump.match_table_shape(["package", "version"]) is None
             assert (
-                acquisition.assert_supported_table_shape(
+                udddump.assert_supported_table_shape(
                     ["source", "version"], table="releases"
                 ).name
                 == "releases"
             )
 
     def test_assert_returns_the_matched_shape(self) -> None:
-        shape = acquisition.assert_supported_table_shape(
+        shape = udddump.assert_supported_table_shape(
             ["package", "version"], table="ci"
         )
         assert shape.name == "packages"
 
     def test_assert_error_names_cause_and_perimeter(self) -> None:
         with pytest.raises(UDDDumpError) as excinfo:
-            acquisition.assert_supported_table_shape(
+            udddump.assert_supported_table_shape(
                 ["source", "count"], table="sources_count"
             )
         message = str(excinfo.value)
@@ -342,8 +335,8 @@ class TestPeekDumpCopyColumns:
             "SET statement_timeout = 0;\n",
             "COPY public.ci (package, version, architecture) FROM stdin;\n",
         ]
-        with patch.object(acquisition.subprocess, "Popen", return_value=proc):
-            columns = acquisition.peek_dump_copy_columns(
+        with patch.object(udddump.subprocess, "Popen", return_value=proc):
+            columns = udddump.peek_dump_copy_columns(
                 "/srv/udd/udd.dump", table="ci"
             )
         assert columns == ["package", "version", "architecture"]
@@ -352,12 +345,12 @@ class TestPeekDumpCopyColumns:
 
     def test_peek_wraps_a_missing_runner(self) -> None:
         with patch.object(
-            acquisition.subprocess,
+            udddump.subprocess,
             "Popen",
             side_effect=FileNotFoundError("pg_restore"),
         ):
             with pytest.raises(UDDDumpError) as excinfo:
-                acquisition.peek_dump_copy_columns(
+                udddump.peek_dump_copy_columns(
                     "/srv/udd/udd.dump", table="ci"
                 )
         assert "postgresql-client" in str(excinfo.value)
@@ -365,9 +358,9 @@ class TestPeekDumpCopyColumns:
     def test_peek_fails_when_no_header_is_emitted(self) -> None:
         proc = MagicMock()
         proc.stdout.readline.return_value = ""
-        with patch.object(acquisition.subprocess, "Popen", return_value=proc):
+        with patch.object(udddump.subprocess, "Popen", return_value=proc):
             with pytest.raises(UDDDumpError) as excinfo:
-                acquisition.peek_dump_copy_columns(
+                udddump.peek_dump_copy_columns(
                     "/srv/udd/udd.dump", table="ci"
                 )
         assert "COPY header" in str(excinfo.value)

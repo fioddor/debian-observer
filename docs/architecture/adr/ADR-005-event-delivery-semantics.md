@@ -51,6 +51,25 @@ it will be reconstructed using `observed_at` and `effective_at` domain timestamp
 rather than relying on global message ordering.
 
 
+## Amendment (2026-10-23) — the external packages consumer
+
+The R1 queue consumer (a copy of `examples/consume_packages.py`) pins
+the delivery contract for the packages table:
+
+- **Ack strictly after the durable table write.** The handler feeds the
+  consolidation merge and rewrites `package_versions.parquet` (atomic
+  tmp + rename) before the `ConsumerApp` wrapper acks: a crash before
+  the ack ⇒ JetStream redelivers ⇒ the merge absorbs the duplicate ⇒
+  the consumer resumes where it left off (the dataset table plus the
+  JetStream durable consumer ARE the state).
+- **The merge is idempotent** (the same fold semantics as `consolidate
+  --events-dir`, in `storage.consolidation`): duplicate deliveries are
+  harmless by construction, and `fold(log parquet) == fold(stream)` —
+  the same events by either path produce the identical table.
+- **The in-memory `IdempotencyStore` is a per-process fast path**, not
+  the recovery mechanism — redelivery after a crash is absorbed by
+  the merge, not by the store.
+
 ## Consequences
 
 Pros:

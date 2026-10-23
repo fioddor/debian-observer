@@ -181,3 +181,41 @@ registers a print handler; persistence is a handler choice,
 `--parquet-dir` invocations and the `PARQUET_DIR` env var stop
 working; default readers (`status`, `query`) now read `data/events`
 — move existing directories manually (`mv data/parquet data/events`).
+
+## Amendment (2026-10-23): udddump split — ingest downloads, normalize eventizes
+
+The dump-file surface splits into three separately callable stages
+(MVC-1). For `udddump` the *ingestion scope* of ADR-012 is the URL
+itself: `ingest udddump --url <https://…>` downloads the dump over
+HTTPS and stores it **byte-preserving** as the raw artifact
+(`data/raw/udddump-<timestamp>-<run-id>.dump`, source name
+`udddump`) with a manifest sidecar and a provenance record —
+acquisition only. No `pg_restore` runs here.
+
+The filters of eventization move out of ingest: they live in
+`normalize udddump <dump-artifact> --table <t> [--limit n]`, where
+`--table` is **mandatory** (the startup gates — TOC and COPY-header
+shape — stay with the reading, as usage errors that name the cause).
+`normalize` becomes a command group: the old
+`normalize <paths>` surface is renamed `normalize artifacts <paths>`
+(breaking, no shim) and `normalize udddump` joins it. The manifest
+sidecar is the contract between the stages: the dump artifact is
+addressed by its path, and the source name and run id stamped on the
+events come from the sidecar (`record_count` is null in the download
+manifest — unknown until normalization).
+
+Re-eventizing the same raw download with other filters
+(`--table`, `--limit`) is supported and is the point of the split:
+the raw artifact is never consumed, and each run re-reads the
+manifest sidecar.
+
+The planned invocation example from the 2026-10-21 amendment is
+superseded:
+
+    # old: one command did everything
+    debian-observer ingest udddump --file /srv/udd/udd.dump --table packages
+
+    # new: three separable stages
+    debian-observer ingest udddump --url https://udd.example.org/udd.dump
+    debian-observer normalize udddump \\
+      data/raw/udddump-<timestamp>-<run-id>.dump --table packages --limit 3

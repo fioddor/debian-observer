@@ -142,38 +142,75 @@ UDD_HOST=192.168.1.218 UDD_USER=udd UDD_PASSWORD=udd \
 
 **UDD dump file (no live database):**
 
-Ingest one table straight from a UDD `pg_dump` custom-format file
-(ADR-012): rows stream from `pg_restore --data-only` **on the host**
-(`pg_restore` on PATH) — no database connection, no restore, and no
-container indirection (ADR-006). `--file` is the **host path** to the
-dump; `--table` is validated against the dump's table of contents
-before any restore work, and an unknown table fails fast listing the
-dump's restorable tables. `pg_restore` is a PATH dependency: the dev and
-deploy images ship `postgresql-client` (the smoke runs in them); on
-any other host install `postgresql-client` if it is not on PATH.
-
-Today only packages-shaped tables are ingested (required COPY
-columns: version + any of: package, source — mirroring the
-validator): the startup gate peeks the table's
-COPY header — one stdout line of `pg_restore --data-only --table`,
-no data restored — and fails fast naming the cause and the supported
-shapes when the table is not shaped like any of them. Records that
-fail canonical transformation are skipped with a warning naming the
-cause — the raw artifact preserves them (ADR-002). More table shapes
-will land as new event types do.
+`ingest udddump` is **acquisition only** (ADR-012 amendment,
+2026-10-23): it downloads the dump over HTTPS (`--url`, the
+mandatory scope selector) and stores it **byte-preserving** as the
+raw artifact `data/raw/udddump-<YYYYMMDD-HHMMSS>-<run-id>.dump` —
+exactly as served, no decompression, no `.csv.xz` — with a manifest
+sidecar (`<artifact>.manifest.json`) and a provenance record. No
+parsing happens here: no pg_restore, no gates, no events.
 
 ```bash
 debian-observer ingest udddump \
-  --file /srv/fioddor-dev.d/EngineerGame.d/udd-postgres.d/workspace/udd.dump \
-  --table packages \
-  --limit 3 \
-  --raw-dir /tmp/udddump-raw \
-  --events-dir /tmp/udddump-events
+  --url https://udd.example.org/udd.dump \
+  --raw-dir data/raw
 ```
 
-The output has the same shape as `ingest udd` (records, run id,
-checksum, events, Parquet path); `--limit` unset ingests the whole
-table with a warning on stderr.
+**Expected output (udddump download):**
+```
+Downloaded https://udd.example.org/udd.dump
+Run ID: run-xxxxxxxxxxxx
+Raw artifact: data/raw/udddump-20261023-101500-run-xxxxxxxxxxxx.dump
+Manifest: data/raw/udddump-20261023-101500-run-xxxxxxxxxxxx.dump.manifest.json
+Checksum: <sha256 of the stored bytes>
+Size: <n> bytes
+```
+
+The manifest sidecar records the provenance of the download; the
+record count is unknown until normalization (`record_count: null`):
+
+```json
+{
+  "dataset_name": "udddump-run-9f2c1ab34d5e",
+  "source": "udddump",
+  "source_version": null,
+  "retrieved_at": "2026-10-23T10:15:42.314159+00:00",
+  "checksum": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "size_bytes": 2934776238,
+  "record_count": null,
+  "license": null
+}
+```
+
+**Eventize a table of the dump (`normalize udddump`):**
+
+The reading is normalization's job: `normalize udddump` loads the
+artifact's manifest sidecar (source and run id), validates `--table`
+against the dump's table of contents (the error lists the restorable
+tables) and the table's COPY header against the registered shapes,
+then streams the COPY block through `pg_restore --data-only --table`
+**on the host** (`pg_restore` on PATH; the dev and deploy images ship
+`postgresql-client`) — no database connection, no restore, and no
+container indirection (ADR-006) — and writes `PackageVersionObserved`
+events as JSON lines to `--output` (default stdout). `--limit` unset
+normalizes the whole table with a warning on stderr.
+
+```bash
+debian-observer normalize udddump \
+  data/raw/udddump-20261023-101500-run-9f2c1ab34d5e.dump \
+  --table packages \
+  --limit 3 > events.jsonl
+```
+
+Re-eventizing the same artifact with other filters (`--table`,
+`--limit`) is supported: the raw download is not consumed, and each
+run re-reads the manifest sidecar.
+
+Today only packages-shaped tables are eventizable (required COPY
+columns: version + any of: package, source — mirroring the
+validator); more table shapes will land as new event types do.
+Records that fail canonical transformation are skipped with a warning
+naming the cause — the raw artifact preserves them (ADR-002).
 
 **Verify outputs:**
 
@@ -220,9 +257,9 @@ debian-observer ingest sources \
   --raw-dir data/raw
 ```
 
-Options: `--limit` (mirror/udd/udddump; unset ingests the whole source
+Options: `--limit` (mirror/udd; unset ingests the whole source
 with a warning), `--component`/`--architecture` (mirror; default
-`main`/`amd64`), `--events-dir` (event log output), `--dataset-dir`.
+`main`/`amd64`), `--events-dir` (event log output).
 See `debian-observer ingest <source> --help` for full options.
 
 ## Observability
@@ -236,20 +273,27 @@ short-lived CLI commands show no telemetry output.
 
 ## Normalization
 
-Transform raw artifacts into canonical domain events. Artifacts are
-xz-compressed CSV files (`.csv.xz`) written by `ingest`; `normalize`
-takes one or more artifacts and reads the source name and run id
+Transform raw artifacts into canonical domain events. `normalize` is
+a command group with one subcommand per raw surface (ADR-012
+amendment, 2026-10-23); the source name and run id are always read
 from each artifact's manifest sidecar (`.manifest.json`):
 
-```bash
-debian-observer normalize data/raw/<file>.csv.xz > events.jsonl
-```
+- `normalize artifacts <paths…>` — pipeline `.csv.xz` artifacts
+  (one or more, positional). Their events are concatenated in
+  order, each stamped with its own source and run id:
 
-Multiple artifacts may be given; their events are concatenated in
-order, each stamped with its own source and run id.
+  ```bash
+  debian-observer normalize artifacts data/raw/<file>.csv.xz > events.jsonl
+  ```
 
-Run `debian-observer normalize --help` for all options (output
-file, invalid-records file).
+- `normalize udddump <dump-artifact> --table <t> [--limit n]` — UDD
+  `pg_dump` download artifacts written by `ingest udddump --url`
+  (see the udddump section above for the gates, the pg_restore PATH
+  dependency and an example invocation over an existing manifest
+  with other filters).
+
+Run `debian-observer normalize <surface> --help` for all options
+(output file, invalid-records file, udddump filters).
 
 
 ## Validate raw records
@@ -315,37 +359,110 @@ Data is stored in **Parquet** format with a **DuckDB** analytical layer for SQL 
 The ingestion pipeline integrates ParquetWriter for optional persistent storage. After running `debian-observer ingest`, raw artifacts
 (xz-compressed CSV, `*.csv.xz`), the run manifest (JSON,
 `*.manifest.json` next to each raw artifact) and Parquet events
-are available in `data/`.
+are available in `data/`. Ingestion eventizes raw observations into
+the append-only event log — one Parquet file per ingestion run —
+and nothing else: the consolidated `package_versions` dataset is a
+**consumer output** (see Consolidate below), not a pipeline step.
 
-The pipeline can also project `PackageVersionObserved` events into the normalized dataset (spec §10.2, ADR-003, ADR-011):
+
+## Consolidate
+
+The `consolidate` command folds the event log into the consolidated
+`package_versions` table (spec §10.2, ADR-003 amendment 2026-10-23):
 
 ```bash
-debian-observer ingest udd --table packages --limit 400 \
+debian-observer consolidate --events-dir data/parquet \
   --dataset-dir data/normalized/package_versions
 ```
 
-The dataset holds one row per `PackageVersionObserved` event — a
-per-run projection, not consolidated state: re-ingesting the same
-source adds new observations instead of updating rows. The *current*
-state (latest observation per package version) is a query-time fold
-over the accumulated rows — the `arg_max` pattern:
+`--events-dir` is required; `--dataset-dir` defaults to
+`data/normalized/package_versions`. The consumer reads every
+`*.parquet` event file in the events dir, keeps the
+`PackageVersionObserved` events and consolidates them: one row per
+full observation PK `(package_id, version, distribution, release,
+suite, architecture)`; attribute columns (`source_package`,
+`component`, `section`, `priority`, `source`) are last-observed-wins
+(ordered by `observed_at`, then `event_id`);
+`observed_first_at`/`observed_last_at` are the min/max `observed_at`
+of the group. The output is ONE re-generable file —
+`package_versions.parquet`, written atomically (tmp file + rename),
+so a concurrent reader never sees a partial file. The fold is
+idempotent by construction: folding the same log twice yields the
+same table, and duplicated log files collapse (spec §15.1). The
+command is local only — no NATS/streaming is involved.
 
-```sql
-SELECT package_id, version,
-       min(observed_at) AS first_observed_at,
-       max(observed_at) AS last_observed_at
-FROM read_parquet('data/normalized/package_versions/*.parquet')
-GROUP BY package_id, version
-```
-
-A `consolidate` step that materializes this fold as a dataset is
-planned; until then the event log remains the replay surface and the
-dataset the projection surface. Query it with DuckDB (ADR-003 example, on the dataset schema):
+Query the consolidated table with DuckDB (ADR-003 example, on the
+dataset schema):
 
 ```sql
 SELECT package_id, version, release
 FROM read_parquet('data/normalized/package_versions/*.parquet')
 WHERE release = 'sid'
+```
+
+The table is **state, not log**: it is fully derived from the event
+log and can be re-generated at any time. The event log remains the
+replay surface; the dataset is the consolidated projection.
+
+
+## Publish
+
+`publish` projects the append-only event log onto NATS JetStream —
+the stream is a **view**, not a source of truth: it is fully
+rebuildable from the Parquet log at any time, and re-publishing the
+same log is a no-op (every message carries
+`Nats-Msg-Id: <event_id>`, so JetStream absorbs duplicates
+server-side within the stream's duplicate window):
+
+```bash
+debian-observer publish --events-dir data/parquet \
+  [--stream debian-events] [--server nats://localhost:4222]
+```
+
+`--events-dir` is required; `--stream` defaults to `debian-events`
+and `--server` to `nats://localhost:4222` (repeatable). The stream
+is created if missing with the ADR-004 topology. Subjects are
+**flat per event type** — `debian.package.observed`,
+`debian.package_version.observed`, `debian.release.observed`,
+`debian.migration.observed` — no per-package partitioning: the
+package id travels in the payload (ADR-004 amendment, 2026-10-23).
+Echo: files read, events read, per-subject publish counts,
+duplicates absorbed, stream name and servers.
+
+
+## Consume (external recipe — no CLI)
+
+The tool ships **no `consume` subcommand**: a queue consumer is a
+pipeline the researcher owns, not a command. Copy
+`examples/consume_packages.py`, adjust the durable name, subject
+and dataset dir (environment variables:
+`DEBIAN_OBSERVER_{SERVER,STREAM,DURABLE,SUBJECT,DATASET_DIR}`),
+and run it as its own process:
+
+```bash
+DEBIAN_OBSERVER_DATASET_DIR=data/normalized/package_versions \
+  python examples/consume_packages.py
+```
+
+The queue state lives **server-side** in JetStream under the durable
+name (plus the dataset table itself): `kill -9` the process and
+JetStream redelivers the unacked messages — the consolidation merge
+absorbs the duplicates (idempotent fold), so the consumer resumes
+where it left off. The ack happens only **after** the durable table
+write (ADR-005 amendment, 2026-10-23). `consolidate --events-dir`
+remains the batch rebuild of the same table:
+`fold(log parquet) == fold(stream)`.
+
+To persist consumed events into Parquet event files (instead of
+consolidating), register the library `PersistingHandler` yourself:
+
+```python
+from debian_observer.consumer_app import ConsumerApp
+from debian_observer.storage.handlers import PersistingHandler
+
+app = ConsumerApp()
+handler = PersistingHandler("data/parquet", flush_threshold=100)
+app.register_handler("PackageVersionObserved", handler)
 ```
 
 
@@ -378,29 +495,9 @@ debian-observer replay --input events.jsonl --dry-run
 
 ### Consume and persist to storage
 
-The :class:`PersistingHandler` connects the consumer to Parquet storage.
-Events consumed from NATS are buffered and written to Parquet files:
-
-```python
-from debian_observer.consumer_app import ConsumerApp
-from debian_observer.storage.handlers import PersistingHandler
-
-app = ConsumerApp()
-handler = PersistingHandler("data/events", flush_threshold=100)
-app.register_handler("PackageVersionObserved", handler)
-```
-
-Or via the `consume` CLI — it registers a print handler per known event
-type (R1: no persistence by default). To persist consumed events into the
-event log, register a `PersistingHandler` (see the consumer testing
-example below) with your own output directory:
-
-```bash
-debian-observer consume \
-  --stream debian.events \
-  --subject "debian.package_version.observed" \
-  --durable storage-consumer
-```
+The :class:`PersistingHandler` connects a consumer to Parquet storage
+(a library recipe — see the external example above; there is no
+`consume` CLI).
 
 
 ## API Endpoints
@@ -455,10 +552,12 @@ pytest tests/
 
 ### Consumer testing
 
-The standalone event consumer can be exercised via CLI:
+The queue consumer is exercised through the external recipe (see
+Consume above): start NATS, publish a small log, run the example
+process. The crash test scripts it end to end:
 
 ```bash
-debian-observer consume --stream EVENTS --subject "debian.observer.>" --durable test-consumer
+scripts/crash-test-consumer.sh
 ```
 
 In the devcontainer, NATS is available on `localhost:4222`.

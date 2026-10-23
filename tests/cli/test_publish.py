@@ -162,18 +162,24 @@ def test_publish_requires_events_dir(tmp_path: Path):
     assert "Traceback" not in result.output
 
 
-def test_publish_empty_events_dir_is_an_error(tmp_path: Path):
-    """An events dir without Parquet files fails naming the dir."""
+def test_publish_empty_events_dir_is_an_error(tmp_path: Path, monkeypatch):
+    """An events dir without Parquet files fails naming the dir
+    (before any connection — the fake client pins that: no network)."""
     empty = tmp_path / "events"
     empty.mkdir()
-    runner = CliRunner()
-    result = runner.invoke(
-        cli, ["publish", "--events-dir", str(empty)]
+    fake = FakeNATSClient()
+    monkeypatch.setattr(
+        "debian_observer.cli.commands.publish.NATSClient",
+        lambda servers=None: fake,
     )
+    runner = CliRunner()
+    result = runner.invoke(cli, ["publish", "--events-dir", str(empty)])
 
     assert result.exit_code != 0
     assert str(empty) in result.output
     assert "Traceback" not in result.output
+    # Nothing was published and nothing was connected.
+    assert fake._js.published == []
 
 
 def test_publish_help_lists_the_options():

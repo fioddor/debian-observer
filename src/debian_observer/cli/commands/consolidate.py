@@ -9,7 +9,7 @@ from pathlib import Path
 
 import click
 
-from debian_observer.consumer.packages import (
+from debian_observer.storage.consolidation import (
     ConsolidateError,
     fold_package_versions,
     write_consolidated_table,
@@ -46,8 +46,13 @@ def consolidate(events_dir: Path, dataset_dir: Path) -> None:
     per group. Writes ONE re-generable file — package_versions.parquet
     (fixed name) inside --dataset-dir — via an atomic tmp+rename; the
     fold is idempotent, so re-running over the same log rewrites the
-    identical table. NATS/streaming is not involved: this is the R1
-    local consumer over the on-disk event log.
+    identical table. The fold lives in storage.consolidation (the
+    writer of the consolidated table, ADR-011); this CLI is its batch
+    feeder — read the whole log, feed every event, write once. The
+    streaming feeder (examples/consume_packages.py) folds the same
+    events off JetStream with the identical semantics (ADR-003
+    amendment, 2026-10-23: the log remains the backbone; the stream
+    is a view).
     """
     try:
         rows, stats = fold_package_versions(events_dir)

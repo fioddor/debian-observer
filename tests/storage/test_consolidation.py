@@ -539,7 +539,9 @@ class TestStreamParity:
         assert row["observed_at"] == NOW.isoformat()
         assert row["package_id"] == "vim:amd64"
         assert row["release"] == "sid"
-        assert row["suite"] == ""  # None coerces to the string schema
+        # None stays None at the row level (the writer's layout keeps
+        # NULL columns NULL); the fold coerces to the string schema.
+        assert row["suite"] is None
         assert row["source"] == "udd"
 
     def test_fold_log_equals_fold_stream(self, tmp_path: Path) -> None:

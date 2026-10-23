@@ -36,17 +36,19 @@ the backbone — every later stage derives from it.
    nothing consolidated — the per-run dataset step is gone
    (ADR-003 amendment 2026-10-23); the log may also be published to
    JetStream (`debian.observer.>` subjects) for the async path.
-2. **Consolidate:** the local consumer (`consolidate --events-dir`)
+2. **Consolidate:** the batch feeder (`consolidate --events-dir`)
    folds the whole log — `PackageVersionObserved` events only,
    dedup by `event_id`, ordered by `(observed_at, event_id)` — into
-   the consolidated `package_versions` table: one row per full
-   observation PK, last-observed-wins attributes, min/max
-   `observed_at` per group. Idempotent by construction, written as
-   ONE atomically-replaced `package_versions.parquet`.
+   the consolidated `package_versions` table (`storage.consolidation`,
+   writer-owned ADR-011): one row per full observation PK,
+   last-observed-wins attributes, min/max `observed_at` per group.
+   Idempotent by construction, written as ONE atomically-replaced
+   `package_versions.parquet`.
 3. **Query:** the analyst queries the consolidated table through
    the FastAPI `api` (DuckDB, read-only) or ad-hoc SQL — closing the
    loop: ingest → consolidate → query, with the event log as the
    replay surface and the table as derived, re-generable state.
+
 
 
 ## Flow 3 — UDD dump file: download → eventize → consolidate
@@ -70,3 +72,26 @@ the backbone — every later stage derives from it.
 4. Re-eventizing the same raw artifact with other filters
    (`--table`/`--limit`) repeats step 2 only — the raw download is
    never consumed and never re-downloaded.
+
+## Flow 4 — Streaming consolidate (publish → external consumer)
+
+The async path over NATS JetStream (ADR-004 amendment, 2026-10-23);
+the event log remains the backbone — the stream is a view.
+
+1. **Publish:** `publish --events-dir` reads every Parquet log file
+   and projects each event onto JetStream (stream `debian-events`,
+   flat per-type subjects, `Nats-Msg-Id: <event_id>` — server-side
+   dedup: re-publishing the same log is a no-op). The stream is
+   created if missing with the ADR-004 topology.
+2. **Consume (external):** the researcher's consumer — a copy of
+   `examples/consume_packages.py`, its own process; the CLI has no
+   `consume` subcommand — subscribes durably (state server-side in
+   JetStream); each `PackageVersionObserved` message feeds the
+   consolidation merge and the durable table is rewritten BEFORE
+   the ack (ADR-005 amendment).
+3. **Crash/resume:** `kill -9` leaves unacked messages — JetStream
+   redelivers, the merge absorbs the duplicates (idempotent fold),
+   and the table converges to exactly what `consolidate
+   --events-dir` regenerates from the same log:
+   `fold(log parquet) == fold(stream)` (pinned by
+   `scripts/crash-test-consumer.sh`).

@@ -405,6 +405,67 @@ log and can be re-generated at any time. The event log remains the
 replay surface; the dataset is the consolidated projection.
 
 
+## Publish
+
+`publish` projects the append-only event log onto NATS JetStream —
+the stream is a **view**, not a source of truth: it is fully
+rebuildable from the Parquet log at any time, and re-publishing the
+same log is a no-op (every message carries
+`Nats-Msg-Id: <event_id>`, so JetStream absorbs duplicates
+server-side within the stream's duplicate window):
+
+```bash
+debian-observer publish --events-dir data/parquet \
+  [--stream debian-events] [--server nats://localhost:4222]
+```
+
+`--events-dir` is required; `--stream` defaults to `debian-events`
+and `--server` to `nats://localhost:4222` (repeatable). The stream
+is created if missing with the ADR-004 topology. Subjects are
+**flat per event type** — `debian.package.observed`,
+`debian.package_version.observed`, `debian.release.observed`,
+`debian.migration.observed` — no per-package partitioning: the
+package id travels in the payload (ADR-004 amendment, 2026-10-23).
+Echo: files read, events read, per-subject publish counts,
+duplicates absorbed, stream name and servers.
+
+
+## Consume (external recipe — no CLI)
+
+The tool ships **no `consume` subcommand**: a queue consumer is a
+pipeline the researcher owns, not a command. Copy
+`examples/consume_packages.py`, adjust the durable name, subject
+and dataset dir (environment variables:
+`DEBIAN_OBSERVER_{SERVER,STREAM,DURABLE,SUBJECT,DATASET_DIR}`),
+and run it as its own process:
+
+```bash
+DEBIAN_OBSERVER_DATASET_DIR=data/normalized/package_versions \
+  python examples/consume_packages.py
+```
+
+The queue state lives **server-side** in JetStream under the durable
+name (plus the dataset table itself): `kill -9` the process and
+JetStream redelivers the unacked messages — the consolidation merge
+absorbs the duplicates (idempotent fold), so the consumer resumes
+where it left off. The ack happens only **after** the durable table
+write (ADR-005 amendment, 2026-10-23). `consolidate --events-dir`
+remains the batch rebuild of the same table:
+`fold(log parquet) == fold(stream)`.
+
+To persist consumed events into Parquet event files (instead of
+consolidating), register the library `PersistingHandler` yourself:
+
+```python
+from debian_observer.consumer_app import ConsumerApp
+from debian_observer.storage.handlers import PersistingHandler
+
+app = ConsumerApp()
+handler = PersistingHandler("data/parquet", flush_threshold=100)
+app.register_handler("PackageVersionObserved", handler)
+```
+
+
 ## Messaging (NATS JetStream)
 
 Events are published to NATS JetStream for durable messaging.
@@ -434,29 +495,9 @@ debian-observer replay --input events.jsonl --dry-run
 
 ### Consume and persist to storage
 
-The :class:`PersistingHandler` connects the consumer to Parquet storage.
-Events consumed from NATS are buffered and written to Parquet files:
-
-```python
-from debian_observer.consumer_app import ConsumerApp
-from debian_observer.storage.handlers import PersistingHandler
-
-app = ConsumerApp()
-handler = PersistingHandler("data/events", flush_threshold=100)
-app.register_handler("PackageVersionObserved", handler)
-```
-
-Or via the `consume` CLI — it registers a print handler per known event
-type (R1: no persistence by default). To persist consumed events into the
-event log, register a `PersistingHandler` (see the consumer testing
-example below) with your own output directory:
-
-```bash
-debian-observer consume \
-  --stream debian.events \
-  --subject "debian.package_version.observed" \
-  --durable storage-consumer
-```
+The :class:`PersistingHandler` connects a consumer to Parquet storage
+(a library recipe — see the external example above; there is no
+`consume` CLI).
 
 
 ## API Endpoints
@@ -511,10 +552,12 @@ pytest tests/
 
 ### Consumer testing
 
-The standalone event consumer can be exercised via CLI:
+The queue consumer is exercised through the external recipe (see
+Consume above): start NATS, publish a small log, run the example
+process. The crash test scripts it end to end:
 
 ```bash
-debian-observer consume --stream EVENTS --subject "debian.observer.>" --durable test-consumer
+scripts/crash-test-consumer.sh
 ```
 
 In the devcontainer, NATS is available on `localhost:4222`.

@@ -66,9 +66,21 @@ cannot reconstruct without reading everything.
 ## `storage`
 
 - **Exposes**: the event log writer (one Parquet file per ingestion
-  run; writer-owned schema, ADR-011) + analytical queries (DuckDB).
-- **Expects**: normalized rows from the transformer; dataset layout as
-  written by the writer.
+  run; writer-owned schema, ADR-011) + analytical queries (DuckDB) +
+  the consolidation fold (`consolidation`, moved here from
+  `consumer` on 2026-10-23 — the fold IS a writer of the
+  consolidated table). Two feeders, one semantics: the batch
+  feeder (`fold_package_versions` /
+  `build_consolidated_packages`, behind the `consolidate` CLI:
+  read the whole log, feed every event, write once — pure
+  regeneration, `merge_existing=False`) and the streaming feeder
+  (`ConsolidationMerge.feed` + `.write(dataset_dir)`: one
+  observation at a time, RMW of the existing table + atomic rename,
+  behind the external example).
+- **Expects**: normalized rows from the transformer; dataset layout
+  as written by the writer; log rows read via `read_event_log`
+  (sorted glob + DuckDB `union_by_name`) or envelope-derived rows
+  via `row_from_envelope`.
 - **Guarantees**: writer-owned serialization (ADR-011) — the event-log
   shape is the writer's decision, loaders must not reshape it. The
   API loader still reads Parquet event files written by earlier R1
@@ -76,30 +88,17 @@ cannot reconstruct without reading everything.
   `section`, `priority`, `suite` existed); fields the old files lack
   load as `None`. The per-ingestion-run `package_versions` dataset
   writer is gone (ADR-003 amendment 2026-10-23): the consolidated table
-  is the `consumer`'s output, not a pipeline projection.
-
-## `consumer`
-
-- **Exposes**: the `consolidate` fold — the local consumer that turns
-  the append-only event log into the consolidated `package_versions`
-  table (`fold_package_versions`, `write_consolidated_table`,
-  `build_consolidated_packages`; CLI `consolidate --events-dir`,
-  `--dataset-dir` default `data/normalized/package_versions`).
-- **Expects**: an events dir of Parquet event-log files as written by
-  `storage` (one file per ingestion run; the consumer reads the
-  flattened envelope columns, `union_by_name` over the files —
-  legacy layouts load missing fields as `None`).
-- **Guarantees**: one output row per full observation PK
+  is the consumer's output, not a pipeline projection. The fold:
+  one output row per full observation PK
   `(package_id, version, distribution, release, suite, architecture)`;
-  attribute columns last-observed-wins (ordered by `observed_at`, then
-  `event_id`); `observed_first_at`/`observed_last_at` are the min/max
-  `observed_at` of the group. The fold is idempotent by construction
-  (spec §15.1): duplicated log files collapse, folding twice yields
-  the same table. The output is ONE file — `package_versions.parquet`,
-  fixed name — written atomically (tmp file + `os.replace`), so a
-  concurrent reader never sees a partial file. Clear errors, never
-  tracebacks: an events dir without Parquet files, or a log without
-  `PackageVersionObserved` events, fails naming the cause.
+  attribute columns last-observed-wins (ordered by `observed_at`,
+  then `event_id`); `observed_first_at`/`observed_last_at` are the
+  min/max `observed_at` of the group; dedup by `event_id`; idempotent
+  by construction (spec §15.1: A×3 == A) —
+  `fold(log parquet) == fold(stream)`. The output is ONE file —
+  `package_versions.parquet`, fixed name — written atomically (tmp
+  file + `os.replace`), so a concurrent reader never sees a partial
+  file. Clear errors, never tracebacks.
 
 ## `events`
 
@@ -111,10 +110,39 @@ cannot reconstruct without reading everything.
 
 ## `messaging`
 
-- **Exposes**: NATS JetStream publisher/consumer/client
-  (`nats://…`, stream `EVENTS`, subject `debian.observer.>`).
-- **Guarantees**: delivery semantics per ADR-005; JetStream persistence
-  per ADR-004.
+- **Exposes**: NATS JetStream publisher/consumer/client + stream
+  topology (`StreamConfig`; stream `debian-events`, flat subjects
+  `debian.package.observed`, `debian.package_version.observed`,
+  `debian.release.observed`, `debian.migration.observed` — per
+  event type, no per-package partitioning) + `ensure_stream` (the
+  stream created if missing). `EventPublisher.publish` passes
+  `headers` through — the publish CLI sends
+  `Nats-Msg-Id: <event_id>` for server-side dedup (ADR-004
+  amendment, 2026-10-23); the most recent `PubAck` is kept on
+  `last_ack` (carries `duplicate` when the server reports it).
+- **Guarantees**: delivery semantics per ADR-005; JetStream
+  persistence per ADR-004. **Library only — no CLI**: the generic
+  `consume` subcommand is dead (2026-10-23); consuming is a
+  pipeline the researcher owns (`examples/consume_packages.py`).
+
+## `consumer_app`
+
+- **Exposes**: standalone async consumer entrypoint — handler
+  registration (the handler receives only the `EventEnvelope`),
+  idempotent processing (`IdempotencyStore`), graceful lifecycle
+  shutdown; ack strictly after the handler returns without
+  exception (ADR-005 amendment, 2026-10-23).
+- **Expects**: registered handlers by event type; JetStream
+  endpoints; a handler that makes its effect durable before
+  returning (the example's `merge.feed` + `merge.write`).
+
+## `consumer`
+
+- **Dead** (2026-10-23): the consolidation fold moved to
+  `storage.consolidation` (the fold is a writer of the consolidated
+  table — ADR-011) and the queue consumer lives outside the CLI
+  (`examples/consume_packages.py`, over `consumer_app` +
+  `messaging`). Nothing is exposed here anymore.
 
 ## `api`
 
@@ -132,14 +160,20 @@ cannot reconstruct without reading everything.
   URL and the reading lives in `normalize`); `consolidate` folds the
   event log into the consolidated `package_versions` table
   (`--events-dir` required, `--dataset-dir` default
-  `data/normalized/package_versions`); `validate` takes raw
-  artifacts (positional, one or more) and reads each artifact's
-  manifest sidecar for source and run id; `normalize` is a command
-  group with one subcommand per raw surface (`artifacts`: pipeline
-  `.csv.xz` artifacts, positional; `udddump`: dump downloads with
-  mandatory `--table` and optional `--limit`, ADR-012 amendment
-  2026-10-23 — a breaking rename of the old `normalize <paths>`
-  surface).
+  `data/normalized/package_versions` — the batch feeder of
+  `storage.consolidation`); `publish` projects the event log onto
+  NATS JetStream (`--events-dir` required, `--stream` default
+  `debian-events`, `--server` default `nats://localhost:4222`) — a
+  rebuildable view, `Nats-Msg-Id` dedup (ADR-004 amendment);
+  `validate` takes raw artifacts (positional, one or more) and reads
+  each artifact's manifest sidecar for source and run id;
+  `normalize` is a command group with one subcommand per raw surface
+  (`artifacts`: pipeline `.csv.xz` artifacts, positional; `udddump`:
+  dump downloads with mandatory `--table` and optional `--limit`,
+  ADR-012 amendment 2026-10-23 — a breaking rename of the old
+  `normalize <paths>` surface).
+- **Guarantees**: no `consume` subcommand (2026-10-23) — a queue
+  consumer is a pipeline the researcher owns, not a command.
 
 ## `consumer_app`
 

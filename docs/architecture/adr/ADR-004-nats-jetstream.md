@@ -59,6 +59,32 @@ R1 does not require its operational footprint or ecosystem complexity.
 Kafka may be evaluated in a future release if the workload justifies it.
 
 
+## Amendment (2026-10-23) — the publish pipeline
+
+R1 lands the producer side: `debian-observer publish --events-dir <dir>
+[--stream debian-events] [--server nats://…]` projects the append-only
+Parquet event log onto the stream. Decisions:
+
+- **The stream is a view, not a source of truth.** The Parquet event log
+  remains the backbone (ADR-003 amendment, 2026-10-23); the stream is
+  fully rebuildable from `--events-dir`, and `consolidate --events-dir`
+  regenerates the same consolidated table the streaming path produces
+  (`fold(log parquet) == fold(stream)`).
+- **Subjects are flat per event type — confirmed:**
+  `debian.package.observed`, `debian.package_version.observed`,
+  `debian.release.observed`, `debian.migration.observed`. A
+  `.<package_id>` suffix (per-package partitioning) was considered and
+  **rejected**: the partition adds subject cardinality with no consumer
+  that needs it — the package id already travels in the payload.
+- **`Nats-Msg-Id: <event_id>`** on every published message: JetStream
+  deduplicates server-side within the stream's duplicate window, so
+  re-publishing the same log is a no-op (idempotent publish).
+- **No `consume` CLI.** Consuming is a pipeline the researcher owns —
+  a copy of `examples/consume_packages.py` (durable name, subject,
+  dataset dir via environment) run as its own process. The supported
+  tool surface is the library (`messaging`, `consumer_app`) plus
+  `publish` and the batch `consolidate`.
+
 ## Consequences
 
 Pros:

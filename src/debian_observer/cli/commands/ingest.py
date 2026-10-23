@@ -6,12 +6,19 @@ dataset manifest, provenance record and domain events.
 One subcommand per implemented data source (ADR-012): `sources`
 (sources.debian.org API), `mirror` (Packages.gz from a Debian
 mirror), `udd` (UDD PostgreSQL mirror), `udddump` (UDD `pg_dump`
-file). Each subcommand's selector is a mandatory filter flag —
-entities within a source are not auto-detected yet.
+file download). Each subcommand's selector is a mandatory filter
+flag — entities within a source are not auto-detected yet.
+
+`udddump` is acquisition-only: the dump is downloaded and stored
+byte-preserving with a manifest sidecar; the reading (gates +
+eventization) lives in `normalize udddump` (ADR-012 amendment,
+2026-10-23).
 """
 
 from __future__ import annotations
 
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -21,13 +28,12 @@ from debian_observer.ingestion.acquisition import (
     DebianMirrorDataSource,
     SourcesDebianOrgDataSource,
     UDDDataSource,
-    UDDDumpDataSource,
-    UDDDumpError,
-    assert_supported_table_shape,
-    list_dump_tables,
-    peek_dump_copy_columns,
+    download_dump,
 )
+from debian_observer.ingestion.manifest import DatasetManifest
 from debian_observer.ingestion.pipeline import IngestionPipeline
+from debian_observer.ingestion.provenance import ProvenanceRecorder, RawArtifact
+from debian_observer.ingestion.raw import sha256_raw
 
 
 @click.group(name="ingest")
@@ -59,13 +65,11 @@ def _run_ingest(
     *,
     raw_dir: str,
     events_dir: str | None,
-    dataset_dir: str | None,
 ) -> None:
     """Run the ingestion pipeline for a data source and echo the result."""
     pipeline = IngestionPipeline(
         raw_dir=Path(raw_dir),
         parquet_dir=Path(events_dir) if events_dir else None,
-        dataset_dir=Path(dataset_dir) if dataset_dir else None,
     )
     result = pipeline.run(data_source)
 
@@ -75,8 +79,6 @@ def _run_ingest(
     click.echo(f"Events produced: {len(result.events)}")
     if result.parquet_path:
         click.echo(f"Parquet written: {result.parquet_path}")
-    if result.dataset_path:
-        click.echo(f"Dataset written: {result.dataset_path}")
 
 
 def _warn_limit_unset() -> None:
@@ -97,23 +99,16 @@ def _warn_limit_unset() -> None:
 @click.option(
     "--events-dir", default=None, help="Optional directory for the event log (one Parquet file per run)."
 )
-@click.option(
-    "--dataset-dir",
-    default=None,
-    help="Optional directory for the normalized package_versions dataset.",
-)
 def ingest_sources(
     package_name: str,
     raw_dir: str,
     events_dir: str | None,
-    dataset_dir: str | None,
 ) -> None:
     """Fetch a package's version history from sources.debian.org and ingest it."""
     _run_ingest(
         SourcesDebianOrgDataSource(package_name=package_name),
         raw_dir=raw_dir,
         events_dir=events_dir,
-        dataset_dir=dataset_dir,
     )
 
 
@@ -145,11 +140,6 @@ def ingest_sources(
 @click.option(
     "--events-dir", default=None, help="Optional directory for the event log (one Parquet file per run)."
 )
-@click.option(
-    "--dataset-dir",
-    default=None,
-    help="Optional directory for the normalized package_versions dataset.",
-)
 def ingest_mirror(
     suite: str,
     component: str,
@@ -157,7 +147,6 @@ def ingest_mirror(
     limit: int | None,
     raw_dir: str,
     events_dir: str | None,
-    dataset_dir: str | None,
 ) -> None:
     """Fetch a suite's Packages.gz from a Debian mirror and ingest it."""
     if limit is None:
@@ -171,7 +160,6 @@ def ingest_mirror(
         ),
         raw_dir=raw_dir,
         events_dir=events_dir,
-        dataset_dir=dataset_dir,
     )
 
 
@@ -193,17 +181,11 @@ def ingest_mirror(
 @click.option(
     "--events-dir", default=None, help="Optional directory for the event log (one Parquet file per run)."
 )
-@click.option(
-    "--dataset-dir",
-    default=None,
-    help="Optional directory for the normalized package_versions dataset.",
-)
 def ingest_udd(
     table: str,
     limit: int | None,
     raw_dir: str,
     events_dir: str | None,
-    dataset_dir: str | None,
 ) -> None:
     """Query a table from a UDD PostgreSQL mirror and ingest it.
 
@@ -218,92 +200,67 @@ def ingest_udd(
         UDDDataSource(table=table, limit=limit),
         raw_dir=raw_dir,
         events_dir=events_dir,
-        dataset_dir=dataset_dir,
     )
 
 
 @ingest.command(name="udddump")
 @click.option(
-    "--file",
-    "dump_file",
+    "--url",
     required=True,
-    help="Path to the UDD pg_dump custom-format file (host path; read by pg_restore on PATH).",
-)
-@click.option(
-    "--table",
-    required=True,
-    help=(
-        "UDD table to restore: a TABLE DATA entry of the dump "
-        "(validated at startup; the error lists the restorable tables)."
-    ),
-)
-@click.option(
-    "--limit",
-    type=int,
-    default=None,
-    help="Max records to ingest; unset ingests the whole table.",
+    help="URL of the UDD pg_dump custom-format file to download.",
 )
 @click.option(
     "--raw-dir", default="data/raw", help="Directory for raw artifacts (default: data/raw)."
 )
-@click.option(
-    "--events-dir",
-    default=None,
-    help="Optional directory for the event log (one Parquet file per run).",
-)
-@click.option(
-    "--dataset-dir",
-    default=None,
-    help="Optional directory for the normalized package_versions dataset.",
-)
 def ingest_udddump(
-    dump_file: str,
-    table: str,
-    limit: int | None,
+    url: str,
     raw_dir: str,
-    events_dir: str | None,
-    dataset_dir: str | None,
 ) -> None:
-    """Restore one table of a UDD pg_dump file through pg_restore.
+    """Download a UDD pg_dump file over HTTPS (`--url`) and store it
+    byte-preserving as the raw artifact
+    `udddump-<timestamp>-<run-id>.dump`.
 
-    Implementation-pinned values, surfaced so operators know what runs
-    (and what is not implemented): pg_restore executes on the host
-    (PATH dependency; install postgresql-client if absent); --file is
-    the host path to the dump; rows stream from a data-only COPY block,
-    so no database is created or restored (ADR-006) — no container and
-    no live UDD instance are involved.
-
-    Perimeter: today only packages-shaped tables are ingestible
-    (required COPY columns: version + any of: package, source); more
-    table shapes will land as new event types do. The startup gates
-    fail fast — the TOC gate lists the dump's restorable tables, and
-    the shape gate names the cause and the supported shapes.
+    `record_count` is null until normalization: the gates and the
+    eventization are `debian-observer normalize udddump <artifact>`,
+    which re-eventizes the same raw with other filters without
+    re-downloading.
     """
-    if limit is None:
-        _warn_limit_unset()
-    # Startup gate (ADR-012 amendment, alpha): validate the table
-    # against the dump's TOC before any restore work — fail fast
-    # listing the restorable tables instead of crashing downstream.
-    try:
-        available = list_dump_tables(dump_file)
-    except UDDDumpError as exc:
-        raise click.ClickException(str(exc)) from exc
-    if table not in available:
-        raise click.ClickException(
-            f"table {table!r} not in dump {dump_file!r}; "
-            f"available tables: {', '.join(sorted(available))}"
-        )
-    # Perimeter gate (ADR-012, evening amendment): peek the table's
-    # COPY header — one stdout line, no data restored — and match it
-    # against the registered shapes before any ingest work.
-    try:
-        columns = peek_dump_copy_columns(dump_file, table=table)
-        assert_supported_table_shape(columns, table=table)
-    except UDDDumpError as exc:
-        raise click.ClickException(str(exc)) from exc
-    _run_ingest(
-        UDDDumpDataSource(file=dump_file, table=table, limit=limit),
-        raw_dir=raw_dir,
-        events_dir=events_dir,
-        dataset_dir=dataset_dir,
+    raw_dir_path = Path(raw_dir)
+    raw_dir_path.mkdir(parents=True, exist_ok=True)
+    run_id = f"run-{uuid.uuid4().hex[:12]}"
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    artifact_path = raw_dir_path / f"udddump-{timestamp}-{run_id}.dump"
+
+    download_dump(url, artifact_path)
+
+    checksum = sha256_raw(artifact_path)
+    size_bytes = artifact_path.stat().st_size
+    manifest = DatasetManifest(
+        dataset_name=f"udddump-{run_id}",
+        source="udddump",
+        retrieved_at=datetime.now(timezone.utc),
+        checksum=checksum,
+        size_bytes=size_bytes,
+        record_count=None,
+        license=None,
     )
+    manifest_path = artifact_path.with_suffix(".manifest.json")
+    manifest_path.write_text(manifest.to_json(), encoding="utf-8")
+
+    ProvenanceRecorder().record_artifact(
+        RawArtifact(
+            artifact_id=f"artifact-{run_id}",
+            source="udddump",
+            path=artifact_path,
+            checksum=checksum,
+            size_bytes=size_bytes,
+        ),
+        ingestion_run_id=run_id,
+    )
+
+    click.echo(f"Downloaded {url}")
+    click.echo(f"Run ID: {run_id}")
+    click.echo(f"Raw artifact: {artifact_path}")
+    click.echo(f"Manifest: {manifest_path}")
+    click.echo(f"Checksum: {checksum}")
+    click.echo(f"Size: {size_bytes} bytes")

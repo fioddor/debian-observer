@@ -16,7 +16,6 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 from click.testing import CliRunner
 
 from debian_observer.cli.main import cli
@@ -38,6 +37,7 @@ def _make_mock_result(
     checksum: str = "sha256-xyz",
     events: list | None = None,
     parquet_path: str | None = None,
+    dataset_path: str | None = None,
 ):
     """Build a minimal mock IngestionResult-like object."""
     mock = MagicMock()
@@ -46,6 +46,7 @@ def _make_mock_result(
     mock.checksum = checksum
     mock.events = events or []
     mock.parquet_path = Path(parquet_path) if parquet_path else None
+    mock.dataset_path = Path(dataset_path) if dataset_path else None
     return mock
 
 
@@ -94,7 +95,7 @@ def test_ingest_mirror_source():
     assert data_source._limit == 2
     # Verify raw_dir passed to pipeline
     MockPipeline.assert_called_once_with(
-        raw_dir=Path("/tmp/raw"), parquet_dir=None
+        raw_dir=Path("/tmp/raw"), parquet_dir=None, dataset_dir=None
     )
 
 
@@ -178,7 +179,7 @@ def test_ingest_with_events_dir():
 
     assert result.exit_code == 0
     MockPipeline.assert_called_once_with(
-        raw_dir=Path("data/raw"), parquet_dir=Path("/tmp/pq")
+        raw_dir=Path("data/raw"), parquet_dir=Path("/tmp/pq"), dataset_dir=None
     )
     assert "Parquet written" in result.output
 
@@ -260,65 +261,48 @@ def test_ingest_e2e_with_mock_source(tmp_path: Path):
     assert "Parquet written" in cli_result.output
 
 
-class TestIngestDatasetDeaths:
-    """The dataset projection died with the consolidate consumer
-    (MVC-2): `ingest` writes the event log only — the consolidated
-    `package_versions` table is the consumer's output.
+def test_ingest_with_dataset_dir():
+    runner = CliRunner()
+    mock_result = _make_mock_result(
+        record_count=5, dataset_path="/tmp/norm/package_versions/run.parquet"
+    )
 
-    These pins are the deaths: the option, the pipeline kwarg and
-    the result field must be *gone*, not ignored.
-    """
-
-    @pytest.mark.parametrize("subcommand", ["sources", "mirror", "udd", "udddump"])
-    def test_dataset_dir_option_is_bad_usage(self, subcommand: str) -> None:
-        """--dataset-dir on any source subcommand → exit 2, no traceback."""
-        runner = CliRunner()
-        if subcommand == "sources":
-            args = ["ingest", "sources", "--package", "bash", "--dataset-dir", "/tmp/norm"]
-        elif subcommand == "mirror":
-            args = ["ingest", "mirror", "--suite", "sid", "--dataset-dir", "/tmp/norm"]
-        elif subcommand == "udd":
-            args = ["ingest", "udd", "--table", "packages", "--dataset-dir", "/tmp/norm"]
-        else:
-            # udddump is a downloader (MVC-1): its scope selector is --url;
-            # --file/--table died with the reading's move to `normalize`.
-            args = [
-                "ingest", "udddump",
-                "--url", "https://udd.example.org/udd.dump",
+    with patch("debian_observer.cli.commands.ingest.IngestionPipeline") as MockPipeline:
+        MockPipeline.return_value.run.return_value = mock_result
+        result = runner.invoke(
+            cli,
+            [
+                "ingest", "sources",
+                "--package", "hello",
                 "--dataset-dir", "/tmp/norm",
-            ]
+            ],
+        )
 
-        with patch(
-            "debian_observer.cli.commands.ingest.IngestionPipeline"
-        ) as MockPipeline:
-            result = runner.invoke(cli, args)
+    assert result.exit_code == 0
+    MockPipeline.assert_called_once_with(
+        raw_dir=Path("data/raw"), parquet_dir=None, dataset_dir=Path("/tmp/norm")
+    )
+    assert "Dataset written" in result.output
 
-        assert result.exit_code == 2
-        assert "--dataset-dir" in result.output
-        assert "Traceback" not in result.output
-        MockPipeline.return_value.run.assert_not_called()
 
-    def test_pipeline_rejects_dataset_dir(self, tmp_path: Path) -> None:
-        """IngestionPipeline(dataset_dir=...) is a TypeError now."""
-        from debian_observer.ingestion.pipeline import IngestionPipeline
+def test_pipeline_writes_dataset_when_configured(tmp_path: Path):
+    """Real pipeline + mock source: dataset file written when dataset_dir set."""
+    from debian_observer.ingestion.acquisition import MockDebianDataSource
+    from debian_observer.ingestion.pipeline import IngestionPipeline
+    import pyarrow.parquet as pq
 
-        with pytest.raises(TypeError):
-            IngestionPipeline(raw_dir=tmp_path, dataset_dir=tmp_path)
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    dataset_dir = tmp_path / "normalized" / "package_versions"
 
-    def test_result_has_no_dataset_path_field(self) -> None:
-        """IngestionResult lost the dataset_path field entirely."""
-        from debian_observer.ingestion.pipeline import IngestionResult
+    source = MockDebianDataSource(package_count=3)
+    pipeline = IngestionPipeline(raw_dir=raw_dir, dataset_dir=dataset_dir)
+    result = pipeline.run(source, ingestion_run_id="run-ds-e2e")
 
-        assert "dataset_path" not in IngestionResult.model_fields
-
-    def test_pipeline_signature_has_no_dataset_dir(self) -> None:
-        """The pipeline __init__ lost the dataset_dir kwarg."""
-        import inspect
-
-        from debian_observer.ingestion.pipeline import IngestionPipeline
-
-        params = inspect.signature(IngestionPipeline.__init__).parameters
-        assert "dataset_dir" not in params
+    assert result.dataset_path is not None
+    assert result.dataset_path.exists()
+    table = pq.read_table(result.dataset_path)
+    assert table.num_rows == len(result.events)
 
 
 class TestIngestUnlimited:

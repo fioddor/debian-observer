@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Purpose: CI gate — the local deployment (deploy/compose) builds, rises
+#          and answers: NATS JetStream healthy + API /health green,
+#          then everything is torn down. Port 8088 since 2026-10-26.
+# Design.: docker backend SOCKET, agent-wide (per-step is NOT
+#          supported by v3.19; see devcontainer.yaml header). Under a
+#          socket-mounted daemon, relative bind mounts resolve on the
+#          HOST and would be CREATED there as garbage trees — so CI
+#          ALWAYS runs with an override file: no host ports, no CLI bind
+#          mount, CLI command sleep.
+#          The gate rolls its own readiness loop instead of
+#          `compose up --wait`: api cold boot is slow AND variable on
+#          old spinning disks (pyarrow import, cold page cache:
+#          observed 90s..230s+), and the compose healthcheck start_period
+#          cap kept marking it unhealthy. The loop waits up to 300s and
+#          PRINTS the api logs, so a red gate is diagnosable.
+#          The whole flow is ONE sh block with a trap: a failed build,
+#          healthcheck or crash still tears the stack down (no leaks).
+#          Pre-down is idempotent — a previously failed gate leaves
+#          nothing behind for the next run.
+# Authors: Igor Zubiaurre <igor@zubiaurre.es>
+# Pending: whl build step for the CLI service (dist/ symlink is a stub).
+
+steps:
+  - name: deploy-compose-config
+    image: docker:27-cli
+    commands:
+      - docker compose -f deploy/compose/docker-compose.yml config >/dev/null && echo CONFIG-OK
+
+  - name: deploy-up-health-down
+    image: docker:27-cli
+    depends_on: [deploy-compose-config]
+    commands:
+      - |
+        set -e
+        COMPOSE="docker compose -f deploy/compose/docker-compose.yml -f /tmp/ci-override.yml"
+        trap '$COMPOSE down -v --remove-orphans || true' EXIT
+        cat > /tmp/ci-override.yml <<'OVR'
+        services:
+          debian-observer:
+            volumes: !reset []
+            command: sleep infinity
+          api:
+            ports: !reset []
+        OVR
+        $COMPOSE down -v --remove-orphans || true
+        $COMPOSE up -d --build
+        i=0
+        until $COMPOSE exec -T api python -c "import urllib.request; urllib.request.urlopen('http://localhost:8088/health')" >/dev/null 2>&1; do
+          i=$((i+1))
+          echo "api boot attempt $i (waiting...)"
+          [ $i -ge 75 ] && { echo 'API BOOT TIMEOUT (300s)'; exit 1; }
+          sleep 4
+        done
+        $COMPOSE exec -T nats wget -qO- http://localhost:8222/healthz
+        $COMPOSE exec -T api python -c "import urllib.request; print('API-HEALTH', urllib.request.urlopen('http://localhost:8088/health').status)"
+        $COMPOSE logs --no-color api 2>&1 | tail -25

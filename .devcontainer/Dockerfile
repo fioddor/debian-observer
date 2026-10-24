@@ -28,6 +28,17 @@ RUN curl -sfSL https://github.com/nats-io/natscli/releases/download/v0.1.5/nats-
     && chmod +x /usr/local/bin/nats \
     && rm /tmp/nats.zip
 
+# Woodpecker CI CLI — lint pipelines locally before pushing
+# (version pinned for reproducibility; arch detected by the builder)
+ARG WOODPECKER_CLI_VERSION=v3.19.0
+ARG TARGETARCH
+RUN curl -fsSL -o /tmp/woodpecker-cli.tar.gz \
+       "https://github.com/woodpecker-ci/woodpecker/releases/download/${WOODPECKER_CLI_VERSION}/woodpecker-cli_linux_${TARGETARCH}.tar.gz" \
+    && tar -xzf /tmp/woodpecker-cli.tar.gz -C /tmp \
+    && install -m 755 /tmp/woodpecker-cli /usr/local/bin/woodpecker-cli \
+    && rm -f /tmp/woodpecker-cli.tar.gz /tmp/woodpecker-cli \
+    && woodpecker-cli --version
+
 # Create vscode user (devcontainer standard) if not already present
 RUN id -u vscode >/dev/null 2>&1 || useradd -m -s /bin/bash vscode
 

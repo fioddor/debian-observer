@@ -36,14 +36,14 @@ class TestServeInvocation:
             "debian_observer.cli.commands.serve.uvicorn.run"
         ) as mock_uvicorn_run:
             result = runner.invoke(
-                cli, ["serve", "--host", "0.0.0.0", "--port", "8000"]
+                cli, ["serve", "--host", "0.0.0.0", "--port", "8088"]
             )
             assert result.exit_code == 0
             mock_uvicorn_run.assert_called_once()
             # Verify host/port were passed
             call_kwargs = mock_uvicorn_run.call_args.kwargs
             assert call_kwargs["host"] == "0.0.0.0"
-            assert call_kwargs["port"] == 8000
+            assert call_kwargs["port"] == 8088
 
     def test_serve_default_host_is_localhost(self):
         runner = CliRunner()
@@ -54,7 +54,7 @@ class TestServeInvocation:
             assert result.exit_code == 0
             call_kwargs = mock_uvicorn_run.call_args.kwargs
             assert call_kwargs["host"] == "127.0.0.1"
-            assert call_kwargs["port"] == 8000
+            assert call_kwargs["port"] == 8088
 
 
 class TestServeParquetLoading:

@@ -1,0 +1,55 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Purpose: CI gate — the devcontainer image builds and the toolchain
+#          inside it answers (levanta y tira): pytest runs INSIDE a
+#          container of the devcontainer image.
+# Design.: docker backend SOCKET, agent-wide
+#          (WOODPECKER_BACKEND_DOCKER_VOLUMES on the agent mounts
+#          /var/run/docker.sock + the host CA bundle into EVERY step).
+#          Per-step socket via backend_options.docker.volumes is NOT
+#          supported by v3.19 (docs: only `user`; verified 2026-10-26,
+#          pipeline 8: steps could not reach the daemon). The daemon
+#          resolves bind mounts and build contexts on the HOST, so this
+#          pipeline NEVER bind-mounts relative paths (docker cp carries
+#          the repo into the probe container instead) and every gate
+#          cleans up after itself via sh traps. Findings from the
+#          2026-10-25 probe run live in agents/developer memory.
+# Authors: Igor Zubiaurre <igor@zubiaurre.es>
+# Pending: dind isolation if untrusted contributors ever land.
+
+steps:
+  - name: daemon-probe
+    image: docker:27-cli
+    commands:
+      - docker version --format 'client {{.Client.Version}} / server {{.Server.Version}}'
+
+  - name: devcontainer-image-build
+    image: docker:27-cli
+    depends_on: [daemon-probe]
+    commands:
+      - docker build -f .devcontainer/Dockerfile -t deb-obs-devcontainer:ci .
+
+  - name: devcontainer-toolchain
+    image: docker:27-cli
+    depends_on: [devcontainer-image-build]
+    commands:
+      - docker run --rm deb-obs-devcontainer:ci python --version
+      - docker run --rm deb-obs-devcontainer:ci nats --version
+      - docker run --rm deb-obs-devcontainer:ci woodpecker-cli --version
+      - docker run --rm deb-obs-devcontainer:ci pg_restore --version
+
+  - name: devcontainer-pytest
+    # levanta y tira: repo copied INTO a container of the devcontainer
+    # image; pytest runs there (no bind mounts, socket-safe). pip --user
+    # scripts land in /home/vscode/.local/bin, NOT in the image default
+    # PATH — export it or the reuse lint fails (2026-10-25 finding).
+    # ONE sh block: the trap removes the probe container even on
+    # failure — a red gate leaves no orphans.
+    image: docker:27-cli
+    depends_on: [devcontainer-image-build]
+    commands:
+      - |
+        set -e
+        trap 'docker rm -f devcontainer-ci >/dev/null 2>&1 || true' EXIT
+        docker run -d --name devcontainer-ci deb-obs-devcontainer:ci sleep infinity
+        docker cp . devcontainer-ci:/workspace/
+        docker exec devcontainer-ci sh -c "export PATH=/home/vscode/.local/bin:$PATH && cd /workspace && pip install --user -e '.[dev]' && pytest tests/ -q"

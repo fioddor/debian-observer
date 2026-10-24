@@ -39,7 +39,7 @@ docker exec -ti debian-observer bash
 |---------|------|---------|
 | NATS | 4222 | JetStream event backbone |
 | NATS monitoring | 8222 | Health and metrics |
-| API | 8000 | FastAPI analytical endpoints |
+| API | 8088 | FastAPI analytical endpoints |
 
 
 ## Quick Start: Smoke Test with Real Debian Data
@@ -413,7 +413,7 @@ Start the FastAPI service with data loaded from Parquet:
 debian-observer serve \
   --events-dir data/events \
   --host 0.0.0.0 \
-  --port 8000
+  --port 8088
 ```
 
 Without `--events-dir`, the API starts with an empty store (useful for testing), unless the `EVENTS_DIR` environment variable is set.

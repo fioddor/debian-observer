@@ -23,10 +23,10 @@ docker compose up -d
 curl http://localhost:8222/healthz
 
 # Check API health
-curl http://localhost:8000/health
+curl http://localhost:8088/health
 
 # List metrics
-curl http://localhost:8000/metrics/
+curl http://localhost:8088/metrics/
 ```
 
 ### Stop
@@ -34,6 +34,14 @@ curl http://localhost:8000/metrics/
 ```bash
 docker compose down
 ```
+
+## Ports
+
+| Port | Service |
+|--------|---------|
+| 4222 | NATS JetStream |
+| 8222 | NATS monitoring |
+| 8088 | API (changed from 8000 on 2026-10-26: collided with nginx-proxy on the deployment host) |
 
 ## Data Volumes
 

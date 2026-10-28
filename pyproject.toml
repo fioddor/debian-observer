@@ -53,6 +53,8 @@ dev = [
 
 [project.scripts]
 debian-observer = "debian_observer.cli.main:cli"
+debian-observer-consolidate = "debian_observer.prosumers.consolidate:main"
+debian-observer-filter = "debian_observer.prosumers.filter:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/debian_observer"]

@@ -365,6 +365,95 @@ and nothing else: the consolidated `package_versions` dataset is a
 **consumer output** (see Consolidate below), not a pipeline step.
 
 
+
+## Prosumers (Pipeable Processors)
+
+The prosumers are stand-alone CLI tools that read and write
+observation events via a common pipeable contract.  They are
+intended for ad-hoc analytical pipelines and for researchers who
+want to compose their own event-processing steps without writing
+Python code.
+
+Every prosumer accepts at least one input and at least one output
+from the following four options:
+
+| Flag | Meaning |
+|------|---------|
+|  | Read Parquet events from disk |
+|  | Read ND-JSON records from stdin |
+|  | Write Parquet events to disk |
+|  | Write ND-JSON records to stdout |
+
+### 
+
+Folds a stream of  events into a single
+consolidated  table.  Duplicate
+ values collapse; the surviving row per observation key
+
+is the one with the latest .
+
+
+
+### 
+
+Pass-through filter for observation events.  Accepts repeatable
+ and  flags (AND logic).  Non-observation
+records are passed through unchanged.
+
+
+
+
+## Prosumers (Pipeable Processors)
+
+The prosumers are stand-alone CLI tools that read and write
+observation events via a common pipeable contract.  They are
+intended for ad-hoc analytical pipelines and for researchers who
+want to compose their own event-processing steps without writing
+Python code.
+
+Every prosumer accepts at least one input and at least one output
+from the following four options:
+
+| Flag | Meaning |
+|------|---------|
+| `--file-in PATH` | Read Parquet events from disk |
+| `--stream-in` | Read ND-JSON records from stdin |
+| `--file-out PATH` | Write Parquet events to disk |
+| `--stream-out` | Write ND-JSON records to stdout |
+
+### `debian-observer-consolidate`
+
+Folds a stream of `PackageVersionObserved` events into a single
+consolidated `PackageVersionConsolidated` table.  Duplicate
+`event_id` values collapse; the surviving row per observation key
+`(package_id, version, distribution, release, suite, architecture)`
+is the one with the latest `(observed_at, event_id)`.
+
+```bash
+# File to file (batch rebuild)
+debian-observer-consolidate --file-in events.parquet --file-out package_versions.parquet
+
+# Stream to stream (pipe through a filter first)
+cat events.ndjson | debian-observer-consolidate --stream-in --stream-out > consolidated.ndjson
+```
+
+### `debian-observer-filter`
+
+Pass-through filter for observation events.  Accepts repeatable
+`--distribution` and `--release` flags (AND logic).  Non-observation
+records are passed through unchanged.
+
+```bash
+# Keep only Debian sid observations
+debian-observer-filter --file-in events.parquet --file-out sid.parquet \
+  --distribution debian --release sid
+
+# Pipe: consolidate then filter
+debian-observer-consolidate --stream-in --stream-out | \
+  debian-observer-filter --stream-in --stream-out --distribution debian | \
+  debian-observer-consolidate --stream-in --stream-out > debian-only.parquet
+```
+
 ## Consolidate
 
 The `consolidate` command folds the event log into the consolidated

@@ -365,13 +365,65 @@ and nothing else: the consolidated `package_versions` dataset is a
 **consumer output** (see Consolidate below), not a pipeline step.
 
 
+
+## Prosumers (Pipeable Processors)
+
+The prosumers are stand-alone CLI tools that read and write
+observation events via a common pipeable contract.  They are
+intended for ad-hoc analytical pipelines and for researchers who
+want to compose their own event-processing steps without writing
+Python code.
+
+Every prosumer accepts at least one input and at least one output
+from the following four options:
+
+| Flag | Meaning |
+|------|---------|
+| `--file-in PATH` | Read Parquet events from disk |
+| `--stream-in` | Read ND-JSON records from stdin |
+| `--file-out PATH` | Write Parquet events to disk |
+| `--stream-out` | Write ND-JSON records to stdout |
+
+### `debian-observer-consolidate`
+
+Folds a stream of `PackageVersionObserved` events into a single
+consolidated `PackageVersionConsolidated` table.  Duplicate
+`event_id` values collapse; the surviving row per observation key
+`(package_id, version, distribution, release, suite, architecture)`
+is the one with the latest `(observed_at, event_id)`.
+
+```bash
+# File to file (batch rebuild)
+debian-observer-consolidate --file-in events.parquet --file-out package_versions.parquet
+
+# Stream to stream (pipe through a filter first)
+cat events.ndjson | debian-observer-consolidate --stream-in --stream-out > consolidated.ndjson
+```
+
+### `debian-observer-filter`
+
+Pass-through filter for observation events.  Accepts repeatable
+`--distribution` and `--release` flags (AND logic).  Non-observation
+records are passed through unchanged.
+
+```bash
+# Keep only Debian sid observations
+debian-observer-filter --file-in events.parquet --file-out sid.parquet \
+  --distribution debian --release sid
+
+# Pipe: consolidate then filter
+debian-observer-consolidate --stream-in --stream-out | \
+  debian-observer-filter --stream-in --stream-out --distribution debian | \
+  debian-observer-consolidate --stream-in --stream-out > debian-only.parquet
+```
+
 ## Consolidate
 
 The `consolidate` command folds the event log into the consolidated
 `package_versions` table (spec §10.2, ADR-003 amendment 2026-10-23):
 
 ```bash
-debian-observer consolidate --events-dir data/parquet \
+debian-observer consolidate --events-dir data/events \
   --dataset-dir data/normalized/package_versions
 ```
 
@@ -415,7 +467,7 @@ same log is a no-op (every message carries
 server-side within the stream's duplicate window):
 
 ```bash
-debian-observer publish --events-dir data/parquet \
+debian-observer publish --events-dir data/events \
   [--stream debian-events] [--server nats://localhost:4222]
 ```
 
@@ -461,7 +513,7 @@ from debian_observer.consumer_app import ConsumerApp
 from debian_observer.storage.handlers import PersistingHandler
 
 app = ConsumerApp()
-handler = PersistingHandler("data/parquet", flush_threshold=100)
+handler = PersistingHandler("data/events", flush_threshold=100)
 app.register_handler("PackageVersionObserved", handler)
 ```
 

@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Purpose: CI pipeline — run the test suite on push events.
+# Design.: Woodpecker server+agent run as containers on ghostell
+#          (docker backend). Image pinned `python:3.13-slim`: the same
+#          Python minor as the devcontainer. `pytest` reads `pytest.ini`:
+#          coverage and the 80% threshold are enforced by the suite
+#          config, not here. No branch/event filter by design — every
+#          branch tip must be buildable (docs/CONTRIBUTING.md,
+#          "Buildable state").
+# Authors: Igor Zubiaurre <igor@zubiaurre.es>
+# Pending: lint/type-check steps, integration services, pip caching.
+#-----------------------------------------------------------------------------
+
+steps:
+  - name: test
+    image: python:3.13-slim
+    commands:
+      - pip install --upgrade pip
+      - pip install -e ".[dev]"
+      - pytest -q

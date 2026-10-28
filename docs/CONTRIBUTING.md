@@ -120,6 +120,40 @@ pytest and its plugins in the background (`pip install -e ".[dev]"`); it
 takes a few seconds. If `pytest` crashes right after container start,
 wait a few seconds and run it again.
 
+# CI (Woodpecker)
+
+Continuous integration runs on [Woodpecker CI](https://woodpecker-ci.org).
+The server and the agent run as docker containers on `ghostell`; the
+repository side of the contract is the `.woodpecker/` pipelines plus
+this documentation (enabling the repository is an administrator
+action, outside the repo).
+
+## The pipeline
+
+`.woodpecker/test.yaml` runs the test suite on push events:
+
+ - image `python:3.13-slim` — pinned by tag, the same Python minor
+   as the devcontainer (3.13)
+ - `pip install -e ".[dev]"`, then `pytest`: coverage and the 80%
+   threshold come from `pytest.ini` (`--cov-fail-under=80`), not
+   from the pipeline
+
+There is no branch filter **by design**: every branch tip must be
+buildable ([Buildable state](#buildable-state)) — `fdd` tips and the
+last commit of each feature branch must pass; on `tdd`, R-commits are
+red by design (tests first), G- and B-commits must pass.
+
+## Lint the pipeline before pushing
+
+The devcontainer ships the Woodpecker CLI
+(`WOODPECKER_CLI_VERSION` pinned in `.devcontainer/Dockerfile`).
+Validate pipeline changes locally before pushing:
+
+```bash
+woodpecker-cli --version
+woodpecker-cli lint .woodpecker/test.yaml
+```
+
 # Building/Packaging
 
 ```shell

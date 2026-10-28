@@ -57,7 +57,15 @@ class TestDockerCompose:
         assert "healthcheck" in api
         hc = api["healthcheck"]
         assert "test" in hc
-        assert "localhost:8000/health" in " ".join(hc["test"])
+        assert "localhost:8088/health" in " ".join(hc["test"])
+
+    def test_cli_build_context_is_repo_root(self, compose: dict):
+        # regression 2026-10-26: the CLI service built with context "."
+        # (deploy/compose/) while its Dockerfile expects the repo root
+        # -> COPY src/ failed. The api service already had it right.
+        cli = compose["services"]["debian-observer"]
+        assert cli["build"]["context"] == "../.."
+        assert cli["build"]["dockerfile"] == "deploy/compose/Dockerfile"
 
     def test_volumes_defined(self, compose: dict):
         assert "volumes" in compose
@@ -89,11 +97,11 @@ class TestDockerfile:
         assert "WORKDIR /app" in dockerfile
 
     def test_expose_port(self, dockerfile: str):
-        assert "EXPOSE 8000" in dockerfile
+        assert "EXPOSE 8088" in dockerfile
 
     def test_healthcheck_defined(self, dockerfile: str):
         assert "HEALTHCHECK" in dockerfile
-        assert "localhost:8000/health" in dockerfile
+        assert "localhost:8088/health" in dockerfile
 
     def test_serve_cmd(self, dockerfile: str):
         assert "debian-observer" in dockerfile

@@ -2,6 +2,10 @@
 # Purpose: Local app deployment orchestration for containerized usage.
 # Usage..: docker compose -f deploy/compose/docker-compose.yml up -d
 # Design.: Provides CLI, NATS JetStream as the durable event backbone and API.
+#          API host port 8088 (2026-10-26): 8000 collided with nginx-proxy
+#          on this host; 8088 is used host-side AND container-side so docs,
+#          healthchecks and the CLI default stay consistent (see
+#          tests/test_deployment.py and docs/user-guide.md).
 # Author.: Igor Zubiaurre <igor@zubiaurre.es>
 # Pending: To be extended as features are added.
 #-----------------------------------------------------------------------------
@@ -9,17 +13,23 @@
 services:
   debian-observer:
     build:
-      context: .
-      dockerfile: Dockerfile
+      # context is the REPO ROOT: the Dockerfile copies pyproject/src
+      # from it. context "." broke COPY src/ (regression test pins it).
+      context: ../..
+      dockerfile: deploy/compose/Dockerfile
     container_name: debian-observer
     hostname: deb-obs
     stdin_open: true          # keeps STDIN open (like -i)
     tty: true                 # allocates a TTY (like -t)
     working_dir: /app
     volumes:
-      - ../..:/app            # bind mount: host ./app ↔ container /app
+      - ../..:/app            # bind mount: host repo root ↔ container /app
     environment:
       - PYTHONUNBUFFERED=1
+    # The Dockerfile HEALTHCHECK (wget :8088) targets the API service;
+    # this is the interactive CLI service -> disable it or  (CI gate) aborts: sleep infinity never listens.
+    healthcheck:
+      disable: true
     command: bash -c "pipx install /app/dist/debian_observer.whl;while sleep 1000; do :; done"
 
   nats:
@@ -43,7 +53,7 @@ services:
       context: ../..
       dockerfile: deploy/compose/Dockerfile
     ports:
-      - "8000:8000"
+      - "8088:8088"
     environment:
       - NATS_URL=nats://nats:4222
       - OTEL_EXPORTER=console
@@ -63,10 +73,13 @@ services:
     networks:
       - debian-observer
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8000/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8088/health"]
       interval: 10s
       timeout: 5s
-      start_period: 10s
+      # 60s start period: the api cold-boots slowly on old spinning disks
+      # (pyarrow import with cold page cache can take ~90s); failures
+      # during start_period do not count against retries.
+      start_period: 180s
       retries: 5
     restart: unless-stopped
 

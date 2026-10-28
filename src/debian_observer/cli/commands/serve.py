@@ -17,7 +17,7 @@ from debian_observer.api.store import InMemoryStore
 
 @click.command(name="serve")
 @click.option("--host", default="127.0.0.1", help="API listen host (default: 127.0.0.1).")
-@click.option("--port", default=8000, type=int, help="API listen port (default: 8000).")
+@click.option("--port", default=8088, type=int, help="API listen port (default: 8088).")
 @click.option(
     "--events-dir",
     default=None,

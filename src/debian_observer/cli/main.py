@@ -10,6 +10,7 @@ import click
 from debian_observer.cli.commands import (
     benchmark,
     consolidate,
+    execution_report,
     ingest,
     normalize,
     publish,
@@ -41,6 +42,7 @@ def cli() -> None:
 # Register commands
 cli.add_command(benchmark.benchmark)
 cli.add_command(consolidate.consolidate)
+cli.add_command(execution_report.execution_report)
 cli.add_command(ingest.ingest)
 cli.add_command(normalize.normalize)
 cli.add_command(publish.publish)

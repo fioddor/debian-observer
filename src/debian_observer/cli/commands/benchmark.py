@@ -38,7 +38,7 @@ def benchmark(records: int, raw_dir: str) -> None:
     pipeline = IngestionPipeline(raw_dir=Path(raw_dir))
 
     start = time.perf_counter()
-    result = pipeline.run(source, ingestion_run_id="benchmark-run")
+    result = pipeline.run(source, ingestion_run_id="benchmark-run", metadata={"records_requested": records})
     duration = time.perf_counter() - start
 
     click.echo(f"Records: {result.record_count}")

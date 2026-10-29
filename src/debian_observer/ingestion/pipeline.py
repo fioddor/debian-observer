@@ -31,6 +31,7 @@ Design notes
 from __future__ import annotations
 
 import uuid
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -44,6 +45,9 @@ from debian_observer.ingestion.provenance import ProvenanceRecorder, RawArtifact
 from debian_observer.ingestion.raw import RAW_SUFFIX, sha256_raw, write_raw_artifact
 from debian_observer.normalization.normalizer import Normalizer
 from debian_observer.observability.metrics import IngestionMetrics
+from debian_observer.analytics.models import ExecutionRecord
+from debian_observer.analytics.report import MicroReporter
+from debian_observer.analytics.store import ExecutionStore
 from debian_observer.observability.tracing import get_tracer, span
 
 # ---------------------------------------------------------------------------
@@ -171,6 +175,7 @@ class IngestionPipeline:
         self,
         source: DataSource,
         ingestion_run_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> IngestionResult:
         """Run the full ingestion pipeline for a data source.
 
@@ -255,7 +260,7 @@ class IngestionPipeline:
             self._metrics.add_records(len(records), source=source.name)
 
             # Assemble result
-            return IngestionResult(
+            result = IngestionResult(
                 ingestion_run_id=run_id,
                 source_name=source.name,
                 record_count=acquisition_meta["record_count"],
@@ -267,9 +272,62 @@ class IngestionPipeline:
                 events=events,
                 acquired_at=datetime.fromisoformat(acquisition_meta["acquired_at"]),
             )
+
+            # Record execution analytics
+            self._record_analytics(result, duration, metadata)
+
+            return result
         except Exception:
             self._metrics.add_error(source=source.name)
             raise
+
+    def _record_analytics(
+        self,
+        result: IngestionResult,
+        duration: float,
+        metadata: dict[str, Any] | None,
+    ) -> None:
+        """Persist an ExecutionRecord and print the micro-report."""
+        import platform
+
+        throughput = None
+        if duration > 0 and result.record_count is not None:
+            throughput = result.record_count / duration
+
+        raw_bytes = result.artifact_path.stat().st_size if result.artifact_path else None
+        parquet_bytes = result.parquet_path.stat().st_size if result.parquet_path else None
+
+        host_info = {
+            "hostname": platform.node(),
+            "cpu_count": platform.processor() or "unknown",
+            "python_version": platform.python_version(),
+        }
+
+        record = ExecutionRecord(
+            run_id=result.ingestion_run_id,
+            run_at=datetime.now(timezone.utc),
+            execution_type="ingestion",
+            source_name=result.source_name,
+            records_processed=result.record_count,
+            events_produced=len(result.events),
+            duration_seconds=duration,
+            throughput_rps=throughput,
+            raw_bytes=raw_bytes,
+            parquet_bytes=parquet_bytes,
+            raw_path=str(result.artifact_path) if result.artifact_path else None,
+            parquet_path=str(result.parquet_path) if result.parquet_path else None,
+            checksum=result.checksum,
+            error_count=0,
+            host_info=json.dumps(host_info),
+            metadata=json.dumps(metadata) if metadata else None,
+        )
+
+        db_path = self.raw_dir.parent / "execution_runs.duckdb"
+        store = ExecutionStore(str(db_path))
+        store.insert(record)
+
+        reporter = MicroReporter()
+        reporter.print_report(record)
 
     def _store_raw_artifact(
         self,

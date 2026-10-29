@@ -204,18 +204,6 @@ cannot reconstruct without reading everything.
 - **Exposes**: OpenTelemetry tracing/metrics wiring (ADR-008) used
   across all components.
 
-## 
-
-- **Exposes**:  Pydantic model, 
-  DuckDB persistence, and  stdout summary.
-- **Expects**: every instrumented pipeline run to supply an
-   with run identifier, timing, throughput, and
-  provenance paths.
-- **Guarantees**: runs are persisted to 
-  beside the raw data directory; the table is self-documenting with
-   for every field; duplicate run IDs are
-  replaced (idempotent writes); the  CLI command
-  provides historical aggregate views with median percentiles.
 
 ## `analytics`
 
@@ -224,8 +212,8 @@ cannot reconstruct without reading everything.
 - **Expects**: every instrumented pipeline run to supply an
   `ExecutionRecord` with run identifier, timing, throughput, and
   provenance paths.
-- **Guarantees**: runs are persisted to `execution_runs.duckdb`
-  beside the raw data directory; the table is self-documenting with
-  `COMMENT ON COLUMN` for every field; duplicate run IDs are
-  replaced (idempotent writes); the `execution-report` CLI command
-  provides historical aggregate views with median percentiles.
+- **Guarantees**:
+  - runs are persisted to `execution_runs.duckdb` beside the raw data directory
+  - the table is self-documenting with `COMMENT ON COLUMN` for every field
+  - duplicate run IDs are replaced (idempotent writes)
+  - the `execution-report` CLI command provides historical aggregate views with median percentiles

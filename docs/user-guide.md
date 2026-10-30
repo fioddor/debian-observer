@@ -460,7 +460,7 @@ The `consolidate` command folds the event log into the consolidated
 `package_versions` table (spec §10.2, ADR-003 amendment 2026-10-23):
 
 ```bash
-debian-observer consolidate --events-dir data/parquet \
+debian-observer consolidate --events-dir data/events \
   --dataset-dir data/normalized/package_versions
 ```
 
@@ -504,7 +504,7 @@ same log is a no-op (every message carries
 server-side within the stream's duplicate window):
 
 ```bash
-debian-observer publish --events-dir data/parquet \
+debian-observer publish --events-dir data/events \
   [--stream debian-events] [--server nats://localhost:4222]
 ```
 
@@ -550,7 +550,7 @@ from debian_observer.consumer_app import ConsumerApp
 from debian_observer.storage.handlers import PersistingHandler
 
 app = ConsumerApp()
-handler = PersistingHandler("data/parquet", flush_threshold=100)
+handler = PersistingHandler("data/events", flush_threshold=100)
 app.register_handler("PackageVersionObserved", handler)
 ```
 

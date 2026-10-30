@@ -41,7 +41,7 @@ Usage::
 
     # batch (the consolidate CLI):
     build_consolidated_packages(
-        Path("data/parquet"), dataset_dir=Path("data/normalized/package_versions")
+        Path("data/events"), dataset_dir=Path("data/normalized/package_versions")
     )
 
     # streaming (the external consumer recipe):

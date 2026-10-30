@@ -163,3 +163,42 @@ class TestStreamSink:
         line = buf.readline().strip()
         assert '"_event_type": "T"' in line
         assert '"k": "v"' in line
+
+
+class TestRecordRoundtrip:
+    """Record (de)serialisation behaviour (ND-JSON envelope)."""
+
+    def _sample_dict(self) -> dict:
+        return {
+            "_event_type": "PackageVersionObserved",
+            "_meta": {"event_id": "e1", "observed_at": "2026-10-01T10:00:00Z"},
+            "package_id": "pkg-a",
+            "version": "1.0",
+        }
+
+    def test_from_dict_does_not_mutate_input(self) -> None:
+        d = self._sample_dict()
+        expected = dict(d)
+        rec = Record.from_dict(d)
+        assert d == expected, "from_dict must not mutate the caller's dict"
+        assert rec.event_type == "PackageVersionObserved"
+        assert rec.meta == {"event_id": "e1", "observed_at": "2026-10-01T10:00:00Z"}
+        assert rec.payload == {"package_id": "pkg-a", "version": "1.0"}
+
+    def test_from_dict_missing_envelope_defaults(self) -> None:
+        d = {"package_id": "pkg-b"}
+        rec = Record.from_dict(d)
+        assert rec.event_type == "Unknown"
+        assert rec.meta == {}
+        assert rec.payload == {"package_id": "pkg-b"}
+
+    def test_from_dict_then_to_dict_roundtrip(self) -> None:
+        d = self._sample_dict()
+        rec = Record.from_dict(d)
+        out = rec.to_dict()
+        assert out["_event_type"] == "PackageVersionObserved"
+        assert out["_meta"] == {"event_id": "e1", "observed_at": "2026-10-01T10:00:00Z"}
+        assert out["package_id"] == "pkg-a"
+        # roundtrip: the rehydrated record survives another from_dict
+        rec2 = Record.from_dict(out)
+        assert rec2 == rec or (rec2.event_type, rec2.payload) == (rec.event_type, rec.payload)

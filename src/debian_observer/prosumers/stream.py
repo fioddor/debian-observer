@@ -52,10 +52,17 @@ class Record:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "Record":
-        """Rehydrate from a plain dict."""
-        event_type = d.pop("_event_type", "Unknown")
-        meta = d.pop("_meta", {})
-        return cls(event_type=event_type, payload=d, meta=meta)
+        """Rehydrate from a plain dict.
+
+        The input dict is NOT mutated: the envelope keys (_event_type,
+        _meta) are read from a shallow copy, so the caller keeps its
+        dict intact (a library caller may rehydrate the same dict
+        twice, or read it afterwards).
+        """
+        event_type = d.get("_event_type", "Unknown")
+        meta = d.get("_meta", {})
+        payload = {k: v for k, v in d.items() if k not in ("_event_type", "_meta")}
+        return cls(event_type=event_type, payload=payload, meta=meta)
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,1 @@
+"""Consolidate example-prosumer tests."""

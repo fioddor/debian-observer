@@ -6,6 +6,7 @@ stream/file) and verify the consolidation fold engine.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from io import StringIO
@@ -17,7 +18,7 @@ import pyarrow.parquet as pq
 import pytest
 from click.testing import CliRunner
 
-from debian_observer.prosumers.consolidate import main as consolidate_main
+from prosumers.consolidate import main as consolidate_main
 from debian_observer.prosumers.packages import ConsolidateError, fold_package_versions
 from debian_observer.prosumers.stream import FileSink, FileSource, Record, StreamSink, StreamSource
 
@@ -216,10 +217,10 @@ class TestConsolidateCLI:
                 sink.emit(rec)
 
         # pytest captures stdin → run CLI in subprocess instead
-        env = dict(os.environ) if "os" in globals() else {}
-        env["PYTHONPATH"] = "src"
+        # (inherit the real environment: PATH etc. must survive)
+        env = dict(os.environ, PYTHONPATH="src")
         result = subprocess.run(
-            [sys.executable, "src/debian_observer/prosumers/consolidate.py", "--stream-in", "--file-out", str(out_file)],
+            [sys.executable, "src/prosumers/consolidate.py", "--stream-in", "--file-out", str(out_file)],
             input=buf.getvalue(),
             capture_output=True,
             text=True,

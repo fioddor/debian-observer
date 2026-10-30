@@ -17,7 +17,7 @@ import pyarrow.parquet as pq
 import pytest
 from click.testing import CliRunner
 
-from debian_observer.prosumers.filter import main as filter_main
+from prosumers.filter import main as filter_main
 from debian_observer.prosumers.stream import FileSink, FileSource, Record, StreamSink, StreamSource
 
 
@@ -118,30 +118,30 @@ class TestFilterEngine:
     """Unit tests for the filter logic."""
 
     def test_match_distribution_only(self) -> None:
-        from debian_observer.prosumers.filter import _match
+        from prosumers.filter import _match
         rec = rows_to_records(EVENT_ROWS)[0]  # debian / sid
         assert _match(rec, {"debian"}, set()) is True
         assert _match(rec, {"ubuntu"}, set()) is False
 
     def test_match_release_only(self) -> None:
-        from debian_observer.prosumers.filter import _match
+        from prosumers.filter import _match
         rec = rows_to_records(EVENT_ROWS)[1]  # bookworm
         assert _match(rec, set(), {"bookworm"}) is True
         assert _match(rec, set(), {"sid"}) is False
 
     def test_match_both(self) -> None:
-        from debian_observer.prosumers.filter import _match
+        from prosumers.filter import _match
         rec = rows_to_records(EVENT_ROWS)[0]  # debian / sid
         assert _match(rec, {"debian"}, {"sid"}) is True
         assert _match(rec, {"debian"}, {"bookworm"}) is False
 
     def test_no_filter_passes_through(self) -> None:
-        from debian_observer.prosumers.filter import _match
+        from prosumers.filter import _match
         rec = rows_to_records(EVENT_ROWS)[0]
         assert _match(rec, set(), set()) is True
 
     def test_non_package_events_pass(self) -> None:
-        from debian_observer.prosumers.filter import _match
+        from prosumers.filter import _match
         rec = rows_to_records(EVENT_ROWS)[3]  # HealthCheck
         assert _match(rec, {"debian"}, {"sid"}) is True
 
@@ -200,7 +200,7 @@ class TestFilterCLI:
         import os
         env = dict(os.environ, PYTHONPATH="src")
         result = subprocess.run(
-            [sys.executable, "src/debian_observer/prosumers/filter.py", "--stream-in", "--stream-out",
+            [sys.executable, "src/prosumers/filter.py", "--stream-in", "--stream-out",
              "--distribution", "debian", "--release", "sid"],
             input=in_buf.getvalue(),
             capture_output=True,

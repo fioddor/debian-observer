@@ -20,8 +20,8 @@ class TestUDDDataSource:
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_cursor.fetchall.return_value = [
-            ("hello", "hello", "2.10-3", "debian", "sid", "amd64", "devel", "optional"),
-            ("libhello", "hello", "1.0", "debian", "trixie", "arm64", "libs", "optional"),
+            ("hello", "hello", "2.10-3", "debian", "sid", "amd64", "devel", "optional", "main"),
+            ("libhello", "hello", "1.0", "debian", "trixie", "arm64", "libs", "optional", "main"),
         ]
         mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
@@ -46,7 +46,7 @@ class TestUDDDataSource:
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_cursor.fetchall.return_value = [
-            ("hello", "hello", "2.10-3", "debian", "sid", "amd64", "devel", "optional"),
+            ("hello", "hello", "2.10-3", "debian", "sid", "amd64", "devel", "optional", "main"),
         ]
         mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
@@ -63,7 +63,7 @@ class TestUDDDataSource:
         """UDDDataSource should read host/user/password from env vars."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_cursor.fetchall.return_value = [("pkg", "pkg", "1.0", "debian", "sid", "amd64", "devel", "optional")]
+        mock_cursor.fetchall.return_value = [("pkg", "pkg", "1.0", "debian", "sid", "amd64", "devel", "optional", "main")]
         mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
         mock_connect.return_value = mock_conn
@@ -93,7 +93,7 @@ class TestUDDDataSource:
         """Constructor params should override env vars."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_cursor.fetchall.return_value = [("pkg", "pkg", "1.0", "debian", "sid", "amd64", "devel", "optional")]
+        mock_cursor.fetchall.return_value = [("pkg", "pkg", "1.0", "debian", "sid", "amd64", "devel", "optional", "main")]
         mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
         mock_connect.return_value = mock_conn
@@ -142,6 +142,7 @@ class TestUDDFullFactFields:
                 "amd64",
                 "libs",
                 "optional",
+                "main",
             ),
         ]
         mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
@@ -167,7 +168,7 @@ class TestUDDRecordShapeUniformity:
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_cursor.fetchall.return_value = [
-            ("hello", "hello", "2.10-3", "debian", "sid", "amd64", "devel", "optional"),
+            ("hello", "hello", "2.10-3", "debian", "sid", "amd64", "devel", "optional", "main"),
         ]
         mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
@@ -177,3 +178,63 @@ class TestUDDRecordShapeUniformity:
         records = source.retrieve()
 
         assert records[0]["suite"] is None
+
+
+class TestUDDComponentField:
+    """The archive component is a packages-table identity field."""
+
+    @patch("psycopg2.connect")
+    def test_retrieve_includes_component(self, mock_connect: MagicMock) -> None:
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [
+            (
+                "librte-dpdk",
+                "dpdk",
+                "25.11.3-1",
+                "debian",
+                "bullseye-security",
+                "amd64",
+                "libs",
+                "optional",
+                "main",
+            ),
+        ]
+        mock_conn.cursor.return_value.__enter__ = MagicMock(
+            return_value=mock_cursor
+        )
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        mock_connect.return_value = mock_conn
+
+        source = UDDDataSource(table="packages", limit=5)
+        records = source.retrieve()
+
+        assert records[0]["component"] == "main"
+        mock_cursor.execute.assert_called_once()
+        sql = mock_cursor.execute.call_args[0][0]
+        assert "component" in sql
+
+
+class TestUDDUnlimited:
+    """Unlimited ingestion (limit=None) omits the LIMIT clause."""
+
+    @patch("psycopg2.connect")
+    def test_limit_none_omits_limit_clause(self, mock_connect: MagicMock) -> None:
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = []
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        mock_connect.return_value = mock_conn
+
+        source = UDDDataSource(table="packages", limit=None)
+        source.retrieve()
+
+        mock_cursor.execute.assert_called_once()
+        sql = mock_cursor.execute.call_args[0][0]
+        assert "LIMIT" not in sql.upper()
+
+    def test_limit_none_is_the_default(self) -> None:
+        source = UDDDataSource(table="packages")
+
+        assert source._limit is None

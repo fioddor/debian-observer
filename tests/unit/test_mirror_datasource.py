@@ -6,6 +6,8 @@ import gzip
 from io import BytesIO
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from debian_observer.ingestion.acquisition import DebianMirrorDataSource
 
 
@@ -61,7 +63,9 @@ class TestDebianMirrorDataSource:
         assert records[0]["package"] == "hello"
         assert records[0]["version"] == "2.10-3"
         assert records[0]["architecture"] == "amd64"
-        assert records[0]["distribution"] == "stable"
+        assert records[0]["distribution"] == "debian"
+        assert records[0]["suite"] == "stable"
+        assert records[0]["release"] is None
 
     @patch("urllib.request.urlopen")
     def test_limit_truncates(self, mock_urlopen: MagicMock) -> None:

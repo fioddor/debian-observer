@@ -498,7 +498,7 @@ class TestEventLoaderColumnOrder:
     ]
 
     ROW = (
-        "e-001", "PackageVersionObserved", "udd", "pkg-a:amd64",
+        "550e8400-e29b-41d4-a716-446655440001", "PackageVersionObserved", "udd", "pkg-a:amd64",
         "2026-10-01T10:00:00Z", "2026-10-01T10:00:00Z", "run-001",
         "pkg-a:amd64", "pkg-a", "25.11.3-1", "debian", "sid",
         "amd64", "main", "libs", "optional", "unstable",
@@ -519,20 +519,38 @@ class TestEventLoaderColumnOrder:
         from debian_observer.api.loader import EventLoader
         from debian_observer.api.store import InMemoryStore
 
+        # Same data as self.ROW, but written with the columns shuffled:
+        # dict(zip) pairs each canonical value with its OWN name, then the
+        # arrow schema declares the shuffled order — the file's column ORDER
+        # differs while every (name -> value) pair stays canonical.
+        shuffled_row = (
+            "25.11.3-1", "unstable", "550e8400-e29b-41d4-a716-446655440001", "PackageVersionObserved", "udd",
+            "pkg-a:amd64", "2026-10-01T10:00:00Z", "2026-10-01T10:00:00Z",
+            "run-001", "pkg-a:amd64", "pkg-a", "debian", "sid",
+            "amd64", "main", "libs", "optional",
+        )
         shuffled = [
             "version", "suite", "event_id", "event_type", "source",
             "entity_id", "observed_at", "effective_at", "ingestion_run_id",
             "package_id", "source_package", "distribution", "release",
             "architecture", "component", "section", "priority",
         ]
-        self._write(tmp_path, shuffled)
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+        table = pa.Table.from_pylist(
+            [dict(zip(shuffled, shuffled_row))],
+            schema=pa.schema([(c, pa.string()) for c in shuffled]),
+        )
+        pq.write_table(table, tmp_path / "run-001.parquet")
 
         store = InMemoryStore()
         loader = EventLoader(store)
         loaded = loader.load_from_parquet(tmp_path)
         assert loaded == 1, f"expected 1 event loaded, got {loaded}"
 
-        versions = store.get_package_versions("pkg-a:amd64")
+        pkg = store.get_package_by_id("pkg-a:amd64")
+        assert pkg is not None, "package not registered in the store"
+        versions = store.package_versions.get("pkg-a:amd64", [])
         assert len(versions) == 1
         v = versions[0]
         assert v.version == "25.11.3-1", f"version corrupted: {v.version!r}"
@@ -557,7 +575,7 @@ class TestEventLoaderColumnOrder:
             "distribution", "architecture", "component", "priority",
         ]
         legacy_row = (
-            "PackageVersionObserved", "e-legacy", "mirror", "pkg-old:all",
+            "PackageVersionObserved", "550e8400-e29b-41d4-a716-446655440009", "mirror", "pkg-old:all",
             "2026-09-01T00:00:00Z", "2026-09-01T00:00:00Z", "run-old",
             "pkg-old:all", "1.0-1", "debian", "all", "main", "optional",
         )
@@ -574,7 +592,7 @@ class TestEventLoaderColumnOrder:
         loaded = loader.load_from_parquet(tmp_path)
         assert loaded == 1
 
-        versions = store.get_package_versions("pkg-old:all")
+        versions = store.package_versions.get("pkg-old:all", [])
         assert len(versions) == 1
         v = versions[0]
         assert v.version == "1.0-1"

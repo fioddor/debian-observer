@@ -43,48 +43,62 @@ class EventLoader:
             Number of events loaded.
         """
         storage = AnalyticalStorage(parquet_dir)
+        # Bind by NAME, never by position: the events view is read_parquet(...,
+        # union_by_name=true) — column ORDER (and presence, for legacy 13/16-col
+        # files) is an implementation detail of each file, not a contract.
+        # SELECT * plus the cursor description gives the REAL names of what was
+        # read; the canonical dict lookup below fills None for legacy misses.
         try:
-            rows = storage.query("SELECT * FROM events").fetchall()
+            cursor = storage.query("SELECT * FROM events")
+            rows = cursor.fetchall()
+            columns = [d[0] for d in cursor.description]
         except RuntimeError:
             return 0
 
         count = 0
         for row in rows:
-            event = self._row_to_event(row)
+            record = dict(zip(columns, row))
+            event = self._row_to_event(record)
             if event:
                 self._ingest_event(event)
                 count += 1
         return count
 
-    def _row_to_event(self, row: tuple[Any, ...]) -> EventEnvelope | None:
-        """Convert a DuckDB result row back to an EventEnvelope."""
-        # DuckDB column order matches Parquet schema:
-        # event_id, event_type, source, entity_id, observed_at, effective_at,
-        # ingestion_run_id, package_id, version, distribution, architecture,
-        # component, priority
-        if len(row) < 13:
+    def _row_to_event(self, record: dict[str, Any]) -> EventEnvelope | None:
+        """Convert a row (bound by column name) back to an EventEnvelope.
+
+        The row arrives as a dict keyed by the canonical column names
+        (see load_from_parquet); legacy files miss columns (13/16-col
+        layouts) and get None via the same SELECT.
+        """
+        if not record.get("event_id"):
             return None
+        g = record.get
         return EventEnvelope(
-            event_id=row[0],
-            event_type=row[1],
-            source=row[2],
-            entity_id=row[3],
-            observed_at=row[4],
-            effective_at=row[5],
-            ingestion_run_id=row[6],
+            event_id=g("event_id"),
+            event_type=g("event_type"),
+            source=g("source"),
+            entity_id=g("entity_id"),
+            observed_at=g("observed_at"),
+            effective_at=g("effective_at"),
+            ingestion_run_id=g("ingestion_run_id"),
             payload={
-                "package_id": row[7] or "",
-                "version": row[8] or "",
-                "distribution": row[9] or "",
-                "architecture": row[10] or "",
-                "component": row[11],
-                "priority": row[12],
+                "package_id": g("package_id") or "",
+                "source_package": g("source_package"),
+                "version": g("version") or "",
+                "distribution": g("distribution") or "",
+                "release": g("release"),
+                "suite": g("suite"),
+                "architecture": g("architecture") or "",
+                "component": g("component"),
+                "section": g("section"),
+                "priority": g("priority"),
                 "observation": {
-                    "source": row[2] or "",
-                    "observed_at": row[4] or "",
-                    "effective_at": row[5] or "",
+                    "source": g("source") or "",
+                    "observed_at": g("observed_at") or "",
+                    "effective_at": g("effective_at") or "",
                     "schema_version": 1,
-                    "ingestion_run_id": row[6] or "",
+                    "ingestion_run_id": g("ingestion_run_id") or "",
                 },
             },
         )
@@ -107,7 +121,7 @@ class EventLoader:
                         package_id=pkg_id,
                         name=pkg_name,
                         source_package=pkg_name,
-                        section="unknown",
+                        section=payload.get("section") or "unknown",
                         architecture=arch,
                     )
                 )
@@ -116,10 +130,14 @@ class EventLoader:
             self.store.add_package_version(
                 PackageVersion(
                     package_id=pkg_id,
+                    source_package=payload.get("source_package"),
                     version=payload.get("version", ""),
                     distribution=payload.get("distribution"),
+                    release=payload.get("release"),
+                    suite=payload.get("suite"),
                     architecture=payload.get("architecture"),
                     component=payload.get("component"),
+                    section=payload.get("section"),
                     priority=payload.get("priority"),
                     source=event.source,
                 )

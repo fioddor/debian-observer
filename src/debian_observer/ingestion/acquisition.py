@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import os
 import random
 from abc import ABC, abstractmethod
@@ -77,6 +78,29 @@ class DataSource(ABC):
         override for efficiency when count is known without retrieval.
         """
         return len(self.retrieve())
+
+
+# ---------------------------------------------------------------------------
+# Checksum: hash the OBSERVED DATA, never the observation timestamps
+# ---------------------------------------------------------------------------
+
+
+def _stable_records_checksum(records: list[dict[str, Any]]) -> str:
+    """SHA-256 of the canonical JSON of the data records.
+
+    The checksum pins what was OBSERVED, not WHEN it was observed:
+    ``observed_at`` is excluded (stripped per record) because it is
+    generated at acquisition time — including it makes every acquisition
+    of identical data hash differently, which kills the idempotency
+    contract of :meth:`AcquisitionService.validate`. Other transport
+    metadata keys may be added to the exclusion list as they appear.
+    """
+    stable = [
+        {k: v for k, v in record.items() if k != "observed_at"}
+        for record in records
+    ]
+    canonical = json.dumps(stable, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 # ---------------------------------------------------------------------------
@@ -208,8 +232,7 @@ _DEBIAN_VERSIONS = [
     "1.6.40-2",
 ]
 
-# Codenames/pockets, mirroring the UDD release column
-_DEBIAN_RELEASES = ["sid", "trixie", "bookworm", "bullseye"]
+_DEBIAN_DISTRIBUTIONS = ["sid", "trixie", "bookworm", "bullseye"]
 _DEBIAN_COMPONENTS = ["main", "contrib", "non-free"]
 _DEBIAN_ARCHITECTURES = ["amd64", "i386", "arm64", "armhf", "all", "source"]
 _DEBIAN_SECTIONS = [
@@ -237,8 +260,7 @@ class MockDebianDataSource(DataSource):
 
     - package: source package name
     - version: Debian version string
-    - distribution: archive family (debian)
-    - release: pocket (sid, trixie, etc.)
+    - distribution: suite (sid, trixie, etc.)
     - architecture: target architecture
     - component: archive component
     - priority: package priority
@@ -295,9 +317,7 @@ class MockDebianDataSource(DataSource):
                         "package": pkg,
                         "source": pkg,  # simplified: source = binary name
                         "version": ver,
-                        "distribution": "debian",
-                        "release": rng.choice(_DEBIAN_RELEASES),
-                        "suite": None,
+                        "distribution": rng.choice(_DEBIAN_DISTRIBUTIONS),
                         "architecture": rng.choice(_DEBIAN_ARCHITECTURES),
                         "component": rng.choice(_DEBIAN_COMPONENTS),
                         "priority": rng.choice(_DEBIAN_PRIORITIES),
@@ -450,19 +470,13 @@ class SourcesDebianOrgDataSource(DataSource):
 
         records = []
         for v in data.get("versions", []):
-            for suite_value in v.get("suites", []):
-                # sources.debian.org mixes codenames and suite roles
-                # in its suites list: classify each value with the
-                # same rule as the mirror dists/ path.
-                suite_role, release = _classify_dists_path(suite_value)
+            for suite in v.get("suites", []):
                 records.append(
                     {
                         "package": self._package_name,
                         "version": v["version"],
-                        "distribution": "debian",
-                        "suite": suite_role,
-                        "release": release,
-                        "component": v.get("area", "main"),
+                        "distribution": suite,
+                        "area": v.get("area", "main"),
                         "source": self.name,
                         "observed_at": datetime.now(timezone.utc).isoformat(),
                     }
@@ -472,60 +486,25 @@ class SourcesDebianOrgDataSource(DataSource):
 
     def compute_checksum(self) -> str:
         """Compute SHA-256 of canonical JSON representation."""
-        canonical = json.dumps(self.retrieve(), sort_keys=True, ensure_ascii=False)
-        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        return _stable_records_checksum(self.retrieve())
 
 
 # ---------------------------------------------------------------------------
 # Debian mirror data source (Packages.gz)
 # ---------------------------------------------------------------------------
 
-# Archive families the mirror layout (dists/<suite>/...) can describe.
-# ``distribution`` in records means exactly this family, never a suite.
-_ARCHIVE_FAMILIES = frozenset({"debian", "ubuntu"})
-
-# Debian suite roles: the lifecycle aliases usable in the dists/ path
-# (dists/stable, dists/testing). Every other path value is a codename
-# or pocket (bookworm, sid, bookworm-security) and belongs in the
-# ``release`` field, not in ``suite``.
-_SUITE_ROLES = frozenset(
-    {
-        "oldoldstable",
-        "oldstable",
-        "stable",
-        "testing",
-        "unstable",
-        "experimental",
-    }
-)
-
-
-def _classify_dists_path(value: str) -> tuple[str | None, str | None]:
-    """Split a dists/ path segment or API suite value into (suite, release).
-
-    A suite role (oldstable, stable, testing) is a lifecycle alias and
-    belongs in ``suite``; any other value (codename or pocket: bookworm,
-    sid, bookworm-security) belongs in ``release``.
-    """
-    if value in _SUITE_ROLES:
-        return value, None
-    return None, value
 
 class DebianMirrorDataSource(DataSource):
     """Fetches real Debian package metadata from a Debian mirror.
 
     Downloads and parses a ``Packages.gz`` file from any Debian mirror,
-    producing records that match the UDD structure. The parser extracts
-    package, version, architecture, Section and Priority.
+    producing records that match the UDD structure. The parser is
+    deliberately minimal: it extracts core fields (package, version,
+    architecture, distribution) and ignores optional fields.
 
-    ``distribution`` is the archive family: ``debian``, or ``ubuntu``
-    for Ubuntu mirrors (same dists/ layout). The ``dists/<suite>/``
-    path value lands in ``suite`` when it is a suite role (oldstable,
-    stable, testing) and in ``release`` when it is a codename or pocket
-    (bookworm, sid, bookworm-security).
-
-    The ``limit`` parameter truncates the result to a fixed number
-    of packages. The default ``None`` ingests the whole file.
+    The ``limit`` parameter truncates the result to a fixed number of
+    packages, making the first ingestion fast enough for smoke tests
+    on slow connections.
 
     Usage:
 
@@ -543,25 +522,14 @@ class DebianMirrorDataSource(DataSource):
         suite: str = "stable",
         component: str = "main",
         architecture: str = "amd64",
-        limit: int | None = None,
+        limit: int = 5,
         mirror: str = MIRROR_DEFAULT,
-        distribution: str = "debian",
     ) -> None:
-        if distribution not in _ARCHIVE_FAMILIES:
-            raise ValueError(
-                f"distribution must be one of {sorted(_ARCHIVE_FAMILIES)}, "
-                f"got {distribution!r}"
-            )
         self._suite = suite
         self._component = component
         self._architecture = architecture
         self._limit = limit
         self._mirror = mirror.rstrip("/")
-        self._distribution = distribution
-        # The dists/<suite>/ path segment is either a suite role (stable,
-        # testing) or a codename/pocket (bookworm, sid): classify once
-        # so every record lands the value in the correct field.
-        self._suite_role, self._release_path = _classify_dists_path(suite)
         self._url = f"{self._mirror}/dists/{suite}/{component}/binary-{architecture}/Packages.gz"
         self._records: list[dict[str, Any]] | None = None
 
@@ -595,38 +563,49 @@ class DebianMirrorDataSource(DataSource):
                 current["version"] = line.split(": ", 1)[1]
             elif line.startswith("Architecture: "):
                 current["architecture"] = line.split(": ", 1)[1]
-            elif line.startswith("Section: "):
-                current["section"] = line.split(": ", 1)[1]
-            elif line.startswith("Priority: "):
-                current["priority"] = line.split(": ", 1)[1]
             elif line == "" and current:
-                records.append(
-                    {
-                        "package": current.get("package", ""),
-                        "version": current.get("version", ""),
-                        "distribution": self._distribution,
-                        "suite": self._suite_role,
-                        "release": self._release_path,
-                        "architecture": current.get("architecture", self._architecture),
-                        "component": self._component,
-                        "section": current.get("section"),
-                        "priority": current.get("priority"),
-                        "source": self.name,
-                        "observed_at": datetime.now(timezone.utc).isoformat(),
-                    }
-                )
+                # Corrupt-stanza guard: no Package: field means the record
+                # cannot be identified — drop it instead of emitting
+                # package='' garbage (gzip mojibake, parse drift).
+                if "package" in current:
+                    records.append(
+                        {
+                            "package": current["package"],
+                            "version": current.get("version", ""),
+                            "distribution": self._suite,
+                            "architecture": current.get("architecture", self._architecture),
+                            "component": self._component,
+                            "source": self.name,
+                            "observed_at": datetime.now(timezone.utc).isoformat(),
+                        }
+                    )
+                    count += 1
                 current = {}
-                count += 1
-                if self._limit is not None and count >= self._limit:
+                if count >= self._limit:
                     break
+
+        # Trailing-stanza guard: a Packages file that does not end with a
+        # blank line (truncated download, partial mirror, --limit cut) still
+        # carries one unparsed stanza — emit it instead of losing it.
+        if current and "package" in current:
+            records.append(
+                {
+                    "package": current["package"],
+                    "version": current.get("version", ""),
+                    "distribution": self._suite,
+                    "architecture": current.get("architecture", self._architecture),
+                    "component": self._component,
+                    "source": self.name,
+                    "observed_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
 
         self._records = records
         return records
 
     def compute_checksum(self) -> str:
         """Compute SHA-256 of canonical JSON representation."""
-        canonical = json.dumps(self.retrieve(), sort_keys=True, ensure_ascii=False)
-        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        return _stable_records_checksum(self.retrieve())
 
 
 # ---------------------------------------------------------------------------
@@ -675,7 +654,7 @@ class UDDDataSource(DataSource):
         self,
         *,
         table: str = "packages",
-        limit: int | None = None,
+        limit: int = 5,
         host: str | None = None,
         port: str | None = None,
         database: str | None = None,
@@ -690,6 +669,14 @@ class UDDDataSource(DataSource):
         self._database_override = database
         self._user_override = user
         self._password_override = password
+        # --table reaches a SQL FROM clause (operator-facing flag, not a
+        # remote input) — but an identifier that is not a plain table name
+        # must never reach the query. Validate at construction.
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", table):
+            raise ValueError(
+                f"table must be a plain SQL identifier (letters, digits, "
+                f"underscore), got: {table!r}"
+            )
 
     @property
     def name(self) -> str:
@@ -710,15 +697,10 @@ class UDDDataSource(DataSource):
             password=self._password,
         )
         with conn.cursor() as cursor:
-            query = (
-                f"SELECT package, source, version, distribution, release, "
-                f"architecture, section, priority, component FROM {self._table}"
+            cursor.execute(
+                f"SELECT source, version, distribution, release, architecture FROM {self._table} LIMIT %s",
+                (self._limit,),
             )
-            if self._limit is not None:
-                query += " LIMIT %s"
-                cursor.execute(query, (self._limit,))
-            else:
-                cursor.execute(query)
             rows = cursor.fetchall()
         conn.close()
 
@@ -726,16 +708,11 @@ class UDDDataSource(DataSource):
         for row in rows:
             records.append(
                 {
-                    "package": row[0] or "unknown",
-                    "source_package": row[1],
-                    "version": row[2] or "unknown",
-                    "distribution": row[3] or "unknown",
-                    "release": row[4] or "unknown",
-                    "suite": None,  # UDD exposes pockets, not suite roles
-                    "architecture": row[5] or "unknown",
-                    "component": row[8] or "unknown",
-                    "section": row[6],
-                    "priority": row[7],
+                    "package": row[0],
+                    "version": row[1],
+                    "distribution": row[2] or "unknown",
+                    "release": row[3] or "unknown",
+                    "architecture": row[4] or "unknown",
                     "source": self.name,
                     "observed_at": datetime.now(timezone.utc).isoformat(),
                 }
@@ -746,5 +723,4 @@ class UDDDataSource(DataSource):
 
     def compute_checksum(self) -> str:
         """Compute SHA-256 of canonical JSON representation."""
-        canonical = json.dumps(self.retrieve(), sort_keys=True, ensure_ascii=False)
-        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        return _stable_records_checksum(self.retrieve())

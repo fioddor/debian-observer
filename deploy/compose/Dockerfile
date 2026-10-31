@@ -26,7 +26,7 @@ COPY src/ ./src/
 RUN pip install --no-cache-dir -e "."
 
 # Create data directories
-RUN mkdir -p /app/data/raw /app/data/parquet
+RUN mkdir -p /app/data/raw /app/data/events
 
 # Expose API port (8088 since 2026-10-26: 8000 collided with nginx-proxy
 # on the deployment host; the CLI default matches — serve.py)
@@ -36,5 +36,5 @@ EXPOSE 8088
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:8088/health || exit 1
 
-# Run the API service using the CLI, which supports PARQUET_DIR env var
+# Run the API service using the CLI, which supports EVENTS_DIR env var
 CMD ["debian-observer", "serve", "--host", "0.0.0.0", "--port", "8088"]

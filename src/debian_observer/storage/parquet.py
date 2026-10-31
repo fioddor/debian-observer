@@ -58,7 +58,7 @@ class ParquetWriter:
 
     Usage::
 
-        writer = ParquetWriter(output_dir="data/parquet")
+        writer = ParquetWriter(output_dir="data/events")
         writer.write_events(events, ingestion_run_id="run-001")
 
         # Or append to an existing dataset

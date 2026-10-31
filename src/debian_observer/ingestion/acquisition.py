@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import os
 import random
 from abc import ABC, abstractmethod
@@ -764,6 +765,14 @@ class UDDDataSource(DataSource):
         self._database_override = database
         self._user_override = user
         self._password_override = password
+        # --table reaches a SQL FROM clause (operator-facing flag, not a
+        # remote input) — but an identifier that is not a plain table name
+        # must never reach the query. Validate at construction.
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", table):
+            raise ValueError(
+                f"table must be a plain SQL identifier (letters, digits, "
+                f"underscore), got: {table!r}"
+            )
 
     @property
     def name(self) -> str:
@@ -820,5 +829,4 @@ class UDDDataSource(DataSource):
 
     def compute_checksum(self) -> str:
         """Compute SHA-256 of canonical JSON representation."""
-        canonical = json.dumps(self.retrieve(), sort_keys=True, ensure_ascii=False)
-        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        return _stable_records_checksum(self.retrieve())

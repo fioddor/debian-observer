@@ -270,15 +270,7 @@ class TestShutdownFlushesHandlers:
         assert len(handler._buffer) == 1, "event should sit in the buffer"
 
         # Shutdown must flush it (today: lost)
-        app.shutdown()  # sets the event; flush protocol under test
-        asyncio.run(_flush_registered(app))
+        app.flush_registered_handlers()
         assert len(handler._buffer) == 0, "buffered event lost on shutdown"
         written = list(tmp_path.glob("*.parquet"))
         assert written, "no Parquet file written on shutdown"
-
-
-def _flush_registered(app) -> None:
-    """Call the app-level flush protocol (the fix under test)."""
-    from debian_observer.consumer_app import flush_registered_handlers
-
-    return flush_registered_handlers(app)

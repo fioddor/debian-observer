@@ -121,7 +121,7 @@ class EventLoader:
                         package_id=pkg_id,
                         name=pkg_name,
                         source_package=pkg_name,
-                        section=payload.get("section") or "unknown",
+                        section="unknown",
                         architecture=arch,
                     )
                 )
@@ -130,14 +130,10 @@ class EventLoader:
             self.store.add_package_version(
                 PackageVersion(
                     package_id=pkg_id,
-                    source_package=payload.get("source_package"),
                     version=payload.get("version", ""),
                     distribution=payload.get("distribution"),
-                    release=payload.get("release"),
-                    suite=payload.get("suite"),
                     architecture=payload.get("architecture"),
                     component=payload.get("component"),
-                    section=payload.get("section"),
                     priority=payload.get("priority"),
                     source=event.source,
                 )

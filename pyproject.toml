@@ -35,7 +35,11 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.0",
+    # pytest<9 until pytest-bdd supports pytest 9 (pytest-bdd 9.0 breaks on
+    # pytest 9: FixtureManager lost _arg2fixturedefs — the BDD reliability
+    # scenarios do not even collect). Revisit when a pytest-bdd release
+    # declares pytest 9 support.
+    "pytest>=8.0,<9",
     "pytest-asyncio>=0.23",
     "pytest-bdd>=7.0",
     "pytest-cov>=5.0",

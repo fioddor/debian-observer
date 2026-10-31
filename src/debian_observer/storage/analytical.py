@@ -49,6 +49,11 @@ class AnalyticalStorage:
     def _register_views(self, con: duckdb.DuckDBPyConnection) -> None:
         """Register ``events`` and per-file dataset views in DuckDB."""
         event_files = self._get_event_files()
+        if not event_files:
+            raise RuntimeError(
+                f"No Parquet files found in {self.parquet_dir} — "
+                "ingest first or point --events-dir at the event log"
+            )
         if event_files:
             file_list = ", ".join(f"'{f}'" for f in event_files)
             con.execute(

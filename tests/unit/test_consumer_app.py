@@ -225,3 +225,60 @@ class TestConsumerAppRun:
 
                 app.shutdown()
                 await run_task
+
+class TestShutdownFlushesHandlers:
+    """Behaviour: shutdown flushes buffered handler output before closing.
+
+    A handler that buffers (e.g. PersistingHandler with
+    flush_threshold=100) must not lose acked events on shutdown:
+    today ConsumerApp.run() closes consumer and client but never
+    flushes the registered handlers, so buffered events below the
+    threshold are acked-and-lost (at-least-once broken).
+    """
+
+    def _make_app_with_buffering_handler(self, tmp_path):
+        import asyncio
+        from debian_observer.consumer_app import ConsumerApp
+        from debian_observer.storage.handlers import PersistingHandler
+
+        app = ConsumerApp()
+        handler = PersistingHandler(tmp_path, flush_threshold=100)
+        app.register_handler("PackageVersionObserved", handler)
+        return app, handler
+
+    def test_shutdown_flushes_buffered_events(self, tmp_path):
+        import asyncio
+        from datetime import datetime, timezone
+
+        from debian_observer.events import EventEnvelope
+
+        app, handler = self._make_app_with_buffering_handler(tmp_path)
+
+        now = datetime.now(timezone.utc)
+        envelope = EventEnvelope(
+            event_id="550e8400-e29b-41d4-a716-446655440002",
+            event_type="PackageVersionObserved",
+            source="udd",
+            entity_id="pkg-flush:amd64",
+            observed_at=now,
+            effective_at=now,
+            ingestion_run_id="run-flush",
+            payload={"package_id": "pkg-flush:amd64", "version": "1.0-1"},
+        )
+        # Feed one event through the registered handler (below threshold)
+        handler(envelope)
+        assert len(handler._buffer) == 1, "event should sit in the buffer"
+
+        # Shutdown must flush it (today: lost)
+        app.shutdown()  # sets the event; flush protocol under test
+        asyncio.run(_flush_registered(app))
+        assert len(handler._buffer) == 0, "buffered event lost on shutdown"
+        written = list(tmp_path.glob("*.parquet"))
+        assert written, "no Parquet file written on shutdown"
+
+
+def _flush_registered(app) -> None:
+    """Call the app-level flush protocol (the fix under test)."""
+    from debian_observer.consumer_app import flush_registered_handlers
+
+    return flush_registered_handlers(app)

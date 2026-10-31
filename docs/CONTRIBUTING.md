@@ -210,6 +210,21 @@ implemented today. A parameter whose perimeter is narrow must say so
 and point at the gate that enforces it; planned values must not be
 listed as if they existed.
 
+## Repository layout: prosumers
+
+Two kinds of prosumer code live in separate places:
+
+- `src/debian_observer/prosumers/` — the LIBRARIES: importable
+  building blocks (`stream`, `cli`, `packages`) to fabricate
+  prosumers. Part of the `debian-observer` package.
+- `src/prosumers/` — the EXAMPLES: shipped standalone
+  executables (`consolidate.py`, `filter.py`), decoupled from the
+  `debian-observer` package and installed as separate commands
+  (`debian-observer-consolidate`, `debian-observer-filter`).
+  They are part of the product: they ship in the wheel and their
+  tests stay in the battery (`tests/consolidate/`,
+  `tests/filter/`).
+
 ## Feature Branches
 
 Use an ad-hoc branch for each feature (a feature branch).

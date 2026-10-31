@@ -478,3 +478,126 @@ class TestEventLoaderSuiteField:
         version = store.list_package_versions()[0]
         assert version.release == "bullseye-security"
         assert version.suite is None
+
+class TestEventLoaderColumnOrder:
+    """Behaviour: the loader binds columns by NAME, not by position.
+
+    The DuckDB events view is read_parquet(..., union_by_name=true);
+    column ORDER is an implementation detail of the first file the
+    glob sorted, not a contract. A file whose columns arrive in a
+    different order must load identically (regression: positional
+    indexing silently corrupted version/distribution and crashed
+    on Pydantic validation).
+    """
+
+    COLUMNS = [
+        "event_id", "event_type", "source", "entity_id", "observed_at",
+        "effective_at", "ingestion_run_id", "package_id", "source_package",
+        "version", "distribution", "release", "architecture", "component",
+        "section", "priority", "suite",
+    ]
+
+    ROW = (
+        "550e8400-e29b-41d4-a716-446655440001", "PackageVersionObserved", "udd", "pkg-a:amd64",
+        "2026-10-01T10:00:00Z", "2026-10-01T10:00:00Z", "run-001",
+        "pkg-a:amd64", "pkg-a", "25.11.3-1", "debian", "sid",
+        "amd64", "main", "libs", "optional", "unstable",
+    )
+
+    def _write(self, tmp_path, columns):
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+        table = pa.Table.from_pylist(
+            [dict(zip(columns, self.ROW))],
+            schema=pa.schema([(c, pa.string()) for c in columns]),
+        )
+        pq.write_table(table, tmp_path / "run-001.parquet")
+
+    def test_shuffled_column_order_loads_identically(self, tmp_path):
+        """Columns reordered (version first, suite before source) —
+        same data must load with every field in place."""
+        from debian_observer.api.loader import EventLoader
+        from debian_observer.api.store import InMemoryStore
+
+        # Same data as self.ROW, but written with the columns shuffled:
+        # dict(zip) pairs each canonical value with its OWN name, then the
+        # arrow schema declares the shuffled order — the file's column ORDER
+        # differs while every (name -> value) pair stays canonical.
+        shuffled_row = (
+            "25.11.3-1", "unstable", "550e8400-e29b-41d4-a716-446655440001", "PackageVersionObserved", "udd",
+            "pkg-a:amd64", "2026-10-01T10:00:00Z", "2026-10-01T10:00:00Z",
+            "run-001", "pkg-a:amd64", "pkg-a", "debian", "sid",
+            "amd64", "main", "libs", "optional",
+        )
+        shuffled = [
+            "version", "suite", "event_id", "event_type", "source",
+            "entity_id", "observed_at", "effective_at", "ingestion_run_id",
+            "package_id", "source_package", "distribution", "release",
+            "architecture", "component", "section", "priority",
+        ]
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+        table = pa.Table.from_pylist(
+            [dict(zip(shuffled, shuffled_row))],
+            schema=pa.schema([(c, pa.string()) for c in shuffled]),
+        )
+        pq.write_table(table, tmp_path / "run-001.parquet")
+
+        store = InMemoryStore()
+        loader = EventLoader(store)
+        loaded = loader.load_from_parquet(tmp_path)
+        assert loaded == 1, f"expected 1 event loaded, got {loaded}"
+
+        pkg = store.get_package_by_id("pkg-a:amd64")
+        assert pkg is not None, "package not registered in the store"
+        versions = store.package_versions.get("pkg-a:amd64", [])
+        assert len(versions) == 1
+        v = versions[0]
+        assert v.version == "25.11.3-1", f"version corrupted: {v.version!r}"
+        assert v.distribution == "debian", f"distribution corrupted: {v.distribution!r}"
+        assert v.release == "sid", f"release corrupted: {v.release!r}"
+        assert v.suite == "unstable", f"suite corrupted: {v.suite!r}"
+        assert v.architecture == "amd64"
+        assert v.component == "main"
+        assert v.section == "libs"
+        assert v.priority == "optional"
+        assert v.source_package == "pkg-a"
+
+    def test_legacy_13_col_missing_columns_load(self, tmp_path):
+        """Legacy layout (pre-source_package/pre-suite, 13 cols) in a
+        NON-canonical order still loads with the documented None fills."""
+        from debian_observer.api.loader import EventLoader
+        from debian_observer.api.store import InMemoryStore
+
+        legacy_cols = [
+            "event_type", "event_id", "source", "entity_id", "observed_at",
+            "effective_at", "ingestion_run_id", "package_id", "version",
+            "distribution", "architecture", "component", "priority",
+        ]
+        legacy_row = (
+            "PackageVersionObserved", "550e8400-e29b-41d4-a716-446655440009", "mirror", "pkg-old:all",
+            "2026-09-01T00:00:00Z", "2026-09-01T00:00:00Z", "run-old",
+            "pkg-old:all", "1.0-1", "debian", "all", "main", "optional",
+        )
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+        table = pa.Table.from_pylist(
+            [dict(zip(legacy_cols, legacy_row))],
+            schema=pa.schema([(c, pa.string()) for c in legacy_cols]),
+        )
+        pq.write_table(table, tmp_path / "run-old.parquet")
+
+        store = InMemoryStore()
+        loader = EventLoader(store)
+        loaded = loader.load_from_parquet(tmp_path)
+        assert loaded == 1
+
+        versions = store.package_versions.get("pkg-old:all", [])
+        assert len(versions) == 1
+        v = versions[0]
+        assert v.version == "1.0-1"
+        assert v.distribution == "debian"
+        assert v.source_package is None
+        assert v.release is None
+        assert v.suite is None
+        assert v.section is None

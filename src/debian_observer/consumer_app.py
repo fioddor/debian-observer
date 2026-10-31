@@ -134,9 +134,37 @@ class ConsumerApp:
         # Block until shutdown signal.
         await self._shutdown_event.wait()
 
+        # Flush registered handlers BEFORE closing the transport: buffered
+        # events (below the handler's flush threshold) are already acked —
+        # losing them here would break at-least-once delivery.
+        self.flush_registered_handlers()
+
         await consumer.close()
         await client.close()
 
     def shutdown(self) -> None:
         """Signal the consumer to stop gracefully."""
         self._shutdown_event.set()
+
+    def flush_registered_handlers(self) -> None:
+        """Flush every registered handler that buffers output.
+
+        Handlers that buffer (e.g. ``PersistingHandler`` with a
+        ``flush_threshold``) must land their buffered events before the
+        transport closes: the events were already acked upstream, so
+        skipping the flush loses them (at-least-once broken).
+
+        Duck-typed protocol: any handler exposing ``flush()`` (or ``close()``
+        with flush semantics) is flushed; handlers without it (pure
+        callables) are left untouched. Flush errors are raised — during
+        shutdown a silent drop would hide data loss.
+        """
+        for event_type, handler in getattr(self, "handlers", {}).items():
+            flush = getattr(handler, "flush", None)
+            if callable(flush):
+                try:
+                    flush()
+                except Exception as exc:  # noqa: BLE001 — shutdown must not silently drop
+                    raise RuntimeError(
+                        f"flush of handler {event_type!r} failed during shutdown: {exc}"
+                    ) from exc

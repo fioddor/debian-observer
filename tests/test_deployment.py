@@ -110,8 +110,8 @@ class TestDockerfile:
         assert "0.0.0.0" in dockerfile
         assert "--port" in dockerfile
 
-    def test_parquet_env_handled(self, dockerfile: str):
-        assert "PARQUET_DIR" in dockerfile
+    def test_events_env_handled(self, dockerfile: str):
+        assert "EVENTS_DIR" in dockerfile
 
     def test_postgresql_client_installed(self, dockerfile: str):
         """The deploy image ships pg_restore (ingest udddump, ADR-012).

@@ -7,10 +7,10 @@ Usage::
 
     from debian_observer.storage import ParquetWriter, AnalyticalStorage
 
-    writer = ParquetWriter(output_dir="data/parquet")
+    writer = ParquetWriter(output_dir="data/events")
     writer.write_events(events)
 
-    analytics = AnalyticalStorage("data/parquet")
+    analytics = AnalyticalStorage("data/events")
     result = analytics.query("SELECT * FROM events WHERE release = 'sid'")
 """
 

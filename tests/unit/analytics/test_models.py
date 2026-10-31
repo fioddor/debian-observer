@@ -38,7 +38,7 @@ def test_execution_record_all_fields():
         raw_bytes=10240,
         parquet_bytes=4096,
         raw_path="data/raw/benchmark.csv.xz",
-        parquet_path="data/parquet/benchmark.parquet",
+        parquet_path="data/events/benchmark.parquet",
         checksum="abc123",
         error_count=0,
         error_message=None,

@@ -64,7 +64,7 @@ services:
       # - UDD_USER=udd
       # - UDD_PASSWORD=udd
       # Optional: pre-load Parquet data for the API (loaded via serve CLI)
-      # - PARQUET_DIR=/app/data/parquet
+      # - EVENTS_DIR=/app/data/events
     volumes:
       - api-data:/app/data
     depends_on:

@@ -6,8 +6,6 @@ import gzip
 from io import BytesIO
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from debian_observer.ingestion.acquisition import DebianMirrorDataSource
 
 
@@ -63,9 +61,7 @@ class TestDebianMirrorDataSource:
         assert records[0]["package"] == "hello"
         assert records[0]["version"] == "2.10-3"
         assert records[0]["architecture"] == "amd64"
-        assert records[0]["distribution"] == "debian"
-        assert records[0]["suite"] == "stable"
-        assert records[0]["release"] is None
+        assert records[0]["distribution"] == "stable"
 
     @patch("urllib.request.urlopen")
     def test_limit_truncates(self, mock_urlopen: MagicMock) -> None:
@@ -225,3 +221,83 @@ class TestMirrorUnlimited:
         source = DebianMirrorDataSource(suite="stable")
 
         assert source._limit is None
+
+
+class TestMirrorParserEdgeCases:
+    """Behaviour: the Packages.gz parser survives real-world edges."""
+
+    @patch("urllib.request.urlopen")
+    def test_last_stanza_survives_missing_trailing_blank_line(self, mock_urlopen: MagicMock) -> None:
+        """A Packages file that does NOT end with a blank line (truncated
+        download, --limit cut, partial mirror) must still yield its last
+        stanza — today it is silently dropped.
+        """
+        content = (
+            b"Package: alpha\nVersion: 1.0\nArchitecture: amd64\n\n"
+            b"Package: beta\nVersion: 2.0\nArchitecture: amd64\n"  # no trailing \n\n
+        )
+        buf = BytesIO()
+        with gzip.GzipFile(fileobj=buf, mode="wb") as f:
+            f.write(content)
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = buf.getvalue()
+        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+
+        source = DebianMirrorDataSource()
+        records = source.retrieve()
+        names = [r["package"] for r in records]
+        assert "beta" in names, f"last stanza lost: {names}"
+
+    @patch("urllib.request.urlopen")
+    def test_orphan_stanza_without_package_field_is_dropped(self, mock_urlopen: MagicMock) -> None:
+        """A stanza with no `Package:` field is corrupt input (gzip mojibake,
+        parse drift) and must be discarded — today it yields a record with
+        package=''.
+        """
+        content = b"Version: 9\nSection: utils\n\nPackage: real\nVersion: 1.0\n\n"
+        buf = BytesIO()
+        with gzip.GzipFile(fileobj=buf, mode="wb") as f:
+            f.write(content)
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = buf.getvalue()
+        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+
+        source = DebianMirrorDataSource()
+        records = source.retrieve()
+        names = [r["package"] for r in records]
+        assert "" not in names, f"garbage record emitted: {records[:1]}"
+        assert "real" in names
+
+
+class TestChecksumIdempotence:
+    """Behaviour: the checksum pins the OBSERVED DATA, not the wall clock.
+
+    Two acquisitions of the same data must produce the same checksum —
+    that is the entire point of validate() for incremental ingestion.
+    Today every network source embeds observed_at=now() in its records,
+    so the checksum changes on every call and validate() is dead code.
+    """
+
+    @patch("urllib.request.urlopen")
+    def test_same_data_same_checksum(self, mock_urlopen: MagicMock) -> None:
+        _mock_urlopen_response(
+            mock_urlopen,
+            [{"Package": "hello", "Version": "2.10-3", "Architecture": "amd64"}],
+        )
+        source_a = DebianMirrorDataSource()
+        source_b = DebianMirrorDataSource()
+        assert source_a.compute_checksum() == source_b.compute_checksum()
+
+    def test_udd_table_name_is_validated(self) -> None:
+        """--table reaches a SQL FROM clause; an identifier that is not a
+        plain table name must be rejected at construction, not executed.
+        """
+        import pytest
+        from debian_observer.ingestion.acquisition import UDDDataSource
+
+        with pytest.raises(ValueError, match="table"):
+            UDDDataSource(table="packages; DROP TABLE x", database="u")

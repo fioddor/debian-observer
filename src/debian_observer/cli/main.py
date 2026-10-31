@@ -35,6 +35,11 @@ def cli() -> None:
        `debian-observer <command> --help` for their options. The
        implemented data sources are described by
        `debian-observer ingest --help`.
+
+       For ad-hoc analytical pipelines without writing Python, the
+       project also ships pipeable CLI prosumers (consolidate and
+       filter examples) — see the Prosumers section of
+       docs/user-guide.md to use, adapt or build your own.
     """
     pass
 

@@ -379,43 +379,6 @@ from the following four options:
 
 | Flag | Meaning |
 |------|---------|
-|  | Read Parquet events from disk |
-|  | Read ND-JSON records from stdin |
-|  | Write Parquet events to disk |
-|  | Write ND-JSON records to stdout |
-
-### 
-
-Folds a stream of  events into a single
-consolidated  table.  Duplicate
- values collapse; the surviving row per observation key
-
-is the one with the latest .
-
-
-
-### 
-
-Pass-through filter for observation events.  Accepts repeatable
- and  flags (AND logic).  Non-observation
-records are passed through unchanged.
-
-
-
-
-## Prosumers (Pipeable Processors)
-
-The prosumers are stand-alone CLI tools that read and write
-observation events via a common pipeable contract.  They are
-intended for ad-hoc analytical pipelines and for researchers who
-want to compose their own event-processing steps without writing
-Python code.
-
-Every prosumer accepts at least one input and at least one output
-from the following four options:
-
-| Flag | Meaning |
-|------|---------|
 | `--file-in PATH` | Read Parquet events from disk |
 | `--stream-in` | Read ND-JSON records from stdin |
 | `--file-out PATH` | Write Parquet events to disk |

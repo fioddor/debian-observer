@@ -217,3 +217,20 @@ cannot reconstruct without reading everything.
   - the table is self-documenting with `COMMENT ON COLUMN` for every field
   - duplicate run IDs are replaced (idempotent writes)
   - the `execution-report` CLI command provides historical aggregate views with median percentiles
+
+## `prosumers`
+
+- **Exposes**: the shipped example prosumer executables
+  (`consolidate.py`, `filter.py`) as Click scripts — decoupled from
+  the `debian-observer` package, installed as the
+  `debian-observer-consolidate` / `debian-observer-filter` commands.
+  They import the libraries from `debian_observer.prosumers`
+  (`stream`, `cli`, `packages`) exactly as a user-built prosumer
+  would; `src/prosumers/` collects example CLIs only, no importable
+  library code.
+- **Expects**: input records shaped by the prosumer contract —
+  `--file-in`/`--stream-in` carrying `Record` envelopes (ND-JSON)
+  or flat event-log rows (Parquet).
+- **Guarantees**: examples stay self-contained — a user can copy one
+  to start their own prosumer without reaching into
+  `debian_observer` internals beyond the public libraries.

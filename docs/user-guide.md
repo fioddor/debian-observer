@@ -374,6 +374,23 @@ intended for ad-hoc analytical pipelines and for researchers who
 want to compose their own event-processing steps without writing
 Python code.
 
+The product ships two kinds of prosumer code, in separate places:
+
+- **Libraries** (`src/debian_observer/prosumers/`): the importable
+  building blocks to fabricate your own prosumer — `stream`
+  (`Record`, `Source`/`Sink`, file and ND-JSON stream variants,
+  `open_source`/`open_sink`), `cli` (`common_io_options()` and the
+  `build_source`/`build_sink` flag-to-IO factories) and `packages`
+  (the `fold_package_versions` consolidation engine). Import them
+  as `from debian_observer.prosumers import ...`.
+- **Examples** (`src/prosumers/`): the two shipped example
+  executables, `consolidate.py` and `filter.py` — decoupled from
+  the `debian-observer` package, installed as the
+  `debian-observer-consolidate` and `debian-observer-filter`
+  commands. Copy one as a starting point for your own prosumer;
+  each is a self-contained Click script built on the libraries
+  above.
+
 Every prosumer accepts at least one input and at least one output
 from the following four options:
 
@@ -416,6 +433,7 @@ debian-observer-consolidate --stream-in --stream-out | \
   debian-observer-filter --stream-in --stream-out --distribution debian | \
   debian-observer-consolidate --stream-in --stream-out > debian-only.parquet
 ```
+
 
 ## Consolidate
 

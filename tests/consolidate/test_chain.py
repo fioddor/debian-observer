@@ -7,6 +7,7 @@ using subprocess with shell pipes to avoid pytest stdin capture.
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 import sys
 from io import StringIO
@@ -96,8 +97,8 @@ class TestChainConsolidateThenFilter:
 
         env = dict(os.environ, PYTHONPATH="src")
         cmd = (
-            f"{sys.executable} src/debian_observer/prosumers/consolidate.py --file-in {in_file} --stream-out | "
-            f"{sys.executable} src/debian_observer/prosumers/filter.py --stream-in --file-out {out_file} --distribution debian"
+            f"{sys.executable} src/prosumers/consolidate.py --file-in {shlex.quote(str(in_file))} --stream-out | "
+            f"{sys.executable} src/prosumers/filter.py --stream-in --file-out {shlex.quote(str(out_file))} --distribution debian"
         )
         result = subprocess.run(
             cmd,
@@ -127,8 +128,8 @@ class TestChainFilterThenFilter:
 
         env = dict(os.environ, PYTHONPATH="src")
         cmd = (
-            f"{sys.executable} src/debian_observer/prosumers/filter.py --file-in {in_file} --stream-out --distribution debian | "
-            f"{sys.executable} src/debian_observer/prosumers/filter.py --stream-in --stream-out --release sid --release bookworm"
+            f"{sys.executable} src/prosumers/filter.py --file-in {shlex.quote(str(in_file))} --stream-out --distribution debian | "
+            f"{sys.executable} src/prosumers/filter.py --stream-in --stream-out --release sid --release bookworm"
         )
         result = subprocess.run(
             cmd,

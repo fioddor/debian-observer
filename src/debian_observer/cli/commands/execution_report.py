@@ -63,49 +63,52 @@ def execution_report(
         return
 
     store = ExecutionStore(str(path))
+    try:
+        # Build WHERE clause
+        where_parts = [f"run_at >= now() - INTERVAL '{days} days'"]
+        params: list[object] = []
+        if execution_type:
+            where_parts.append("execution_type = ?")
+            params.append(execution_type)
+        if source_name:
+            where_parts.append("source_name = ?")
+            params.append(source_name)
 
-    # Build WHERE clause
-    where_parts = [f"run_at >= now() - INTERVAL '{days} days'"]
-    params: list[object] = []
-    if execution_type:
-        where_parts.append("execution_type = ?")
-        params.append(execution_type)
-    if source_name:
-        where_parts.append("source_name = ?")
-        params.append(source_name)
+        where_sql = " AND ".join(where_parts)
 
-    where_sql = " AND ".join(where_parts)
+        sql = f"""
+            SELECT
+                execution_type,
+                source_name,
+                COUNT(*) AS run_count,
+                quantile_cont(duration_seconds, 0.5) AS median_duration,
+                quantile_cont(throughput_rps, 0.5) AS median_throughput
+            FROM execution_runs
+            WHERE {where_sql}
+            GROUP BY execution_type, source_name
+            ORDER BY execution_type, source_name
+        """
 
-    sql = f"""
-        SELECT
-            execution_type,
-            source_name,
-            COUNT(*) AS run_count,
-            quantile_cont(duration_seconds, 0.5) AS median_duration,
-            quantile_cont(throughput_rps, 0.5) AS median_throughput
-        FROM execution_runs
-        WHERE {where_sql}
-        GROUP BY execution_type, source_name
-        ORDER BY execution_type, source_name
-    """
+        result = store.query(sql, params)
+        rows = result.fetchall()
+        if not rows:
+            click.echo("No runs in the selected period.")
+            return
 
-    result = store.query(sql, params)
-    rows = result.fetchall()
-    if not rows:
-        click.echo("No runs in the selected period.")
-        return
+        headers = ["execution_type", "source_name", "run_count", "median_duration", "median_throughput"]
 
-    headers = ["execution_type", "source_name", "run_count", "median_duration", "median_throughput"]
+        if output_format == "table":
+            click.echo(" | ".join(headers))
+            click.echo("-" * (len(" | ".join(headers)) + 20))
+            for row in rows:
+                click.echo(" | ".join(str(c) for c in row))
+        elif output_format == "json":
+            out = [dict(zip(headers, row)) for row in rows]
+            click.echo(json.dumps(out, indent=2, default=str))
+        elif output_format == "csv":
+            writer = csv.writer(sys.stdout)
+            writer.writerow(headers)
+            writer.writerows(rows)
 
-    if output_format == "table":
-        click.echo(" | ".join(headers))
-        click.echo("-" * (len(" | ".join(headers)) + 20))
-        for row in rows:
-            click.echo(" | ".join(str(c) for c in row))
-    elif output_format == "json":
-        out = [dict(zip(headers, row)) for row in rows]
-        click.echo(json.dumps(out, indent=2, default=str))
-    elif output_format == "csv":
-        writer = csv.writer(sys.stdout)
-        writer.writerow(headers)
-        writer.writerows(rows)
+    finally:
+        store.close()

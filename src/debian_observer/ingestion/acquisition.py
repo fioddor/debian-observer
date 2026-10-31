@@ -94,7 +94,8 @@ def _stable_records_checksum(records: list[dict[str, Any]]) -> str:
     ``observed_at`` is excluded (stripped per record) because it is
     generated at acquisition time — including it makes every acquisition
     of identical data hash differently, which kills the idempotency
-    contract of :meth:`AcquisitionService.validate`.
+    contract of :meth:`AcquisitionService.validate`. Other transport
+    metadata keys may be added to the exclusion list as they appear.
     """
     stable = [
         {k: v for k, v in record.items() if k != "observed_at"}
@@ -337,7 +338,7 @@ class MockDebianDataSource(DataSource):
         return [dict(r) for r in self._records]
 
     def compute_checksum(self) -> str:
-        return _stable_records_checksum(self._records)
+        return _compute_sha256(self._records)
 
     def record_count(self) -> int:
         # Deterministic count without generating all records

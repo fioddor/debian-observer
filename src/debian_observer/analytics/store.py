@@ -50,20 +50,57 @@ class ExecutionStore:
         self._init_db()
 
     def _init_db(self) -> None:
-        """Create the ``execution_runs`` table if it does not exist.
+        """Create or MIGRATE the ``execution_runs`` table.
 
-        Applies ``COMMENT ON COLUMN`` for every column so the schema is
-        self-documenting.
+        CREATE TABLE IF NOT EXISTS does not add columns: a database
+        written by an older release (fewer columns) is migrated with
+        ALTER TABLE ... ADD COLUMN before the COMMENTs run — opening an
+        existing database must never crash (execution-report CLI).
+        COMMENT ON COLUMN interpolates the _COLUMN_DEFS comment text:
+        escape single quotes (a comment with an apostrophe is a
+        ParserException otherwise).
         """
         columns_sql = ",\n    ".join(
             f"{name} {dtype}" for name, dtype, _ in _COLUMN_DEFS
         )
         self._con.execute(f"CREATE TABLE IF NOT EXISTS execution_runs (\n    {columns_sql}\n)")
 
+        # Schema migration: add any column an older release did not have.
+        existing = {
+            row[0]
+            for row in self._con.execute(
+                "SELECT column_name FROM information_schema.columns"
+                " WHERE table_name = 'execution_runs'"
+            ).fetchall()
+        }
+        for name, dtype, _ in _COLUMN_DEFS:
+            if name not in existing:
+                self._con.execute(
+                    f"ALTER TABLE execution_runs ADD COLUMN {name} {dtype}"
+                )
+
         for name, _, comment in _COLUMN_DEFS:
+            # DuckDB does NOT accept bound parameters (?) in COMMENT ON
+            # COLUMN — escape single quotes the SQL way ('' per ').
+            safe = comment.replace("'", "''")
             self._con.execute(
-                f"COMMENT ON COLUMN execution_runs.{name} IS '{comment}'"
+                f"COMMENT ON COLUMN execution_runs.{name} IS '{safe}'"
             )
+
+    def close(self) -> None:
+        """Close the DuckDB connection (idempotent).
+
+        The connection is a file handle on real databases (:memory: in
+        tests hides it) — the CLI must not leak one per invocation.
+        """
+        closer = getattr(self._con, "close", None)
+        if closer is not None:
+            try:
+                closer()
+            except Exception:
+                # DuckDB raises on double close of a closed connection in
+                # some versions — idempotency is the contract here.
+                pass
 
     def insert(self, record: ExecutionRecord) -> str:
         """Insert a record and return its ``run_id``."""

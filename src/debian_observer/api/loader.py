@@ -43,66 +43,62 @@ class EventLoader:
             Number of events loaded.
         """
         storage = AnalyticalStorage(parquet_dir)
+        # Bind by NAME, never by position: the events view is read_parquet(...,
+        # union_by_name=true) — column ORDER (and presence, for legacy 13/16-col
+        # files) is an implementation detail of each file, not a contract.
+        # SELECT * plus the cursor description gives the REAL names of what was
+        # read; the canonical dict lookup below fills None for legacy misses.
         try:
-            rows = storage.query("SELECT * FROM events").fetchall()
+            cursor = storage.query("SELECT * FROM events")
+            rows = cursor.fetchall()
+            columns = [d[0] for d in cursor.description]
         except RuntimeError:
             return 0
 
         count = 0
         for row in rows:
-            event = self._row_to_event(row)
+            record = dict(zip(columns, row))
+            event = self._row_to_event(record)
             if event:
                 self._ingest_event(event)
                 count += 1
         return count
 
-    def _row_to_event(self, row: tuple[Any, ...]) -> EventEnvelope | None:
-        """Convert a DuckDB result row back to an EventEnvelope."""
-        # DuckDB column order matches the Parquet schema:
-        # event_id, event_type, source, entity_id, observed_at, effective_at,
-        # ingestion_run_id, package_id, source_package, version,
-        # distribution, release, architecture, component, section,
-        # priority, suite. suite is the last column: files written
-        # before it existed (13- and 16-column legacy layouts) load
-        # with suite as None (DuckDB union_by_name fills NULL for
-        # missing columns).
-        if len(row) < 13:
+    def _row_to_event(self, record: dict[str, Any]) -> EventEnvelope | None:
+        """Convert a row (bound by column name) back to an EventEnvelope.
+
+        The row arrives as a dict keyed by the canonical column names
+        (see load_from_parquet); legacy files miss columns (13/16-col
+        layouts) and get None via the same SELECT.
+        """
+        if not record.get("event_id"):
             return None
-        legacy = len(row) < 16
-        suite = None if len(row) < 17 else row[16]
-        source_package = None if legacy else row[8]
-        version = row[8] if legacy else row[9]
-        distribution = row[9] if legacy else row[10]
-        release = None if legacy else row[11]
-        architecture = row[10] if legacy else row[12]
-        component = row[11] if legacy else row[13]
-        section = None if legacy else row[14]
-        priority = row[12] if legacy else row[15]
+        g = record.get
         return EventEnvelope(
-            event_id=row[0],
-            event_type=row[1],
-            source=row[2],
-            entity_id=row[3],
-            observed_at=row[4],
-            effective_at=row[5],
-            ingestion_run_id=row[6],
+            event_id=g("event_id"),
+            event_type=g("event_type"),
+            source=g("source"),
+            entity_id=g("entity_id"),
+            observed_at=g("observed_at"),
+            effective_at=g("effective_at"),
+            ingestion_run_id=g("ingestion_run_id"),
             payload={
-                "package_id": row[7] or "",
-                "source_package": source_package,
-                "version": version or "",
-                "distribution": distribution or "",
-                "release": release,
-                "suite": suite,
-                "architecture": architecture or "",
-                "component": component,
-                "section": section,
-                "priority": priority,
+                "package_id": g("package_id") or "",
+                "source_package": g("source_package"),
+                "version": g("version") or "",
+                "distribution": g("distribution") or "",
+                "release": g("release"),
+                "suite": g("suite"),
+                "architecture": g("architecture") or "",
+                "component": g("component"),
+                "section": g("section"),
+                "priority": g("priority"),
                 "observation": {
-                    "source": row[2] or "",
-                    "observed_at": row[4] or "",
-                    "effective_at": row[5] or "",
+                    "source": g("source") or "",
+                    "observed_at": g("observed_at") or "",
+                    "effective_at": g("effective_at") or "",
                     "schema_version": 1,
-                    "ingestion_run_id": row[6] or "",
+                    "ingestion_run_id": g("ingestion_run_id") or "",
                 },
             },
         )

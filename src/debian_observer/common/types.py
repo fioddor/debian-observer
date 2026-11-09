@@ -24,6 +24,8 @@ EventType = Literal[
     "PackageVersionObserved",
     "ReleaseObserved",
     "MigrationObserved",
+    "DependencyObserved",
+    "PopconObserved",
 ]
 
 # ---------------------------------------------------------------------------

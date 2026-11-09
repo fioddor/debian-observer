@@ -22,6 +22,8 @@ DEFAULT_SUBJECTS = [
     "debian.package_version.observed",
     "debian.release.observed",
     "debian.migration.observed",
+    "debian.dependency.observed",
+    "debian.popcon.observed",
 ]
 
 # Default stream limits. Adjusted for small-scale deployment.
@@ -84,6 +86,8 @@ class StreamConfig:
             "PackageVersionObserved": "debian.package_version.observed",
             "ReleaseObserved": "debian.release.observed",
             "MigrationObserved": "debian.migration.observed",
+            "DependencyObserved": "debian.dependency.observed",
+            "PopconObserved": "debian.popcon.observed",
         }
         return mapping.get(event_type)
 

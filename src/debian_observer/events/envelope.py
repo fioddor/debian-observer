@@ -272,9 +272,11 @@ class EventEnvelope(BaseModel):
             work directly with ``self.payload`` if they prefer.
         """
         from debian_observer.events.types import (
+            DependencyObservedPayload,
             MigrationObservedPayload,
             PackageObservedPayload,
             PackageVersionObservedPayload,
+            PopconObservedPayload,
             ReleaseObservedPayload,
         )
 
@@ -283,6 +285,8 @@ class EventEnvelope(BaseModel):
             "PackageVersionObserved": PackageVersionObservedPayload,
             "ReleaseObserved": ReleaseObservedPayload,
             "MigrationObserved": MigrationObservedPayload,
+            "DependencyObserved": DependencyObservedPayload,
+            "PopconObserved": PopconObservedPayload,
         }
 
         model_cls = mapping.get(self.event_type)

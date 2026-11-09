@@ -20,6 +20,13 @@ Event types defined here:
 - ``PackageVersionObserved``   — a specific version was observed
 - ``ReleaseObserved``          — a release/suite was observed
 - ``MigrationObserved``        — a migration fact was observed
+
+Event types added by the dependency analytics release:
+
+- ``DependencyObserved``      — one dependency clause of a binary
+                                 package version was observed
+- ``PopconObserved``          — popcon counters of a package were
+                                 observed
 """
 
 from __future__ import annotations
@@ -367,3 +374,93 @@ class MigrationObservedPayload(BaseModel):
         if not value or not isinstance(value, str):
             raise ValueError("Field must be a non-empty string")
         return value
+
+
+# ---------------------------------------------------------------------------
+# Dependency analytics payloads
+# ---------------------------------------------------------------------------
+
+
+class DependencyObservedPayload(BaseModel):
+    """Payload for ``DependencyObserved`` events.
+
+    One dependency clause of a binary package version, as written
+    in the source field. The eventizer observes: the clause
+    travels verbatim (``condition``), with its position
+    discriminator (``clause_index``), whether it holds alternatives
+    (``is_complex``) and how many (``alternatives``). No resolution
+    fields here: which package version the clause points at is a
+    downstream, coordinate-dependent question. Field meanings live
+    on the ``Field`` descriptions.
+    """
+
+    model_config = FrozenModelConfig
+
+    observation: ObservationMeta = Field(
+        ..., description="Provenance metadata."
+    )
+    distribution: str | None = Field(
+        default=None, description="Distribution family where observed."
+    )
+    release: str | None = Field(
+        default=None, description="Release/pocket where observed."
+    )
+    architecture: str | None = Field(
+        default=None, description="Architecture where observed."
+    )
+    component: str | None = Field(
+        default=None, description="Archive component of the depender."
+    )
+    package: str = Field(
+        ..., description="Binary package name of the depender."
+    )
+    version: str = Field(..., description="Version of the depender.")
+    kind: str = Field(
+        ..., description="Relationship field: depends | pre-depends."
+    )
+    clause_index: int = Field(
+        ...,
+        description=(
+            "Position discriminator of the clause within its field "
+            "(uniqueness, not order)."
+        ),
+    )
+    condition: str = Field(
+        ...,
+        description="The clause text, verbatim (ends trimmed).",
+    )
+    is_complex: bool = Field(
+        ...,
+        description="Whether the clause holds alternatives ('|').",
+    )
+    alternatives: int = Field(
+        ...,
+        description=(
+            "How many alternatives the clause holds (1 if simple)."
+        ),
+    )
+
+
+class PopconObservedPayload(BaseModel):
+    """Payload for ``PopconObserved`` events.
+
+    Popcon counters of one binary package name (no version, no
+    coordinate). Used as an impact weight. Field meanings live on
+    the ``Field`` descriptions.
+    """
+
+    model_config = FrozenModelConfig
+
+    observation: ObservationMeta = Field(
+        ..., description="Provenance metadata."
+    )
+    package: str = Field(..., description="Binary package name.")
+    insts: int = Field(
+        default=0, description="Number of installations."
+    )
+    vote: int = Field(default=0, description="Number of votes.")
+    olde: int = Field(default=0, description="Number of old reports.")
+    recent: int = Field(default=0, description="Number of recent reports.")
+    nofiles: int = Field(
+        default=0, description="Number of nofiles reports."
+    )

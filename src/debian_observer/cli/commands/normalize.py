@@ -17,6 +17,11 @@ from pathlib import Path
 
 import click
 
+from debian_observer.storage.parquet import (
+    IncrementalParquetWriter,
+    EVENTS_DIR_DEFAULT,
+)
+
 from debian_observer.analytics.models import ExecutionRecord
 from debian_observer.analytics.store import ExecutionStore
 from debian_observer.ingestion.manifest import load_manifest
@@ -221,10 +226,11 @@ def normalize_artifacts(
     "--events-dir",
     "events_dir",
     type=click.Path(path_type=Path),
-    default=None,
+    default=Path(EVENTS_DIR_DEFAULT),
     help=(
-        "Write the Parquet event log here: one directory per event "
-        "type, one file per run (the prosumers' input)."
+        "Write the Parquet event log here: one directory per "
+        "event type, one file per run (default: "
+        + EVENTS_DIR_DEFAULT + "), the prosumers' input."
     ),
 )
 

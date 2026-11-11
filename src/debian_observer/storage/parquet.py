@@ -57,6 +57,11 @@ _DEFAULT_SCHEMA = pa.schema(
 )
 
 #: Rows per Parquet row group (spec §9.2: a fixed size, e.g. 100 k).
+#: Default directory of the observation event log (the prosumers'
+#: input): one directory per event type, one file per run. Every
+#: --events-dir flag defaults here.
+EVENTS_DIR_DEFAULT = "data/observed"
+
 #: Incremental writers flush one row group per buffer, so peak
 #: memory is bounded by the row group, not by the run.
 ROW_GROUP_SIZE = 100_000

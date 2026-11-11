@@ -7,12 +7,13 @@ from __future__ import annotations
 
 import click
 
+from debian_observer.storage.parquet import EVENTS_DIR_DEFAULT
 from debian_observer.storage.analytical import AnalyticalStorage
 
 
 @click.command(name="status")
 @click.option(
-    "--events-dir", default="data/events", help="Directory with the event log (default: data/events)."
+    "--events-dir", default=EVENTS_DIR_DEFAULT, help="Directory with the event log (default: " + EVENTS_DIR_DEFAULT + ")."
 )
 def status(events_dir: str) -> None:
     """Show system status and data summary."""

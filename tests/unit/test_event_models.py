@@ -573,3 +573,231 @@ class TestPackageVersionObservedSuiteField:
             observation=obs,
         )
         assert payload.suite == "stable"
+
+
+"""Tests for the dependency/popcon event types and their plumbing.
+
+``DependencyObserved`` and ``PopconObserved`` are registered in
+every place the older event types are: the ``EventType`` literal,
+the payload models, ``get_payload_model``, the NATS subjects,
+and the Parquet event-log schemas (one per event type).
+"""
+
+
+from datetime import datetime, timezone
+
+import pyarrow as pa
+
+from debian_observer.common.types import EventType
+from debian_observer.events.envelope import EventEnvelope
+from debian_observer.events.types import (
+    DependencyObservedPayload,
+    ObservationMeta,
+    PopconObservedPayload,
+)
+from debian_observer.messaging.config import StreamConfig
+from debian_observer.storage.parquet import (
+    EVENT_TYPE_SCHEMAS,
+    event_type_directory,
+    schema_for_event_type,
+)
+
+
+def _meta() -> ObservationMeta:
+    now = datetime.now(timezone.utc)
+    return ObservationMeta(
+        source="udddump",
+        observed_at=now,
+        effective_at=now,
+        ingestion_run_id="run-001",
+    )
+
+
+@pytest.fixture()
+def dependency_payload() -> DependencyObservedPayload:
+    return DependencyObservedPayload(
+        observation=_meta(),
+        distribution="debian",
+        release="trixie",
+        architecture="amd64",
+        component="main",
+        package="libhello",
+        version="1.0-1",
+        kind="depends",
+        clause_index=0,
+        condition="libc6 (>= 2.36)",
+        is_complex=False,
+        alternatives=1,
+    )
+
+
+@pytest.fixture()
+def popcon_payload() -> PopconObservedPayload:
+    return PopconObservedPayload(
+        observation=_meta(),
+        package="libhello",
+        insts=100,
+        vote=50,
+        olde=10,
+        recent=5,
+        nofiles=1,
+    )
+
+
+class TestEventTypeLiteral:
+    def test_literal_accepts_the_new_types(self) -> None:
+        types: list[EventType] = [
+            "PackageVersionObserved",
+            "DependencyObserved",
+            "PopconObserved",
+        ]
+        assert len(types) == 3
+
+
+class TestDependencyObservedPayload:
+    def test_carries_the_clause_fields(self, dependency_payload) -> None:
+        assert dependency_payload.kind == "depends"
+        assert dependency_payload.clause_index == 0
+        assert dependency_payload.condition == "libc6 (>= 2.36)"
+        assert dependency_payload.is_complex is False
+        assert dependency_payload.alternatives == 1
+
+    def test_condition_is_verbatim(self) -> None:
+        # The eventizer observes: the condition travels as written
+        # inside the clause (inner whitespace kept), ends trimmed.
+        payload = DependencyObservedPayload(
+            observation=_meta(),
+            distribution="debian",
+            release="trixie",
+            architecture="amd64",
+            component="main",
+            package="pkg",
+            version="1.0",
+            kind="depends",
+            clause_index=2,
+            condition="python3:any (>= 3.11)",
+            is_complex=True,
+            alternatives=2,
+        )
+        assert payload.condition == "python3:any (>= 3.11)"
+
+    def test_no_resolution_fields(self, dependency_payload) -> None:
+        # The payload carries NO target_package/constraint_op/
+        # constraint_version: the eventizer does not resolve.
+        assert not hasattr(dependency_payload, "target_package")
+        assert not hasattr(dependency_payload, "constraint_op")
+        assert not hasattr(dependency_payload, "constraint_version")
+
+    def test_kinds(self) -> None:
+        for kind in ("depends", "pre-depends"):
+            payload = DependencyObservedPayload(
+                observation=_meta(),
+                distribution="debian",
+                release="trixie",
+                architecture="amd64",
+                component="main",
+                package="p",
+                version="1.0",
+                kind=kind,
+                clause_index=0,
+                condition="x",
+                is_complex=False,
+                alternatives=1,
+            )
+            assert payload.kind == kind
+
+    def test_frozen(self, dependency_payload) -> None:
+        with pytest.raises(Exception):
+            dependency_payload.kind = "depends2"
+
+    def test_extra_forbidden(self) -> None:
+        with pytest.raises(Exception):
+            DependencyObservedPayload(
+                observation=_meta(),
+                package="p",
+                version="1.0",
+                kind="depends",
+                clause_index=0,
+                condition="x",
+                unknown_field=1,
+            )
+
+
+class TestPopconObservedPayload:
+    def test_counters(self, popcon_payload) -> None:
+        assert popcon_payload.insts == 100
+        assert popcon_payload.vote == 50
+        assert popcon_payload.olde == 10
+        assert popcon_payload.recent == 5
+        assert popcon_payload.nofiles == 1
+
+    def test_frozen(self, popcon_payload) -> None:
+        with pytest.raises(Exception):
+            popcon_payload.insts = 0
+
+
+class TestPlumbing:
+    def test_get_payload_model_resolves_the_new_types(
+        self, dependency_payload, popcon_payload
+    ) -> None:
+        env1 = EventEnvelope.from_payload(
+            event_type="DependencyObserved",
+            source="udddump",
+            entity_id="libhello:amd64",
+            payload_model=dependency_payload,
+            ingestion_run_id="run-001",
+        )
+        assert isinstance(env1.get_payload_model(), DependencyObservedPayload)
+
+        env2 = EventEnvelope.from_payload(
+            event_type="PopconObserved",
+            source="udddump",
+            entity_id="libhello",
+            payload_model=popcon_payload,
+            ingestion_run_id="run-001",
+        )
+        assert isinstance(env2.get_payload_model(), PopconObservedPayload)
+
+    def test_subjects_registered(self) -> None:
+        config = StreamConfig()
+        assert config.subject_for("DependencyObserved") == (
+            "debian.dependency.observed"
+        )
+        assert config.subject_for("PopconObserved") == "debian.popcon.observed"
+        assert "debian.dependency.observed" in config.subjects
+        assert "debian.popcon.observed" in config.subjects
+
+    def test_parquet_schemas_per_type(self) -> None:
+        for event_type in ("DependencyObserved", "PopconObserved"):
+            schema = schema_for_event_type(event_type)
+            assert isinstance(schema, pa.Schema)
+            assert event_type in EVENT_TYPE_SCHEMAS
+        dep = schema_for_event_type("DependencyObserved")
+        assert "kind" in dep.names
+        assert "clause_index" in dep.names
+        assert "condition" in dep.names
+        assert "is_complex" in dep.names
+        assert "alternatives" in dep.names
+        pop = schema_for_event_type("PopconObserved")
+        assert "insts" in pop.names
+        assert "vote" in pop.names
+
+    def test_event_type_directories(self) -> None:
+        assert (
+            event_type_directory("DependencyObserved")
+            == "dependency_observed"
+        )
+        assert event_type_directory("PopconObserved") == "popcon_observed"
+
+    def test_entity_id_convention(self, dependency_payload) -> None:
+        # DependencyObserved → package_id of the depender
+        # (<package>:<architecture>, as PackageVersionObserved);
+        # PopconObserved → <package> (popcon has no architecture).
+        env = EventEnvelope.from_payload(
+            event_type="DependencyObserved",
+            source="udddump",
+            entity_id=f"libhello:amd64",
+            payload_model=dependency_payload,
+            ingestion_run_id="run-001",
+        )
+        assert env.entity_id == "libhello:amd64"

@@ -32,6 +32,8 @@ FLAT_SUBJECTS = {
     "debian.package_version.observed",
     "debian.release.observed",
     "debian.migration.observed",
+    "debian.dependency.observed",
+    "debian.popcon.observed",
 }
 
 

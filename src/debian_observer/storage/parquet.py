@@ -6,10 +6,9 @@ analytical scans.
 Design notes:
 - One Parquet file per ingestion run (immutable, reproducible).
 - Nested payloads are flattened for columnar storage.
-- The per-event-type event log (one directory per event type,
-  one file per run) and the incremental row-group writer (ADR-015:
-  eventization must not materialize; peak memory bounded by the row
-  group, not by the run).
+- One directory per event type, one file per run; the incremental
+  row-group writer bounds peak memory by the row group, not by the
+  run (ADR-015: eventization must not materialize).
 """
 
 from __future__ import annotations
@@ -26,7 +25,7 @@ import pyarrow.parquet as pq
 from debian_observer.events import EventEnvelope
 
 # ---------------------------------------------------------------------------
-# Schema definition (PackageVersionObserved — the core event type)
+# Schema definition (PackageVersionObserved)
 # ---------------------------------------------------------------------------
 
 # Writer-owned schema (ADR-011): the event file layout lives
@@ -68,16 +67,95 @@ ROW_GROUP_SIZE = 100_000
 
 
 # ---------------------------------------------------------------------------
-# Per-event-type event log (spec §9.1, ADR-011 writer-owned serialization)
+# Per-event-type event log (ADR-011 writer-owned serialization)
 # ---------------------------------------------------------------------------
 
 # One directory per event type (snake_case of the type name), one
 # file per run: a read is a plain glob of one schema-homogeneous
-# directory — never union_by_name (mandatory contract, spec §9.1).
-# `_DEFAULT_SCHEMA` is the PackageVersionObserved schema.
+# directory — never union_by_name.
+# The `_DEFAULT_SCHEMA` IS the PackageVersionObserved schema;
+# every other type registers its own (envelope columns + flattened
+# payload columns).
+_DEPENDENCY_OBSERVED_SCHEMA = pa.schema(
+    [
+        ("event_id", pa.string()),
+        ("event_type", pa.string()),
+        ("source", pa.string()),
+        ("entity_id", pa.string()),
+        ("observed_at", pa.string()),
+        ("effective_at", pa.string()),
+        ("ingestion_run_id", pa.string()),
+        ("distribution", pa.string()),
+        ("release", pa.string()),
+        ("architecture", pa.string()),
+        ("component", pa.string()),
+        ("package", pa.string()),
+        ("version", pa.string()),
+        ("kind", pa.string()),
+        ("clause_index", pa.int64()),
+        ("condition", pa.string()),
+        ("is_complex", pa.bool_()),
+        ("alternatives", pa.int64()),
+    ]
+)
+
+_POPCON_OBSERVED_SCHEMA = pa.schema(
+    [
+        ("event_id", pa.string()),
+        ("event_type", pa.string()),
+        ("source", pa.string()),
+        ("entity_id", pa.string()),
+        ("observed_at", pa.string()),
+        ("effective_at", pa.string()),
+        ("ingestion_run_id", pa.string()),
+        ("package", pa.string()),
+        ("insts", pa.int64()),
+        ("vote", pa.int64()),
+        ("olde", pa.int64()),
+        ("recent", pa.int64()),
+        ("nofiles", pa.int64()),
+    ]
+)
+
 EVENT_TYPE_SCHEMAS: dict[str, pa.Schema] = {
     "PackageVersionObserved": _DEFAULT_SCHEMA,
+    "DependencyObserved": _DEPENDENCY_OBSERVED_SCHEMA,
+    "PopconObserved": _POPCON_OBSERVED_SCHEMA,
 }
+
+
+def _flatten_payload_row(event: EventEnvelope, schema: pa.Schema) -> dict:
+    """Flatten any event into a row over its registered schema.
+
+    Envelope columns first; payload fields fill the remaining
+    schema columns by name. Payloads loaded as JSON strings are
+    parsed first.
+    """
+    payload = event.payload
+    if isinstance(payload, str):
+        payload = json.loads(payload)
+    elif not isinstance(payload, dict):
+        payload = {}
+    row: dict[str, Any] = {
+        "event_id": str(event.event_id),
+        "event_type": event.event_type,
+        "source": event.source,
+        "entity_id": event.entity_id,
+        "observed_at": event.observed_at.isoformat(),
+        "effective_at": event.effective_at.isoformat(),
+        "ingestion_run_id": event.ingestion_run_id or "",
+    }
+    for name in schema.names:
+        if name in row:
+            continue
+        value = payload.get(name)
+        if name in ("clause_index", "alternatives") and value is None:
+            value = 0
+        elif name in ("insts", "vote", "olde", "recent", "nofiles"):
+            if value is None:
+                value = 0
+        row[name] = value
+    return row
 
 
 def event_type_directory(event_type: str) -> str:
@@ -115,10 +193,7 @@ class IncrementalParquetWriter:
 
     Buffers events, flushes a Parquet row group whenever the buffer
     reaches ``row_group_size``, finalizes the file on close. Peak
-    memory stays flat in the number of events (ADR-015): the full
-    ``packages`` table (1,497,724 events) measured 4.9 GB peak RSS
-    when the event list was materialized, and flat when streamed
-    (2026-11-08, E1-preview on ghostell).
+    memory stays flat in the number of events (ADR-015).
     """
 
     def __init__(
@@ -205,9 +280,9 @@ class ParquetWriter:
 
         Args:
             output_dir: Directory where Parquet files will be stored.
-            schema: Optional PyArrow schema. Uses the module's default schema if not provided.
+            schema: Optional PyArrow schema. Uses the package-versions schema if not provided.
             row_group_size: Rows per row group for the incremental
-                writer (spec §9.2: a fixed size, e.g. 100 k).
+                writer.
         """
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -215,7 +290,25 @@ class ParquetWriter:
         self.row_group_size = row_group_size
 
     def _event_to_row(self, event: EventEnvelope) -> dict[str, Any]:
-        """Flatten an EventEnvelope into a Parquet-compatible row dict."""
+        """Flatten an EventEnvelope into a Parquet-compatible row dict.
+
+        The row shape follows the schema registered for the event
+        type: every type but PackageVersionObserved flattens its
+        own payload fields (its schema), which overlaps the
+        original mapping for the rest.
+        """
+        if event.event_type in EVENT_TYPE_SCHEMAS and (
+            event.event_type != "PackageVersionObserved"
+        ):
+            return _flatten_payload_row(
+                event, EVENT_TYPE_SCHEMAS[event.event_type]
+            )
+        return self._event_to_row_package_version(event)
+
+    def _event_to_row_package_version(
+        self, event: EventEnvelope
+    ) -> dict[str, Any]:
+        """The PackageVersionObserved row mapping."""
         payload = event.payload
         if isinstance(payload, str):
             payload = json.loads(payload)

@@ -1,0 +1,34 @@
+Reference counts re-measured 2026-11-09 (T3 implementation) against
+the local UDD restore (udd-postgresql container, udd.dump of
+2026-10-02). Queries: benchmarks/results/reference-counts.sql.
+Run: docker cp reference-counts.sql udd-postgresql:/tmp/
+     docker exec udd-postgresql psql -U udd -d udd -f /tmp/reference-counts.sql -At
+
+measure                          | value
+---------------------------------+--------
+trixie_amd64_all_packages        |   70341
+trixie_amd64_all_depends_clauses |  313761
+trixie_amd64_all_complex_clauses |    6929
+trixie_amd64_all_pre_depends_clauses|  1338
+all_depends_clauses              | 8376616
+all_pre_depends_clauses          |   28607
+graph_coordinates                |      37
+popcon_rows                      |  224197
+
+Against the eventized output (Parquet event log of the same dump,
+--eventizer dependencies + popcon, 2026-11-09):
+
+- total DependencyObserved events: 8,405,223 (= 8,376,616 depends
+  + 28,607 pre-depends clauses: exact);
+- trixie amd64+all by kind/is_complex:
+    depends    simple   306,832
+    depends    complex    6,929   (sum: 313,761 - exact)
+    pre-depends simple   1,302
+    pre-depends complex     36   (sum: 1,338 - exact)
+- PopconObserved events: 224,197 (exact);
+- logical PK (distribution, release, architecture, package,
+  version, kind, clause_index): 0 collisions over the full output.
+
+Run measurements (ghostell, 4 CPU, 8 GB):
+- dependencies: wall 776.68 s, peak RSS 434.4 MiB, Parquet 513.6 MB
+- popcon:       wall  16.26 s, peak RSS 368.9 MiB, Parquet  16.8 MB

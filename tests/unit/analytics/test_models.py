@@ -74,6 +74,19 @@ def test_execution_record_defaults():
     assert record.metadata is None
 
 
+def test_execution_record_accepts_normalization_type():
+    """`normalization` is a first-class execution type: `normalize`
+    records its runs and `execution-report` must be able to report
+    them (the description of execution_type already promises it)."""
+    record = ExecutionRecord(
+        run_id="norm-001",
+        run_at=datetime(2026, 10, 29, 10, 0, 0, tzinfo=timezone.utc),
+        execution_type="normalization",
+        source_name="udd",
+    )
+    assert record.execution_type == "normalization"
+
+
 def test_execution_record_invalid_type_rejected():
     """execution_type must be a known value (validated by Literal)."""
     with pytest.raises(ValueError):

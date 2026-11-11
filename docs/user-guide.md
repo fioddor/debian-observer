@@ -295,6 +295,11 @@ from each artifact's manifest sidecar (`.manifest.json`):
 Run `debian-observer normalize <surface> --help` for all options
 (output file, invalid-records file, udddump filters).
 
+Each `normalize` invocation records a `normalization` run (records,
+events, duration, throughput) into `execution_runs.duckdb` beside the
+directory of the artifacts it reads — the same analytics database
+`execution-report` reads; see the Execution report section.
+
 
 ## Validate raw records
 

@@ -11,6 +11,7 @@ services:
     build:
       context: ..
       dockerfile: .devcontainer/Dockerfile
+    image: deb-obs-devcontainer:latest
     container_name: debian-observer-dev
     hostname: deb-obs-dev
     stdin_open: true          # keeps STDIN open (like -i)

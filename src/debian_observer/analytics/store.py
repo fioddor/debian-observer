@@ -25,8 +25,10 @@ _COLUMN_DEFS: list[tuple[str, str, str]] = [
     ("events_produced", "INTEGER", "Domain events generated"),
     ("duration_seconds", "REAL", "Wall-clock time from start to completion"),
     ("throughput_rps", "REAL", "records_processed / duration_seconds (NULL if duration <= 0)"),
-    ("raw_bytes", "INTEGER", "Size of the raw artifact in bytes"),
-    ("parquet_bytes", "INTEGER", "Size of the Parquet output in bytes"),
+    # BIGINT: the real UDD dump artifact is 2,862,207,445 bytes —
+    # INTEGER overflowed on the first full-table run (2026-11-08).
+    ("raw_bytes", "BIGINT", "Size of the raw artifact in bytes"),
+    ("parquet_bytes", "BIGINT", "Size of the Parquet output in bytes"),
     ("raw_path", "TEXT", "Filesystem path to the raw artifact"),
     ("parquet_path", "TEXT", "Filesystem path to the Parquet output"),
     ("checksum", "TEXT", "SHA-256 of the raw artifact"),
@@ -77,6 +79,23 @@ class ExecutionStore:
             if name not in existing:
                 self._con.execute(
                     f"ALTER TABLE execution_runs ADD COLUMN {name} {dtype}"
+                )
+
+        # Type migration (2026-11-08): byte-count columns were INTEGER
+        # before the first real full-dump run overflowed them — widen
+        # an existing database in place before any insert lands.
+        for name, dtype, _ in _COLUMN_DEFS:
+            if not dtype.startswith("BIGINT"):
+                continue
+            current = self._con.execute(
+                "SELECT data_type FROM information_schema.columns"
+                " WHERE table_name = 'execution_runs'"
+                f" AND column_name = '{name}'"
+            ).fetchone()
+            if current and current[0].upper() == "INTEGER":
+                self._con.execute(
+                    f"ALTER TABLE execution_runs ALTER COLUMN {name}"
+                    " SET DATA TYPE BIGINT"
                 )
 
         for name, _, comment in _COLUMN_DEFS:

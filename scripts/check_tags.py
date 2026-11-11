@@ -32,7 +32,7 @@ import sys
 DEFAULT_EXPECTED = {
     "0.8rc": ["record execution benchmarks"],
     "R2T1": ["Add R2 spec"],
-    "R2T2": ["eventizers, Parquet event log"],
+    "R2T2": ["R2T2 ends at the events-dir default"],
     "R2T3": ["dependencies and popcon eventizers"],
     "R2T4": ["reverse table"],
 }

@@ -32,6 +32,7 @@ dependencies = [
     "pandas>=2.0",
     "pyarrow>=16.0",
     "duckdb>=0.10",
+    "python-debian>=0.1",
 ]
 
 [project.optional-dependencies]

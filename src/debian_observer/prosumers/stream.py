@@ -23,6 +23,13 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+def _glob_files(path: Path) -> list[Path]:
+    """Expand a glob pattern (a plain path returns itself)."""
+    import glob as _glob
+
+    return [Path(p) for p in _glob.glob(str(path))]
+
+
 # ---------------------------------------------------------------------------
 # Stream record: the universal envelope every prosumer sees.
 # ---------------------------------------------------------------------------
@@ -121,13 +128,30 @@ class FileSource(Source):
         self.path = Path(path)
         self._table: pa.Table | None = None
 
+    @staticmethod
+    def _resolve_files(path: Path) -> list[Path]:
+        """A file, a glob, or a directory of .parquet files."""
+        if path.is_dir():
+            files = sorted(path.glob("*.parquet"))
+            if not files:
+                raise FileNotFoundError(
+                    f"No .parquet files in directory: {path}"
+                )
+            return files
+        files = sorted(f for f in _glob_files(path) if f.is_file())
+        return files or [path]
+
+    def _iter_rows(self) -> Iterator[dict[str, Any]]:
+        for file in self._resolve_files(self.path):
+            if not file.exists():
+                raise FileNotFoundError(f"Source file not found: {file}")
+            table = pq.read_table(file)
+            df = table.to_pandas()
+            for _, row in df.iterrows():
+                yield row.to_dict()
+
     def __iter__(self) -> Iterator[Record]:
-        if not self.path.exists():
-            raise FileNotFoundError(f"Source file not found: {self.path}")
-        self._table = pq.read_table(self.path)
-        df = self._table.to_pandas()
-        for _, row in df.iterrows():
-            d = row.to_dict()
+        for d in self._iter_rows():
             meta = {k: v for k, v in d.items() if k in self._META_COLS}
             payload = {k: v for k, v in d.items() if k not in self._META_COLS}
             yield Record(
@@ -159,11 +183,18 @@ class FileSink(Sink):
             }
         )
 
+    def _target(self) -> Path:
+        """A directory target writes one file inside it."""
+        if self.path.is_dir():
+            return self.path / "sink.parquet"
+        return self.path
+
     def __exit__(self, *exc: Any) -> None:
         if not self._rows:
             return
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
+        target = self._target()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_suffix(".tmp")
         # Normalise: coerce None → ""
         clean = [
             {k: ("" if v is None else str(v)) for k, v in row.items()}
@@ -172,7 +203,8 @@ class FileSink(Sink):
         df = pd.DataFrame(clean)
         table = pa.Table.from_pandas(df)
         pq.write_table(table, tmp)
-        tmp.replace(self.path)
+        tmp.replace(target)
+        self.path = target
 
 
 # ---------------------------------------------------------------------------
@@ -210,6 +242,116 @@ class StreamSink(Sink):
 
 
 # ---------------------------------------------------------------------------
+# NATS implementations (subject streams)
+# ---------------------------------------------------------------------------
+
+
+class NatsSource(Source):
+    """Read Records from a NATS subject.
+
+    A test injects ``_client`` with the same async surface
+    (``async for msg in sub`` yielding JSON payloads); the real
+    client connects lazily on first iteration.
+    """
+
+    def __init__(
+        self,
+        subject: str,
+        url: str = "nats://localhost:4222",
+        _client: Any = None,
+    ) -> None:
+        self.subject = subject
+        self.url = url
+        self._client = _client
+        self._nc: Any = None
+
+    async def _subscribe(self) -> Any:
+        if self._client is not None:
+            return self._client
+        import nats
+
+        self._nc = await nats.connect(servers=[self.url])
+        return await self._nc.subscribe(self.subject)
+
+    def __iter__(self) -> Iterator[Record]:
+        import asyncio
+
+        async def _run() -> list[Record]:
+            sub = await self._subscribe()
+            records = []
+            async for msg in sub:
+                data = msg.data if hasattr(msg, "data") else msg
+                if isinstance(data, bytes):
+                    data = data.decode()
+                records.append(Record.from_dict(json.loads(data)))
+            return records
+
+        return iter(asyncio.run(_run()))
+
+    def __enter__(self) -> "NatsSource":
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        if self._nc is not None:
+            import asyncio
+
+            asyncio.run(self._nc.drain())
+
+
+class NatsSink(Sink):
+    """Publish each Record as one NATS message (flushed per emit)."""
+
+    def __init__(
+        self,
+        subject: str,
+        url: str = "nats://localhost:4222",
+        _client: Any = None,
+    ) -> None:
+        self.subject = subject
+        self.url = url
+        self._client = _client
+        self._nc: Any = None
+
+    def _ensure_client(self) -> Any:
+        """The client to publish through (sync: tests inject one)."""
+        return self._client
+
+    def emit(self, record: Record) -> None:
+        import asyncio
+
+        async def _publish(client: Any) -> None:
+            await client.publish(
+                self.subject,
+                json.dumps(record.to_dict(), default=str).encode(),
+            )
+
+        client = self._ensure_client()
+        if client is None:
+            import nats
+
+            async def _connect_and_publish() -> None:
+                self._nc = await nats.connect(servers=[self.url])
+                await self._nc.publish(
+                    self.subject,
+                    json.dumps(record.to_dict(), default=str).encode(),
+                )
+                await self._nc.flush()
+
+            asyncio.run(_connect_and_publish())
+        else:
+            asyncio.run(_publish(client))
+
+    def __enter__(self) -> "NatsSink":
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        if self._nc is not None:
+            import asyncio
+
+            asyncio.run(self._nc.drain())
+
+
+# ---------------------------------------------------------------------------
 # Factory helpers (used by CLI parsers)
 # ---------------------------------------------------------------------------
 
@@ -219,16 +361,22 @@ def open_source(
     file_in: str | Path | None = None,
     stream_in: bool = False,
     stream: Any = sys.stdin,
+    nats_url: str | None = None,
+    nats_subject: str | None = None,
 ) -> Source:
     """Return a Source based on the given flags.
 
     Exactly one of ``file_in`` or ``stream_in`` must be provided.
+    ``--stream-in`` reads stdio ND-JSON, unless ``nats_url`` and
+    ``nats_subject`` are given: then it reads a NATS subject.
     """
     if file_in and stream_in:
         raise ValueError("Cannot use both --file-in and --stream-in")
     if file_in:
         return FileSource(file_in)
     if stream_in:
+        if nats_url and nats_subject:
+            return NatsSource(subject=nats_subject, url=nats_url)
         return StreamSource(stream)
     raise ValueError("Must provide --file-in or --stream-in")
 
@@ -238,15 +386,21 @@ def open_sink(
     file_out: str | Path | None = None,
     stream_out: bool = False,
     stream: Any = sys.stdout,
+    nats_url: str | None = None,
+    nats_subject: str | None = None,
 ) -> Sink:
     """Return a Sink based on the given flags.
 
     Exactly one of ``file_out`` or ``stream_out`` must be provided.
+    ``--stream-out`` writes stdio ND-JSON, unless ``nats_url`` and
+    ``nats_subject`` are given: then it publishes to a NATS subject.
     """
     if file_out and stream_out:
         raise ValueError("Cannot use both --file-out and --stream-out")
     if file_out:
         return FileSink(file_out)
     if stream_out:
+        if nats_url and nats_subject:
+            return NatsSink(subject=nats_subject, url=nats_url)
         return StreamSink(stream)
     raise ValueError("Must provide --file-out or --stream-out")

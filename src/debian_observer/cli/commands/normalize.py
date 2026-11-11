@@ -10,10 +10,15 @@ One subcommand per raw surface (ADR-012 amendment, 2026-10-23):
 from __future__ import annotations
 
 import json
+import time
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 import click
 
+from debian_observer.analytics.models import ExecutionRecord
+from debian_observer.analytics.store import ExecutionStore
 from debian_observer.ingestion.manifest import load_manifest
 from debian_observer.ingestion.raw import read_raw_artifact
 from debian_observer.normalization.normalizer import Normalizer
@@ -60,6 +65,61 @@ def _write_invalid(invalid, invalid_file) -> int:
     for record in invalid:
         invalid_file.write(json.dumps(record) + "\n")
     return len(invalid)
+
+
+def _record_execution(
+    *,
+    artifact: Path,
+    source_name: str,
+    records_processed: int,
+    events_produced: int,
+    invalid_count: int,
+    duration: float,
+    checksum: str | None = None,
+    records_requested: int | None = None,
+    metadata: dict | None = None,
+) -> None:
+    """Persist a normalization ExecutionRecord.
+
+    The database follows the artifact: runs land in
+    ``execution_runs.duckdb`` beside the directory of the artifact
+    being normalized — the same convention as the ingestion pipeline
+    (``raw_dir.parent``), so artifacts in one directory share one
+    analytics database wherever they live.
+    """
+    import platform
+
+    throughput = None
+    if duration > 0 and records_processed:
+        throughput = records_processed / duration
+
+    host_info = {
+        "hostname": platform.node(),
+        "cpu_count": platform.processor() or "unknown",
+        "python_version": platform.python_version(),
+    }
+
+    record = ExecutionRecord(
+        run_id=f"norm-{uuid.uuid4().hex[:12]}",
+        run_at=datetime.now(timezone.utc),
+        execution_type="normalization",
+        source_name=source_name,
+        records_requested=records_requested,
+        records_processed=records_processed,
+        events_produced=events_produced,
+        duration_seconds=duration,
+        throughput_rps=throughput,
+        raw_bytes=artifact.stat().st_size,
+        raw_path=str(artifact),
+        checksum=checksum,
+        error_count=invalid_count,
+        host_info=json.dumps(host_info),
+        metadata=json.dumps(metadata) if metadata else None,
+    )
+
+    store = ExecutionStore(str(artifact.parent / "execution_runs.duckdb"))
+    store.insert(record)
+    store.close()
 
 
 @click.group(name="normalize")
@@ -113,6 +173,7 @@ def normalize_artifacts(
     total_invalid = 0
 
     for artifact in artifacts:
+        start = time.perf_counter()
         manifest = _load_manifest(artifact)
         records = read_raw_artifact(artifact)
 
@@ -121,11 +182,22 @@ def normalize_artifacts(
             ingestion_run_id=_run_id_from(manifest),
         )
         events, invalid = normalizer.normalize_records(records)
+        duration = time.perf_counter() - start
 
         total_events += _write_events(events, output_file)
         total_invalid += len(invalid)
         if invalid_file:
             _write_invalid(invalid, invalid_file)
+
+        _record_execution(
+            artifact=artifact,
+            source_name=manifest.source,
+            records_processed=len(records),
+            events_produced=len(events),
+            invalid_count=len(invalid),
+            duration=duration,
+            checksum=manifest.checksum,
+        )
 
     click.echo(f"Normalized: {total_events} events, {total_invalid} invalid", err=True)
 
@@ -221,17 +293,31 @@ def normalize_udddump(
         raise click.ClickException(str(exc)) from exc
     # The reading is normalization's job (ADR-012 amendment,
     # 2026-10-23): COPY → records through host pg_restore.
+    start = time.perf_counter()
     records = read_dump_records(str(dump_artifact), table=table, limit=limit)
     normalizer = Normalizer(
         source_name=manifest.source,
         ingestion_run_id=_run_id_from(manifest),
     )
     events, invalid = normalizer.normalize_records(records)
+    duration = time.perf_counter() - start
 
     total_events = _write_events(events, output_file)
     if invalid_file:
         _write_invalid(invalid, invalid_file)
     total_invalid = len(invalid)
+
+    _record_execution(
+        artifact=dump_artifact,
+        source_name=manifest.source,
+        records_processed=len(records),
+        events_produced=len(events),
+        invalid_count=len(invalid),
+        duration=duration,
+        checksum=manifest.checksum,
+        records_requested=limit,
+        metadata={"table": table},
+    )
 
     click.echo(
         f"Normalized: {total_events} events, {total_invalid} invalid", err=True

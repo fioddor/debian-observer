@@ -11,7 +11,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-ExecutionType = Literal["ingestion", "query"]
+ExecutionType = Literal["ingestion", "normalization", "query"]
 
 
 class ExecutionRecord(BaseModel):

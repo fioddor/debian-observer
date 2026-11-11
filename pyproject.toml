@@ -36,6 +36,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    # API reference generator: run "pdoc src/debian_observer" for
+    # browsable technical docs from the module docstrings.
+    "pdoc>=4.9",
     # pytest<9 until pytest-bdd supports pytest 9 (pytest-bdd 9.0 breaks on
     # pytest 9: FixtureManager lost _arg2fixturedefs — the BDD reliability
     # scenarios do not even collect). Revisit when a pytest-bdd release

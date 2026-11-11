@@ -201,6 +201,27 @@ The design documentation rules live in
 code, docs move with code, cite the standard, a contract per
 top-level module.
 
+## API reference (generated)
+
+The API reference is generated from the module docstrings with
+[pdoc](https://pdoc.dev) (installed by the dev extra; the development
+container carries it):
+
+```bash
+# browse it (serves on http://localhost:8080, rebuilds on edit)
+pdoc src/debian_observer src/prosumers
+
+# or write it to files
+pdoc src/debian_observer src/prosumers -o docs/api
+```
+
+The docstrings are the source: no configuration, no stub files.
+Every module opens with what it is for and how it fits the
+neighbours (the contract of `docs/design/README.md`); pdoc turns
+those headers into the reference pages. Regenerate after changing
+a module header; never edit anything under an output directory by
+hand.
+
 ## CLI `--help`
 
 `--help` must show the possible values of every parameter that

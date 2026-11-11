@@ -6,62 +6,77 @@ cannot reconstruct without reading everything.
 
 ## `ingestion`
 
-- **Exposes**: data-source adapters (UDD PostgreSQL
-  <https://udd.debian.org/>, Debian mirror, sources.debian.org,
-  mock) and the `ingest` pipeline: raw artifacts as xz-compressed CSV
-  + JSON manifest persisted beside each artifact + provenance record
-  + the udddump download (`download_dump`: URL → byte-preserving
-  dump file).
-- **Expects**: a source subcommand (`ingest sources | mirror | udd |
-  udddump`) with its mandatory filter flags (ADR-012), optional row
-  `--limit` window; UDD requires reachable PostgreSQL credentials;
-  `udddump` requires the **URL** of a `pg_dump` file (`--url`,
-  mandatory scope selector) and performs no parsing — **no
-  pg_restore here** (the reading lives in `normalization`, see
-  below).
-- **Guarantees**: raw data is preserved verbatim (ADR-002) before any
-  transformation — as RFC 4180 CSV compressed with LZMA
-  (<https://www.rfc-editor.org/rfc/rfc4180>, suffix `.csv.xz`);
-  `None` is written as an empty field and read back lossless (sources
-  emit no empty strings); manifests are persisted beside every
-  artifact; identity fields (incl. `component`, `release`, `section`,
-  `priority`) survive acquisition; the `ingest udddump` dump is stored
-  byte-preserving as downloaded (suffix `.dump`, source name
-  `udddump`) with its manifest sidecar (`record_count` null until
-  normalization) and a provenance record.
+- **Exposes**:
+   Data-source adapters (UDD PostgreSQL <https://udd.debian.org/>,
+   Debian mirror, sources.debian.org, mock) and the `ingest` pipeline:
+   - Raw artifacts as xz-compressed CSV
+   - JSON manifest persisted beside each artifact + provenance record
+   - The udddump download
+     (`download_dump`: URL → byte-preserving dump file).
+- **Expects**:
+  - A source subcommand (`ingest sources | mirror | udd | udddump`)
+    with its mandatory filter flags (ADR-012),
+  - Optional row `--limit` window
+  - UDD requires reachable PostgreSQL credentials.
+  - `udddump` requires the **URL** of a `pg_dump` file (`--url`,
+    mandatory scope selector).
+- **Guarantees**:
+  - Raw data is preserved verbatim (ADR-002) before any transformation
+    with its manifest sidecar and a provenance record beside every
+    artifact.
+  - In particular, the `ingest udddump` dump is stored byte-preserving
+    as downloaded (unread, suffix `.dump`, source name `udddump`,
+    `record_count` null until normalization)
+  - Read raw data is stored
+    -  as RFC 4180 CSV compressed with LZMA
+      (<https://www.rfc-editor.org/rfc/rfc4180>, suffix `.csv.xz`).
+    - `None` is written as an empty field and read back lossless
+       (sources emit no empty strings)
 
 ## `normalization`
 
-- **Exposes**: transformer from raw source rows to canonical
-  `PackageVersion` records and typed event payloads; validators; the
-  UDD `pg_dump` reader (`read_dump_records` + the TOC gate
-  `list_dump_tables` and the shape gate
-  `peek_dump_copy_columns`/`assert_supported_table_shape` — see
-  `normalization/udddump.py`).
-- **Expects**: raw rows in any of the known source layouts; the
-  family/suite/release semantics contract (see data model);
-  **pg_restore on PATH** (`postgresql-client`; shipped by the dev and
-  deploy images — the host stays clean) for `normalize udddump`,
-  whose `--table` is mandatory (validated against the dump's table of
-  contents at startup — fail-fast, lists the restorable tables) and
-  whose table's COPY header must match a registered shape — today
-  `packages` (required COPY column `version` plus any of
-  `package`/`source`); a manifest sidecar on the dump artifact
-  (written by `ingest udddump`).
-- **Guarantees**: rows stream from `pg_restore --data-only --table`
-  — no database is created or restored (ADR-006); the shape gate
-  fails fast naming the cause and the supported shapes; the same raw
-  dump artifact can be re-eventized with other filters (`--table`,
-  `--limit`) without re-downloading — each run re-reads the manifest
-  sidecar for the source name and run id; `--limit` unset normalizes
-  the whole table with a stderr warning; a record that fails
-  canonical transformation is skipped with a warning naming the
-  cause.
-- **Guarantees**: `distribution` is always the archive family
-  (`debian`/`ubuntu`) — never a suite or codename; suite *roles*
-  (stable, testing, unstable…) go to `suite`; codenames and pockets
-  (bullseye, sid-security…) go to `release`; a source that has no role
-  information emits `suite=None`.
+- **Exposes**:
+  - Transformer from raw source rows to canonical `PackageVersion`
+    records and typed event payloads
+  - Validators
+  - The UDD `pg_dump` reader (see `normalization/udddump.py`):
+    - `read_dump_records`
+    - the TOC gate `list_dump_tables` and
+    - the shape gate
+      `peek_dump_copy_columns`/`assert_supported_table_shape`
+- **Expects**:
+  - Raw rows in any of the known source layouts.
+  - The family/suite/release semantics contract (see data model).
+  - For `normalize udddump`, **pg_restore on PATH**.
+    - `postgresql-client` shipped by the dev and deploy images.
+    - `--table` is mandatory and validated against the dump's table
+      of contents at startup (failure lists the restorable tables).
+    - The table's COPY header must match a registered shape
+      Today `packages` (required COPY column `version` plus any of
+      `package`/`source`).
+  - A manifest sidecar on the dump artifact
+    (written by `ingest udddump`).
+- **Guarantees**:
+  - Usage:
+    - Rows stream from `pg_restore --data-only --table`
+      No database is created or restored (ADR-006).
+    - The same raw dump artifact can be re-eventized with other
+      filters (`--table`, `--limit`) without re-downloading.
+      Each run re-reads the manifest sidecar for the source name
+      and run id.
+    - `--limit` unset normalizes the whole table
+       with a stderr warning.
+  - Errors:
+    - The shape gate fails fast naming the cause and
+      the supported shapes.
+    - A record that fails canonical transformation is skipped
+      with a warning naming the cause.
+  - Payload auto-corrections:
+    - `distribution` is always the archive family (`debian`/`ubuntu`)
+      Never a suite or codename.
+    - suite *roles* (stable, testing, unstable…) go to `suite`.
+      A source that has no role information emits `suite=None`.
+    - Codenames and pockets (bullseye, sid-security…) go to `release`
 
 ## `storage`
 
@@ -105,36 +120,42 @@ cannot reconstruct without reading everything.
 - **Exposes**: `EventEnvelope` + strongly-typed payload models
   (`PackageObserved`, `PackageVersionObserved`, `ReleaseObserved`,
   `MigrationObserved`).
-- **Guarantees**: every payload carries `ObservationMeta` provenance;
-  payloads serialize to JSON and flatten to Parquet-compatible rows.
+- **Guarantees**: every payload carries `ObservationMeta` provenance.
+  Payloads serialize to JSON and flatten to Parquet-compatible rows.
 
 ## `messaging`
 
-- **Exposes**: NATS JetStream publisher/consumer/client + stream
-  topology (`StreamConfig`; stream `debian-events`, flat subjects
-  `debian.package.observed`, `debian.package_version.observed`,
-  `debian.release.observed`, `debian.migration.observed` — per
-  event type, no per-package partitioning) + `ensure_stream` (the
-  stream created if missing). `EventPublisher.publish` passes
-  `headers` through — the publish CLI sends
-  `Nats-Msg-Id: <event_id>` for server-side dedup (ADR-004
-  amendment, 2026-10-23); the most recent `PubAck` is kept on
-  `last_ack` (carries `duplicate` when the server reports it).
-- **Guarantees**: delivery semantics per ADR-005; JetStream
-  persistence per ADR-004. **Library only — no CLI**: the generic
-  `consume` subcommand is dead (2026-10-23); consuming is a
-  pipeline the researcher owns (`examples/consume_packages.py`).
+- **Exposes**:
+  - NATS JetStream publisher/consumer/client + stream topology
+    (`StreamConfig`; stream `debian-events`, flat subjects
+    `debian.package.observed`, `debian.package_version.observed`,
+    `debian.release.observed`, `debian.migration.observed`
+     — per event type, no per-package partitioning)
+  - `ensure_stream` (the stream created if missing).
+  Notes:
+  - `EventPublisher.publish` passes `headers` through
+  - The publish CLI sends `Nats-Msg-Id: <event_id>` for server-side
+    dedup (ADR-004 amendment, 2026-10-23).
+  - The most recent `PubAck` is kept on `last_ack`
+    (carries `duplicate` when the server reports it).
+- **Guarantees**:
+  - Delivery semantics (ADR-005).
+  - JetStream persistence (ADR-004).
 
 ## `consumer_app`
 
-- **Exposes**: standalone async consumer entrypoint — handler
-  registration (the handler receives only the `EventEnvelope`),
-  idempotent processing (`IdempotencyStore`), graceful lifecycle
-  shutdown; ack strictly after the handler returns without
-  exception (ADR-005 amendment, 2026-10-23).
-- **Expects**: registered handlers by event type; JetStream
-  endpoints; a handler that makes its effect durable before
-  returning (the example's `merge.feed` + `merge.write`).
+- **Exposes**: standalone async consumer entrypoint
+  - handler registration (the handler receives only the
+    `EventEnvelope`),
+  - idempotent processing (`IdempotencyStore`),
+  - graceful lifecycle shutdown,
+  - ack strictly after the handler returns without
+    exception (ADR-005 amendment, 2026-10-23).
+- **Expects**:
+  - Registered handlers by event type.
+  - JetStream endpoints
+  - A handler that makes its effect durable before
+    returning (the example's `merge.feed` + `merge.write`).
 
 ## `consumer`
 
@@ -146,46 +167,58 @@ cannot reconstruct without reading everything.
 
 ## `api`
 
-- **Exposes**: FastAPI application; Parquet-backed store via DuckDB
-  (ADR-003/010).
+- **Exposes**:
+  - FastAPI application
+  - Parquet-backed store via DuckDB (ADR-003/010).
 - **Expects**: datasets on disk as written by `storage`.
 - **Guarantees**: read-only access to normalized data; no ingest path.
 
 ## `cli`
 
 - **Exposes**: `click` commands; the operator's entry point into
-  ingestion and the API service. `ingest` is a command group with one
-  subcommand per source (`sources`, `mirror`, `udd`, `udddump`;
-  mandatory filter flags, ADR-012 — for `udddump` the scope is the
-  URL and the reading lives in `normalize`); `consolidate` folds the
-  event log into the consolidated `package_versions` table
-  (`--events-dir` required, `--dataset-dir` default
-  `data/normalized/package_versions` — the batch feeder of
-  `storage.consolidation`); `publish` projects the event log onto
-  NATS JetStream (`--events-dir` required, `--stream` default
-  `debian-events`, `--server` default `nats://localhost:4222`) — a
-  rebuildable view, `Nats-Msg-Id` dedup (ADR-004 amendment);
-  `validate` takes raw artifacts (positional, one or more) and reads
-  each artifact's manifest sidecar for source and run id;
-  `normalize` is a command group with one subcommand per raw surface
-  (`artifacts`: pipeline `.csv.xz` artifacts, positional; `udddump`:
-  dump downloads with mandatory `--table` and optional `--limit`,
-  ADR-012 amendment 2026-10-23 — a breaking rename of the old
-  `normalize <paths>` surface).
-- **Guarantees**: no `consume` subcommand (2026-10-23) — a queue
-  consumer is a pipeline the researcher owns, not a command.
+  ingestion and the API service.
+  - `ingest` is a command group with one subcommand per source:
+    - `mirror`,
+    - `udd`,
+    - `udddump`: mandatory filter flags, ADR-012, URL-scoped.
+  - `consolidate` is the batch feeder of `storage.consolidation`.
+    It folds the event log into the consolidated `package_versions`
+    table.
+    - `--events-dir` is required,
+    - `--dataset-dir` defaults to `data/normalized/package_versions`.
+  - `publish` projects the event log onto NATS JetStream
+    - `--events-dir` is required,
+    - `--stream` defaults to `debian-events`,
+    - `--server` defaults to `nats://localhost:4222`
+    - Rebuildable via `Nats-Msg-Id` dedup (See ADR-004 amendment).
+  - `validate` takes raw artifacts (positional, one or more) and
+     reads each artifact's manifest sidecar for source and run id.
+  - `normalize` is a command group with one subcommand per raw surface
+    - (positional) `artifacts`: pipeline `.csv.xz` artifacts.
+    - `udddump`: dump downloads with mandatory `--table` and
+       optional `--limit`,
+     - ADR-012 amendment 2026-10-23 introduced a breaking rename
+       of the old `normalize <paths>` surface).
+- **Guarantees**:
+  - no `consume` subcommand (2026-10-23) — a queue
+    consumer is a pipeline the researcher owns, not a command.
 
 ## `consumer_app`
 
-- **Exposes**: standalone async consumer entrypoint — handler
-  registration, idempotent processing, graceful lifecycle shutdown.
-- **Expects**: registered handlers by event type; JetStream endpoints.
+- **Exposes**: standalone async consumer entrypoint
+  - handler registration,
+  - idempotent processing,
+  - graceful lifecycle shutdown.
+- **Expects**:
+  - registered handlers by event type
+  - JetStream endpoints.
 
 ## `idempotency`
 
 - **Exposes**: in-memory `IdempotencyStore` (seen event IDs).
-- **Guarantees**: R1 scope only — in-memory, per-process; a persistent
-  backend is deliberately deferred to R2.
+- **Guarantees**:
+  - R1 scope only — in-memory, per-process
+  - a persistent backend is deliberately deferred to R2.
 
 ## `domain`
 
@@ -194,10 +227,10 @@ cannot reconstruct without reading everything.
 
 ## `common`
 
-- **Exposes**: shared types and validators — Debian version-string
-  syntax (Debian Policy Manual §5.6.12
-  <https://www.debian.org/doc/debian-policy/ch-controlfields.html#s-f-version>,
-  intentionally permissive regex for R1), package-name validation.
+- **Exposes**: shared types and validators
+  - Debian version-string syntax (Debian Policy Manual §5.6.12
+    <https://www.debian.org/doc/debian-policy/ch-controlfields.html#s-f-version>,
+    intentionally permissive regex for R1), package-name validation.
 
 ## `observability`
 
@@ -207,27 +240,31 @@ cannot reconstruct without reading everything.
 
 ## `analytics`
 
-- **Exposes**: `ExecutionRecord` Pydantic model, `ExecutionStore`
-  DuckDB persistence, and `MicroReporter` stdout summary.
+- **Exposes**:
+  - `ExecutionRecord` Pydantic model,
+  - `ExecutionStore` DuckDB persistence,
+  -  `MicroReporter` stdout summary.
 - **Expects**: every instrumented pipeline run to supply an
   `ExecutionRecord` with run identifier, timing, throughput, and
   provenance paths.
 - **Guarantees**:
-  - runs are persisted to `execution_runs.duckdb` beside the raw data directory
-  - the table is self-documenting with `COMMENT ON COLUMN` for every field
-  - duplicate run IDs are replaced (idempotent writes)
-  - the `execution-report` CLI command provides historical aggregate views with median percentiles
+  - runs are persisted to `execution_runs.duckdb` beside the raw data directory,
+  - the table is self-documenting with `COMMENT ON COLUMN` for every field,
+  - duplicate run IDs are replaced (idempotent writes),
+  - the `execution-report` CLI command provides historical aggregate views with median percentiles.
 
 ## `prosumers`
 
-- **Exposes**: the shipped example prosumer executables
-  (`consolidate.py`, `filter.py`) as Click scripts — decoupled from
-  the `debian-observer` package, installed as the
-  `debian-observer-consolidate` / `debian-observer-filter` commands.
-  They import the libraries from `debian_observer.prosumers`
-  (`stream`, `cli`, `packages`) exactly as a user-built prosumer
-  would; `src/prosumers/` collects example CLIs only, no importable
-  library code.
+- **Exposes**: The shipped example prosumer executables
+    - Decoupled from the `debian-observer` package,
+    - `consolidate.py`, `filter.py` as Click scripts.
+    - Installed as the `debian-observer-consolidate` /
+      `debian-observer-filter` commands.
+    - They import the libraries from `debian_observer.prosumers`
+      (`stream`, `cli`, `packages`) exactly as a user-built prosumer
+      would
+    - `src/prosumers/` collects example CLIs only, no importable
+      library code.
 - **Expects**: input records shaped by the prosumer contract —
   `--file-in`/`--stream-in` carrying `Record` envelopes (ND-JSON)
   or flat event-log rows (Parquet).

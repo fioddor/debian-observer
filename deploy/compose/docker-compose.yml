@@ -12,6 +12,7 @@
 
 services:
   debian-observer:
+    image: debian-observer-compose:local
     build:
       # context is the REPO ROOT: the Dockerfile copies pyproject/src
       # from it. context "." broke COPY src/ (regression test pins it).
@@ -49,6 +50,7 @@ services:
       - debian-observer
 
   api:
+    image: debian-observer-compose-api:local
     build:
       context: ../..
       dockerfile: deploy/compose/Dockerfile

@@ -17,7 +17,9 @@ behaviour). Each eventizer is an object with:
 
 from __future__ import annotations
 
+from .dependencies import DependenciesEventizer
 from .package_versions import PackageVersionsEventizer
+from .popcon import PopconEventizer
 
 # The registry maps each source name to its eventizers. A new
 # eventization of the same source is one entry here plus one
@@ -25,6 +27,8 @@ from .package_versions import PackageVersionsEventizer
 EVENTIZERS: dict[str, dict[str, object]] = {
     "udddump": {
         "package-versions": PackageVersionsEventizer(),
+        "dependencies": DependenciesEventizer(),
+        "popcon": PopconEventizer(),
     },
 }
 

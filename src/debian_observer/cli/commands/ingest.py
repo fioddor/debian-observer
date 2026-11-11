@@ -24,6 +24,10 @@ from typing import Any
 
 import click
 
+from debian_observer.storage.parquet import (
+    EVENTS_DIR_DEFAULT,
+)
+
 from debian_observer.ingestion.acquisition import (
     DebianMirrorDataSource,
     SourcesDebianOrgDataSource,
@@ -97,7 +101,7 @@ def _warn_limit_unset() -> None:
     "--raw-dir", default="data/raw", help="Directory for raw artifacts (default: data/raw)."
 )
 @click.option(
-    "--events-dir", default=None, help="Optional directory for the event log (one Parquet file per run)."
+    "--events-dir", default=None, help="Optional directory for the event log (one Parquet file per run; the default used across commands is "+ EVENTS_DIR_DEFAULT + ")."
 )
 def ingest_sources(
     package_name: str,
@@ -138,7 +142,7 @@ def ingest_sources(
     "--raw-dir", default="data/raw", help="Directory for raw artifacts (default: data/raw)."
 )
 @click.option(
-    "--events-dir", default=None, help="Optional directory for the event log (one Parquet file per run)."
+    "--events-dir", default=None, help="Optional directory for the event log (one Parquet file per run; the default used across commands is "+ EVENTS_DIR_DEFAULT + ")."
 )
 def ingest_mirror(
     suite: str,
@@ -179,7 +183,7 @@ def ingest_mirror(
     "--raw-dir", default="data/raw", help="Directory for raw artifacts (default: data/raw)."
 )
 @click.option(
-    "--events-dir", default=None, help="Optional directory for the event log (one Parquet file per run)."
+    "--events-dir", default=None, help="Optional directory for the event log (one Parquet file per run; the default used across commands is "+ EVENTS_DIR_DEFAULT + ")."
 )
 def ingest_udd(
     table: str,

@@ -30,7 +30,7 @@ import re
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Iterator
 
 
 class UDDDumpError(RuntimeError):
@@ -138,23 +138,63 @@ def match_table_shape(columns: list[str]) -> TableShape | None:
     return None
 
 
-def assert_supported_table_shape(columns: list[str], *, table: str) -> TableShape:
+def assert_supported_table_shape(
+    columns: list[str],
+    *,
+    table: str,
+    shape: TableShape | None = None,
+) -> TableShape:
     """Fail fast when a table's COPY header matches no registered shape.
 
-    The error names the cause (the table and its COPY header) and the
-    perimeter (the supported shapes and their required columns) — a
-    usage message, never a traceback.
+    ``shape=None`` keeps the registry behaviour (gate against the
+    first match). With a shape — the **selected eventizer's**
+    declared shape (ADR-014) — the gate checks the columns against
+    that one shape and, on failure, names the eventizer's demands
+    plus the registered shapes the table *does* match (the
+    perimeter), because a first registry match cannot
+    discriminate eventizers when one shape is a superset of
+    another.
+
+    The error names the cause (the table and its COPY header) and
+    the perimeter (the supported shapes and their required
+    columns) — a usage message, never a traceback.
     """
-    shape = match_table_shape(columns)
-    if shape is None:
+    if shape is not None:
+        ok = shape.required_columns.issubset(columns)
+        if shape.required_any:
+            ok = ok and bool(shape.required_any.intersection(columns))
+        if ok:
+            return shape
+        supported = ", ".join(_render_shape(s) for s in SUPPORTED_TABLE_SHAPES)
+        matches = ", ".join(
+            _render_shape(s)
+            for s in SUPPORTED_TABLE_SHAPES
+            if s.required_columns.issubset(columns)
+            and (
+                not s.required_any or s.required_any.intersection(columns)
+            )
+        )
+        raise UDDDumpError(
+            f"table {table!r} does not carry the columns eventizer "
+            f"{shape.name!r} requires ({', '.join(sorted(shape.required_columns))}"
+            + (
+                f" + any of: {', '.join(sorted(shape.required_any))}"
+                if shape.required_any
+                else ""
+            )
+            + f"); COPY header columns: {', '.join(columns) or '<none>'}; "
+            f"shapes this table matches: {matches or '<none>'}; "
+            f"supported shapes: {supported}"
+        )
+    matched = match_table_shape(columns)
+    if matched is None:
         supported = ", ".join(_render_shape(s) for s in SUPPORTED_TABLE_SHAPES)
         raise UDDDumpError(
             f"table {table!r} is not shaped like any supported table "
             f"(COPY header columns: {', '.join(columns) or '<none>'}); "
             f"supported shapes: {supported}"
         )
-    return shape
-
+    return matched
 
 def peek_dump_copy_columns(file: str, *, table: str) -> list[str]:
     """Peek the COPY header of a data-only restore: the table's columns.
@@ -225,6 +265,173 @@ def peek_dump_copy_columns(file: str, *, table: str) -> list[str]:
     assert match is not None
     return [column.strip() for column in match.group("columns").split(",")]
 
+
+# ---------------------------------------------------------------------------
+# COPY row iterator (ADR-015 — the simple design)
+# ---------------------------------------------------------------------------
+
+
+class _CopyRowIterator:
+    """The table's COPY rows, one at a time, from a live pipe.
+
+    Wraps ``pg_restore --data-only --table`` in ``subprocess.Popen``
+    and yields each stdout line as the **full row** (all COPY
+    columns, mapped by name from the header) the moment it is
+    read — the consumer sees rows before the producer finishes;
+    the whole stdout is never captured (ADR-015: normalization
+    needs no streaming *machinery*, but it must not materialize).
+
+    ``limit`` counts yielded rows.
+
+    Closing the iterator (or exhausting it) reaps the child;
+    closing early terminates it (no data restored, ADR-006).
+    """
+
+    def __init__(
+        self,
+        file: str,
+        *,
+        table: str,
+        limit: int | None = None,
+    ) -> None:
+        self._limit = limit
+        self._yielded = 0
+        self._done = False
+        self._proc = None
+        command = [
+            "pg_restore",
+            "--data-only",
+            "--table",
+            table,
+            "--file",
+            "-",
+            file,
+        ]
+        try:
+            self._proc = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+        except FileNotFoundError as exc:
+            raise UDDDumpError(
+                "pg_restore not found on PATH; install postgresql-client"
+            ) from exc
+        self._read_header(table)
+
+    # -- test hook ----------------------------------------------------------
+
+    @property
+    def _process(self):  # noqa: SL001 - test hook (see test_iter_dump_rows)
+        """The live ``pg_restore`` process — pins that the reader
+        yields before the producer finishes."""
+        return self._proc
+
+    # -- header --------------------------------------------------------------
+
+    def _read_header(self, table: str) -> None:
+        """Scan the preamble for the COPY header; keep its columns.
+
+        Same preamble shape as ``peek_dump_copy_columns`` (real dumps
+        open with ``--`` comments, ``\\`` directives and ``SET``
+        statements), but the stream keeps flowing afterwards.
+        """
+        proc = self._proc
+        assert proc is not None and proc.stdout is not None
+        first_content = ""
+        header = ""
+        for _ in range(256):
+            line = proc.stdout.readline()
+            if not line:
+                break
+            stripped = line.strip()
+            if not stripped or stripped.startswith(("--", "\\")):
+                continue
+            if _COPY_HEADER_RE.match(line):
+                header = line
+                break
+            if not first_content:
+                first_content = line
+        if not header:
+            self.close()
+            if first_content:
+                raise UDDDumpError(
+                    f"pg_restore emitted no COPY header for table "
+                    f"{table!r} (first non-comment line: "
+                    f"{first_content.strip()!r})"
+                )
+            raise UDDDumpError(
+                f"pg_restore emitted no COPY header for table {table!r} "
+                "(empty stream — the table may have no data, or the dump "
+                "is unreadable)"
+            )
+        match = _COPY_HEADER_RE.match(header)
+        assert match is not None
+        self._columns = [c.strip() for c in match.group("columns").split(",")]
+
+    # -- iterator protocol ----------------------------------------------------
+
+    def __iter__(self) -> "_CopyRowIterator":
+        return self
+
+    def __next__(self) -> dict[str, Any]:
+        if self._done:
+            raise StopIteration
+        proc = self._proc
+        assert proc is not None and proc.stdout is not None
+        for line in proc.stdout:
+            stripped = line.rstrip("\n")
+            if stripped == r"\.":
+                return self._finish()
+            if not stripped.strip():
+                continue
+            values = [_unescape_copy_field(f) for f in stripped.split("\t")]
+            row: dict[str, Any] = dict(zip(self._columns, values))
+            if self._limit is not None and self._yielded >= self._limit:
+                return self._finish()
+            self._yielded += 1
+            return row
+        return self._finish()
+
+    def _finish(self) -> Any:
+        """End iteration and reap the producer (idempotent)."""
+        self._done = True
+        self.close()
+        raise StopIteration
+
+    def close(self) -> None:
+        """Terminate and reap the producer (idempotent)."""
+        proc = self._proc
+        if proc is None:
+            return
+        if proc.stdout is not None and not proc.stdout.closed:
+            proc.stdout.close()
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:  # pragma: no cover
+                proc.kill()
+                proc.wait()
+        if proc.stderr is not None and not proc.stderr.closed:
+            err = proc.stderr.read()
+            proc.stderr.close()
+            if proc.returncode not in (0, -15, None) and err.strip():
+                raise UDDDumpError(
+                    f"pg_restore failed: {err.strip().splitlines()[-1]}"
+                )
+
+
+def iter_dump_rows(
+    file: str, *, table: str, limit: int | None = None
+) -> _CopyRowIterator:
+    """Iterate one table's COPY rows from a UDD dump file (full rows).
+
+    Same contract as ``_CopyRowIterator`` (which see); a function
+    because it reads like ``read_dump_records``.
+    """
+    return _CopyRowIterator(file, table=table, limit=limit)
 
 # A COPY block header: "COPY <schema.table> (<columns>) FROM stdin;".
 # MULTILINE is a compile flag: .search()'s second argument is pos,
@@ -313,9 +520,11 @@ def read_dump_records(
     --table`` on the host (PATH dependency — install
     ``postgresql-client`` if absent; ADR-006: no database is
     created or restored) and maps its rows to the UDD record shape.
-    ``--file -`` streams the COPY block to stdout: ``pg_restore``
-    requires an explicit output target for data restores — caught by
-    the 2026-10-21 real-dump smoke, invisible to unit mocks.
+
+    Behaviour kept verbatim (tests mock ``_run_pg_restore``, the
+    captured path). The streaming path is ``iter_dump_rows``
+    (ADR-015), used by the CLI; this function keeps the captured
+    path its tests pin.
 
     Records are stamped with the raw source name ``udddump`` (the
     manifest sidecar written by ``ingest udddump`` carries the same

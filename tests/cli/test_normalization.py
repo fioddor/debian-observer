@@ -254,6 +254,102 @@ def _write_dump_artifact(
     return artifact
 
 
+# --- ExecutionRecord instrumentation: `normalize` records a run ---
+
+def _read_execution_runs(db_path: Path) -> list[dict]:
+    """Read all rows of execution_runs as plain dicts (duckdb)."""
+    import duckdb
+
+    con = duckdb.connect(str(db_path), read_only=True)
+    try:
+        rows = con.execute(
+            "SELECT * FROM execution_runs ORDER BY run_at"
+        ).fetchall()
+        cols = [d[0] for d in con.description]
+    finally:
+        con.close()
+    return [dict(zip(cols, row)) for row in rows]
+
+
+def test_normalize_artifacts_records_execution_run(tmp_path):
+    """`normalize artifacts` persists a normalization ExecutionRecord
+    beside the artifact's directory, with the manifest's identity and
+    measured counts: normalize is instrumented."""
+    runner = CliRunner()
+    artifact = _write_artifact(tmp_path)
+    result = runner.invoke(cli, ["normalize", "artifacts", str(artifact)])
+
+    assert result.exit_code == 0
+    db = tmp_path / "execution_runs.duckdb"
+    assert db.exists(), "execution_runs.duckdb must be created beside the artifact"
+    runs = _read_execution_runs(db)
+    assert len(runs) == 1
+    run = runs[0]
+    assert run["execution_type"] == "normalization"
+    assert run["source_name"] == "udd"
+    assert run["run_id"] != "run-test-001"  # its own run id, not the ingest one
+    assert run["records_processed"] == 2
+    assert run["events_produced"] == 2
+    assert run["duration_seconds"] is not None and run["duration_seconds"] > 0
+    assert run["raw_path"] == str(artifact)
+    assert run["checksum"] == "sha256-test"  # manifest provenance carried over
+
+
+def test_normalize_artifacts_one_run_per_artifact_shares_db(tmp_path):
+    """Multiple artifacts in one invocation: each artifact gets its own
+    run in the ONE database beside their (shared) directory."""
+    runner = CliRunner()
+    artifact_a = _write_artifact(tmp_path, run_id="run-a")
+    artifact_b = _write_artifact(tmp_path, run_id="run-b")
+    result = runner.invoke(
+        cli, ["normalize", "artifacts", str(artifact_a), str(artifact_b)]
+    )
+
+    assert result.exit_code == 0
+    db = tmp_path / "execution_runs.duckdb"
+    runs = _read_execution_runs(db)
+    assert len(runs) == 2
+    assert {r["source_name"] for r in runs} == {"udd"}
+    assert len({r["run_id"] for r in runs}) == 2  # distinct run ids
+
+
+def test_normalize_execution_db_follows_the_artifact(tmp_path):
+    """The DB travels with the artifact's directory, not the cwd: an
+    artifact outside data/raw gets its metrics beside it (experimental
+    artifacts are self-contained)."""
+    runner = CliRunner()
+    elsewhere = tmp_path / "experiments"
+    elsewhere.mkdir()
+    artifact = _write_artifact(elsewhere)
+    result = runner.invoke(cli, ["normalize", "artifacts", str(artifact)])
+
+    assert result.exit_code == 0
+    assert (elsewhere / "execution_runs.duckdb").exists()
+    assert not (tmp_path / "execution_runs.duckdb").exists()
+
+
+def test_normalize_invalid_records_counted_in_run(tmp_path):
+    """Invalid records are counted in the run (error_count mirrors
+    them) while the command still exits 0 — invalid input is data
+    quality, not a crash."""
+    runner = CliRunner()
+    artifact = _write_artifact(
+        tmp_path,
+        records=[
+            {"package": "vim", "version": "1.0-1", "source": "udd"},
+            {"package": "bad", "source": "udd"},
+        ],
+    )
+    result = runner.invoke(cli, ["normalize", "artifacts", str(artifact)])
+
+    assert result.exit_code == 0
+    runs = _read_execution_runs(tmp_path / "execution_runs.duckdb")
+    assert len(runs) == 1
+    assert runs[0]["records_processed"] == 2
+    assert runs[0]["events_produced"] == 1
+    assert runs[0]["error_count"] == 1
+
+
 class TestNormalizeUdddump:
     """`normalize udddump` — eventize one table of a dump artifact.
 
@@ -279,14 +375,64 @@ class TestNormalizeUdddump:
 
     @patch("debian_observer.cli.commands.normalize.list_dump_tables")
     @patch("debian_observer.cli.commands.normalize.peek_dump_copy_columns")
-    @patch("debian_observer.cli.commands.normalize.read_dump_records")
+    @patch("debian_observer.cli.commands.normalize.iter_dump_rows")
     def test_udddump_eventizes_records_with_manifest_identity(
         self, read_mock, peek_mock, list_mock, tmp_path
     ):
         """Happy path: events are stamped with the manifest's source
         and run id, and the filters reach the reader."""
         artifact = _write_dump_artifact(tmp_path)
-        read_mock.return_value = [dict(record) for record in self.RECORDS]
+        read_mock.return_value = iter([dict(record) for record in self.RECORDS])
+        list_mock.return_value = ["packages"]
+        peek_mock.return_value = ["package", "version"]
+
+        runner = CliRunner()
+        events_dir = tmp_path / "observed"
+        result = runner.invoke(
+            cli,
+            [
+                "normalize", "udddump", str(artifact),
+                "--table", "packages",
+                "--limit", "3",
+                "--events-dir", str(events_dir),
+            ],
+        )
+
+        assert result.exit_code == 0
+        # the filters reach the reader; the artifact is the manifest's
+        read_mock.assert_called_once_with(
+            str(artifact),
+            table="packages",
+            limit=3,
+        )
+        # both gates ran over the artifact
+        list_mock.assert_called_once_with(str(artifact))
+        peek_mock.assert_called_once_with(str(artifact), table="packages")
+        # with --events-dir the file is the output: stdout stays
+        # silent, the events land in the Parquet event log
+        lines = [l for l in result.output.strip().split("\n") if l.startswith("{")]
+        assert lines == []
+        import pyarrow.parquet as pq
+
+        files = sorted(events_dir.glob("**/*.parquet"))
+        assert len(files) == 1
+        rows = pq.read_table(files[0]).to_pylist()
+        assert len(rows) == 2
+        event = rows[0]
+        assert event["event_type"] == "PackageVersionObserved"
+        assert event["ingestion_run_id"] == "run-dump-001"
+        assert event["source"] == "udddump"
+
+    @patch("debian_observer.cli.commands.normalize.list_dump_tables")
+    @patch("debian_observer.cli.commands.normalize.peek_dump_copy_columns")
+    @patch("debian_observer.cli.commands.normalize.iter_dump_rows")
+    def test_udddump_records_execution_run(
+        self, read_mock, peek_mock, list_mock, tmp_path
+    ):
+        """`normalize udddump` persists a normalization run beside the
+        dump artifact, with --table/--limit recorded in metadata."""
+        artifact = _write_dump_artifact(tmp_path)
+        read_mock.return_value = iter([dict(record) for record in self.RECORDS])
         list_mock.return_value = ["packages"]
         peek_mock.return_value = ["package", "version"]
 
@@ -301,24 +447,20 @@ class TestNormalizeUdddump:
         )
 
         assert result.exit_code == 0
-        # the filters reach the reader; the artifact is the manifest's
-        read_mock.assert_called_once_with(
-            str(artifact), table="packages", limit=3
-        )
-        # both gates ran over the artifact
-        list_mock.assert_called_once_with(str(artifact))
-        peek_mock.assert_called_once_with(str(artifact), table="packages")
-        # events as JSON lines, stamped from the manifest sidecar
-        lines = [l for l in result.output.strip().split("\n") if l.startswith("{")]
-        assert len(lines) == 2
-        event = json.loads(lines[0])
-        assert event["event_type"] == "PackageVersionObserved"
-        assert event["ingestion_run_id"] == "run-dump-001"
-        assert event["source"] == "udddump"
+        db = tmp_path / "execution_runs.duckdb"
+        assert db.exists()
+        runs = _read_execution_runs(db)
+        assert len(runs) == 1
+        run = runs[0]
+        assert run["execution_type"] == "normalization"
+        assert run["source_name"] == "udddump"
+        assert run["records_requested"] == 3
+        assert run["records_processed"] == 2
+        assert run["events_produced"] == 2
 
     @patch("debian_observer.cli.commands.normalize.list_dump_tables")
     @patch("debian_observer.cli.commands.normalize.peek_dump_copy_columns")
-    @patch("debian_observer.cli.commands.normalize.read_dump_records")
+    @patch("debian_observer.cli.commands.normalize.iter_dump_rows")
     def test_udddump_gate_rejects_an_unknown_table(
         self, read_mock, peek_mock, list_mock, tmp_path
     ):
@@ -343,7 +485,7 @@ class TestNormalizeUdddump:
 
     @patch("debian_observer.cli.commands.normalize.list_dump_tables")
     @patch("debian_observer.cli.commands.normalize.peek_dump_copy_columns")
-    @patch("debian_observer.cli.commands.normalize.read_dump_records")
+    @patch("debian_observer.cli.commands.normalize.iter_dump_rows")
     def test_udddump_gate_wraps_runner_errors(
         self, read_mock, peek_mock, list_mock, tmp_path
     ):
@@ -368,7 +510,7 @@ class TestNormalizeUdddump:
 
     @patch("debian_observer.cli.commands.normalize.list_dump_tables")
     @patch("debian_observer.cli.commands.normalize.peek_dump_copy_columns")
-    @patch("debian_observer.cli.commands.normalize.read_dump_records")
+    @patch("debian_observer.cli.commands.normalize.iter_dump_rows")
     def test_udddump_shape_gate_rejects_non_packages_shaped_tables(
         self, read_mock, peek_mock, list_mock, tmp_path
     ):
@@ -393,7 +535,7 @@ class TestNormalizeUdddump:
         assert "Traceback" not in result.output
         read_mock.assert_not_called()
 
-    @patch("debian_observer.cli.commands.normalize.read_dump_records")
+    @patch("debian_observer.cli.commands.normalize.iter_dump_rows")
     def test_udddump_missing_manifest_is_a_clear_error(self, read_mock, tmp_path):
         """A dump artifact without a manifest sidecar has no provenance
         to recover: usage error, not a traceback."""
@@ -411,7 +553,7 @@ class TestNormalizeUdddump:
         assert "Traceback" not in result.output
         read_mock.assert_not_called()
 
-    @patch("debian_observer.cli.commands.normalize.read_dump_records")
+    @patch("debian_observer.cli.commands.normalize.iter_dump_rows")
     def test_udddump_rejects_a_foreign_source(self, read_mock, tmp_path):
         """An artifact ingested from another source is not a udddump
         download: the error names the real source."""
@@ -431,13 +573,13 @@ class TestNormalizeUdddump:
 
     @patch("debian_observer.cli.commands.normalize.list_dump_tables")
     @patch("debian_observer.cli.commands.normalize.peek_dump_copy_columns")
-    @patch("debian_observer.cli.commands.normalize.read_dump_records")
+    @patch("debian_observer.cli.commands.normalize.iter_dump_rows")
     def test_udddump_limit_unset_warns(
         self, read_mock, peek_mock, list_mock, tmp_path
     ):
         """Unset --limit normalizes the whole table with a warning."""
         artifact = _write_dump_artifact(tmp_path)
-        read_mock.return_value = [dict(record) for record in self.RECORDS]
+        read_mock.return_value = iter([dict(record) for record in self.RECORDS])
         list_mock.return_value = ["packages"]
         peek_mock.return_value = ["package", "version"]
 
@@ -456,26 +598,30 @@ class TestNormalizeUdddump:
 
     @patch("debian_observer.cli.commands.normalize.list_dump_tables")
     @patch("debian_observer.cli.commands.normalize.peek_dump_copy_columns")
-    @patch("debian_observer.cli.commands.normalize.read_dump_records")
+    @patch("debian_observer.cli.commands.normalize.iter_dump_rows")
     def test_udddump_writes_invalid_records_file(
         self, read_mock, peek_mock, list_mock, tmp_path
     ):
         """Records failing validation go to --invalid (or are dropped)."""
         artifact = _write_dump_artifact(tmp_path)
-        read_mock.return_value = [
-            {"package": "vim", "version": "1.0-1", "source": "udddump"},
-            {"package": "bad", "source": "udddump"},
-        ]
+        read_mock.return_value = iter(
+            [
+                {"package": "vim", "version": "1.0-1", "source": "udddump"},
+                {"package": "bad", "source": "udddump"},
+            ]
+        )
         list_mock.return_value = ["packages"]
         peek_mock.return_value = ["package", "version"]
 
         runner = CliRunner()
         invalid_path = tmp_path / "invalid.jsonl"
+        events_dir = tmp_path / "observed"
         result = runner.invoke(
             cli,
             [
                 "normalize", "udddump", str(artifact),
                 "--table", "packages",
+                "--events-dir", str(events_dir),
                 "--invalid", str(invalid_path),
             ],
         )
@@ -487,13 +633,22 @@ class TestNormalizeUdddump:
             if l.strip()
         ]
         assert len(invalid_lines) == 1
-        assert json.loads(invalid_lines[0])["package"] == "bad"
+        invalid_record = json.loads(invalid_lines[0])
+        # the eventizer wraps the cause and the raw record
+        assert invalid_record["reason"] == "invalid"
+        assert invalid_record["record"]["package"] == "bad"
         lines = [l for l in result.output.strip().split("\n") if l.startswith("{")]
-        assert len(lines) == 1
+        assert lines == []
+        import pyarrow.parquet as pq
+        rows = pq.read_table(sorted((tmp_path / "observed").glob("**/*.parquet"))[0]).to_pylist()
+        assert len(rows) == 1
+        # the log row is the envelope: the package travels as
+        # entity_id/package_id (colon-qualified), not as "package"
+        assert rows[0]["entity_id"].startswith("vim")
 
     @patch("debian_observer.cli.commands.normalize.list_dump_tables")
     @patch("debian_observer.cli.commands.normalize.peek_dump_copy_columns")
-    @patch("debian_observer.cli.commands.normalize.read_dump_records")
+    @patch("debian_observer.cli.commands.normalize.iter_dump_rows")
     def test_udddump_requires_a_table(self, read_mock, peek_mock, list_mock, tmp_path):
         """--table is the mandatory scope selector (ADR-012)."""
         artifact = _write_dump_artifact(tmp_path)

@@ -44,6 +44,15 @@ cannot reconstruct without reading everything.
     - the TOC gate `list_dump_tables` and
     - the shape gate
       `peek_dump_copy_columns`/`assert_supported_table_shape`
+  - The row iterator `iter_dump_rows` (ADR-015):
+    - Full rows stream 1 by 1 through `subprocess.Popen`.
+    - The consumer sees rows before the producer finishes.
+  - The **eventizer registry** `normalization/eventizers` (ADR-014):
+    `EVENTIZERS[source][name]`, `get_eventizer(source, name=None)`
+    - Each eventizer declares `name`, `event_type`, `shape`
+      (its own `TableShape`, checked by the shape gate) and
+      `eventize(row)` over the **full row**.
+    - Default `package-versions` (retro-compatible behaviour).
 - **Expects**:
   - Raw rows in any of the known source layouts.
   - The family/suite/release semantics contract (see data model).
@@ -80,18 +89,33 @@ cannot reconstruct without reading everything.
 
 ## `storage`
 
-- **Exposes**: the event log writer (one Parquet file per ingestion
-  run; writer-owned schema, ADR-011) + analytical queries (DuckDB) +
-  the consolidation fold (`consolidation`, moved here from
-  `consumer` on 2026-10-23 — the fold IS a writer of the
-  consolidated table). Two feeders, one semantics: the batch
-  feeder (`fold_package_versions` /
-  `build_consolidated_packages`, behind the `consolidate` CLI:
-  read the whole log, feed every event, write once — pure
-  regeneration, `merge_existing=False`) and the streaming feeder
-  (`ConsolidationMerge.feed` + `.write(dataset_dir)`: one
-  observation at a time, RMW of the existing table + atomic rename,
-  behind the external example).
+- **Exposes**:
+  - writer-owned schema (ADR-011).
+  - The event log writer.
+  - The **per-event-type event log** (ADR-014/015).
+  Details:
+  - `EVENT_TYPE_SCHEMAS`
+    - registers 1 Parquet schema per event type.
+    - `event_type_directory` maps a type to its snake_case directory.
+    - `_DEFAULT_SCHEMA` IS the `PackageVersionObserved` schema.
+  - `writer_for_event_type(type, events_dir)`
+    - writes `<events_dir>/<type_snake>/<run_id>.parquet`.
+    - **one directory per event type**
+    - **one Parquet file per ingestion run**.
+    - the consolidation fold IS a writer of the consolidated table.
+  - Two feeders, one semantics:
+    - a) batch feeder
+      - behind the `consolidate` CLI.
+      - `fold_package_versions` / `build_consolidated_packages`
+      - read the whole log, feed every event, write once
+        pure regeneration, `merge_existing=False`
+    - b) streaming feeder
+      - behind the external example.
+      - `ConsolidationMerge.feed` + `.write(dataset_dir)`.
+      - one observation at a time, RMW of the existing table +
+        atomic rename.
+    - tested mandatory contract:
+      Reads with a plain `read_parquet` glob, never `union_by_name`.
 - **Expects**: normalized rows from the transformer; dataset layout
   as written by the writer; log rows read via `read_event_log`
   (sorted glob + DuckDB `union_by_name`) or envelope-derived rows

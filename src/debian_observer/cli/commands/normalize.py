@@ -17,14 +17,24 @@ from pathlib import Path
 
 import click
 
+from debian_observer.storage.parquet import (
+    IncrementalParquetWriter,
+    EVENTS_DIR_DEFAULT,
+)
+
 from debian_observer.analytics.models import ExecutionRecord
 from debian_observer.analytics.store import ExecutionStore
 from debian_observer.ingestion.manifest import load_manifest
 from debian_observer.ingestion.raw import read_raw_artifact
 from debian_observer.normalization.normalizer import Normalizer
+from debian_observer.normalization.eventizers import (
+    get_eventizer,
+    list_eventizers,
+)
 from debian_observer.normalization.udddump import (
     UDDDumpError,
     assert_supported_table_shape,
+    iter_dump_rows,
     list_dump_tables,
     peek_dump_copy_columns,
     read_dump_records,
@@ -202,6 +212,28 @@ def normalize_artifacts(
     click.echo(f"Normalized: {total_events} events, {total_invalid} invalid", err=True)
 
 
+@click.option(
+    "--eventizer",
+    "eventizer_name",
+    type=str,
+    default=None,
+    help=(
+        "Eventizer for this source (default: package-versions, the "
+        "retro-compatible behaviour)."
+    ),
+)
+@click.option(
+    "--events-dir",
+    "events_dir",
+    type=click.Path(path_type=Path),
+    default=Path(EVENTS_DIR_DEFAULT),
+    help=(
+        "Write the Parquet event log here: one directory per "
+        "event type, one file per run (default: "
+        + EVENTS_DIR_DEFAULT + "), the prosumers' input."
+    ),
+)
+
 @normalize.command(name="udddump")
 @click.argument(
     "dump_artifact",
@@ -241,6 +273,8 @@ def normalize_udddump(
     limit: int | None,
     output_file,
     invalid_file,
+    eventizer_name,
+    events_dir,
 ) -> None:
     """Eventize one table of a downloaded UDD pg_dump artifact.
 
@@ -283,40 +317,100 @@ def normalize_udddump(
             f"table {table!r} not in dump {dump_artifact.name!r}; "
             f"available tables: {', '.join(sorted(available))}"
         )
-    # Perimeter gate (ADR-012, evening amendment): peek the table's
-    # COPY header — one stdout line, no data restored — and match it
-    # against the registered shapes before any eventization work.
+    # Perimeter gate (ADR-012): peek the table's COPY header — one
+    # stdout line, no data restored — before any eventization work.
+    # Which shape it must match depends on the selection: with a
+    # selected eventizer, only ITS shape gates (its table may be
+    # outside the log's perimeter); with none, the whole log.
     try:
         columns = peek_dump_copy_columns(str(dump_artifact), table=table)
-        assert_supported_table_shape(columns, table=table)
+        if eventizer_name is None:
+            assert_supported_table_shape(columns, table=table)
     except UDDDumpError as exc:
         raise click.ClickException(str(exc)) from exc
     # The reading is normalization's job (ADR-012 amendment,
-    # 2026-10-23): COPY → records through host pg_restore.
+    # 2026-10-23): COPY rows stream one at a time through host
+    # pg_restore (ADR-015) into the selected eventizer (ADR-014).
+    eventizer = get_eventizer(manifest.source, eventizer_name)
+    if hasattr(eventizer, "with_provenance"):
+        eventizer = eventizer.with_provenance(
+            source_name=manifest.source,
+            ingestion_run_id=_run_id_from(manifest),
+        )
+    try:
+        assert_supported_table_shape(
+            columns, table=table, shape=eventizer.shape
+        )
+    except UDDDumpError as exc:
+        raise click.ClickException(str(exc)) from exc
+    if (
+        eventizer.name != "package-versions"
+        and events_dir is None
+        and output_file.name == "<stdout>"
+    ):
+        raise click.ClickException(
+            f"eventizer {eventizer.name!r} writes millions of events; "
+            "pass --events-dir (Parquet event log) or --output FILE"
+        )
+    run_id = _run_id_from(manifest)
     start = time.perf_counter()
-    records = read_dump_records(str(dump_artifact), table=table, limit=limit)
-    normalizer = Normalizer(
-        source_name=manifest.source,
-        ingestion_run_id=_run_id_from(manifest),
-    )
-    events, invalid = normalizer.normalize_records(records)
+    events: list = []
+    invalid: list = []
+    # Incremental writer (ADR-015): events stream into the Parquet
+    # file row group by row group; only --output (JSON lines)
+    # materializes, and only when it is not stdout.
+    inc_writer = None
+    if events_dir is not None:
+        from debian_observer.storage.parquet import (
+            writer_for_event_type,
+        )
+
+        parquet_writer = writer_for_event_type(
+            eventizer.event_type, events_dir=str(events_dir)
+        )
+        inc_writer = parquet_writer.open_parquet_file(run_id)
+    total_events = 0
+    for row in iter_dump_rows(
+        str(dump_artifact),
+        table=table,
+        limit=limit,
+    ):
+        for out in eventizer.eventize(row):
+            if isinstance(out, dict):
+                invalid.append(out)
+                continue
+            total_events += 1
+            if inc_writer is not None:
+                inc_writer.append_event(out)
+            else:
+                events.append(out)
+    if inc_writer is not None:
+        inc_writer.close()
     duration = time.perf_counter() - start
 
-    total_events = _write_events(events, output_file)
+    if not inc_writer:
+        _write_events(events, output_file)
     if invalid_file:
         _write_invalid(invalid, invalid_file)
     total_invalid = len(invalid)
 
+    events_written = total_events if inc_writer is not None else 0
+
     _record_execution(
         artifact=dump_artifact,
         source_name=manifest.source,
-        records_processed=len(records),
-        events_produced=len(events),
-        invalid_count=len(invalid),
+        records_processed=total_events + total_invalid,
+        events_produced=total_events,
+        invalid_count=total_invalid,
         duration=duration,
         checksum=manifest.checksum,
         records_requested=limit,
-        metadata={"table": table},
+        metadata={
+            "table": table,
+            "eventizer": eventizer.name,
+            "events_dir": str(events_dir) if events_dir else None,
+            "parquet_events": events_written,
+        },
     )
 
     click.echo(

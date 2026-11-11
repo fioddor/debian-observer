@@ -13,7 +13,9 @@ def test_status_help():
     assert result.exit_code == 0
     assert "--events-dir" in result.output
     # the default event-log directory is content-named (ADR-012 amendment)
-    assert "data/events" in result.output
+    from debian_observer.storage.parquet import EVENTS_DIR_DEFAULT
+
+    assert EVENTS_DIR_DEFAULT in result.output
 
 
 def test_status_with_data():

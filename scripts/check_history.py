@@ -43,7 +43,34 @@ import re
 import subprocess
 import sys
 
-MAX_COLS = 72
+MAX_COLS = 72                                                     # For commits
+
+#: Paths each commit tag may touch (see Contributing guide's contract). A path
+#: is legal when it equals an entry or has an entry ending in "/" as prefix.
+R_PATHS = ("tests/", "docs/")
+G_PATHS = ("src/", "pyproject.toml")
+
+
+def _path_is_legal(path: str, legal: tuple[str, ...]) -> bool:
+    """Is the modified path whitelisted?
+
+    Entries ending in "/" are prefixes, everything else exact
+    """
+    return any(
+        path.startswith(entry) if entry.endswith("/") else path == entry
+        for entry in legal
+    )
+
+
+def _wrong_mvc(tag: str, files: list[str]) -> list[str]:
+    """Does the commit content violate its MVC tag?
+
+    Only [R] and [G] are path-gated; [B] (bookkeeping) goes free
+    """
+    legal = {"R]": R_PATHS, "G]": G_PATHS}.get(tag)
+    if legal is None:
+        return []
+    return [f for f in files if not _path_is_legal(f, legal)]
 
 #: References to the development process that must not appear in the
 #: product (src/, tests/). Each: (pattern, reason, exception-contexts).
@@ -81,20 +108,11 @@ def check_range(base, tip, expect_tree):
                           f"{subject[:50]}")
 
         # 1. MVC directories
-        if tag == "R]" and [
-                f for f in files
-                if not f.startswith(("tests/", "docs/"))]:
-            bad = [f for f in files
-                   if not f.startswith(("tests/", "docs/"))]
-            errors.append(f"{h[:7]}: [R] touches non-test: {bad[:3]}")
-        if tag == "G]" and [
-                f for f in files
-                if not (f.startswith("src/")
-                        or f == "pyproject.toml")]:
-            bad = [f for f in files
-                   if not (f.startswith("src/")
-                           or f == "pyproject.toml")]
-            errors.append(f"{h[:7]}: [G] touches non-src: {bad[:3]}")
+        bad = _wrong_mvc(tag, files)
+        if bad:
+            scope = "test" if tag == "R]" else "src"
+            errors.append(
+                f"{h[:7]}: [{tag[0]}] touches non-{scope}: {bad[:3]}")
 
         # 3. message width (subject warns, body gates)
         if len(subject) > MAX_COLS:

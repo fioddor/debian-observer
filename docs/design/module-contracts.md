@@ -98,7 +98,7 @@ cannot reconstruct without reading everything.
   via `row_from_envelope`.
 - **Guarantees**: writer-owned serialization (ADR-011) — the event-log
   shape is the writer's decision, loaders must not reshape it. The
-  API loader still reads Parquet event files written by earlier R1
+  API loader still reads Parquet event files written by earlier
   iterations (13- and 16-column layouts, before `release`, `component`,
   `section`, `priority`, `suite` existed); fields the old files lack
   load as `None`. The per-ingestion-run `package_versions` dataset
@@ -217,7 +217,7 @@ cannot reconstruct without reading everything.
 
 - **Exposes**: in-memory `IdempotencyStore` (seen event IDs).
 - **Guarantees**:
-  - R1 scope only — in-memory, per-process
+  - In-memory, per-process scope
   - a persistent backend is deliberately deferred to R2.
 
 ## `domain`
@@ -230,7 +230,7 @@ cannot reconstruct without reading everything.
 - **Exposes**: shared types and validators
   - Debian version-string syntax (Debian Policy Manual §5.6.12
     <https://www.debian.org/doc/debian-policy/ch-controlfields.html#s-f-version>,
-    intentionally permissive regex for R1), package-name validation.
+    intentionally permissive regex), package-name validation.
 
 ## `observability`
 

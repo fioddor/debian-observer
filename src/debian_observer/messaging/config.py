@@ -2,7 +2,7 @@
 
 Defines the NATS JetStream stream topology for Debian Observatory events.
 
-The configuration is deliberately simple in R1. One stream carries
+The configuration is deliberately simple: one stream carries
 all domain events, with subjects organized by entity type. Future
 releases may split into multiple streams if volume or retention
 requirements differ by event type.
@@ -24,7 +24,7 @@ DEFAULT_SUBJECTS = [
     "debian.migration.observed",
 ]
 
-# Default stream limits. Adjusted for small-scale R1 deployment.
+# Default stream limits. Adjusted for small-scale deployment.
 DEFAULT_MAX_MESSAGES = 100_000
 DEFAULT_MAX_AGE_DAYS = 30
 DEFAULT_MAX_BYTES = 1 << 30  # 1 GB
@@ -41,7 +41,7 @@ class StreamConfig:
         max_messages: Maximum number of messages to retain.
         max_age_days: Maximum age of messages in days.
         max_bytes: Maximum total bytes to retain.
-        replication_factor: Number of stream replicas (R1 uses 1).
+        replication_factor: Number of stream replicas.
     """
 
     def __init__(

@@ -11,7 +11,7 @@ what the code does not make obvious.
 | `Package` | A Debian source or binary package. `package_id` is deterministic from source data (`name`, or `name:architecture` for binaries). | `source_package` → source `Package` |
 | `PackageVersion` | An observed version of a package, with archive coordinates (`distribution`=family, `suite`=role, `release`=codename/pocket). | belongs to `Package`; observed via `ObservationMeta` |
 | `Release` | A Debian release/suite lifecycle fact. | referenced by version coordinates |
-| `Migration` | A package's movement between releases (minimal R1 model). | from/to `Release` |
+| `Migration` | A package's movement between releases (the minimal model). | from/to `Release` |
 | `Observation` (`ObservationMeta`) | Provenance: *when* seen (`observed_at`) vs *when true* (`effective_at`), source, run id. | embedded in every event payload |
 
 ## Invariants

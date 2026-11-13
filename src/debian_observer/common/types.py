@@ -60,10 +60,11 @@ Architecture = Literal[
 
 
 class MigrationStatus(str, Enum):
-    """Canonical migration status values for R1.
+    """Canonical migration status values.
 
-    R1 uses a simplified migration model. The full Britney state machine
-    (testing, proposed, unblocked, etc.) is deferred to R2.
+    The migration model is deliberately simplified - the full
+    Britney state machine (testing, proposed, unblocked, etc.)
+    is a downstream question.
     """
 
     UNKNOWN = "unknown"
@@ -76,8 +77,8 @@ class MigrationStatus(str, Enum):
 class SchemaVersion(int, Enum):
     """Event schema versions.
 
-    All R1 events start at schema_version=1.
-    Future incompatible changes must bump this version.
+    All events start at schema_version=1.
+    Incompatible changes must bump this version.
     """
 
     V1 = 1

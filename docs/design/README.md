@@ -1,6 +1,6 @@
 # Design Layer
 
-High-level design for Debian Observer R1 — the layer *between* the
+High-level design for Debian Observer — the layer *between* the
 [architecture overview](../architecture/overview.md) and the code.
 
 - [Data model](data-model.md) — entities and invariants

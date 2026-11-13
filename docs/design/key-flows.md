@@ -1,7 +1,7 @@
 # Key Flows
 
 End-to-end behaviour *across* modules — the level neither architecture
-nor code shows. Two flows in R1; add here only what a reader cannot
+nor code shows. Two flows; add here only what a reader cannot
 reconstruct from the module contracts.
 
 ## Flow 1 — Ingestion run (UDD → raw artifact)

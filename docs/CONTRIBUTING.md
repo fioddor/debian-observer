@@ -274,11 +274,13 @@ No branch keeps the real history as it actually happened.
   It is an ideal branch for test-driven development (TDD).
   It holds a realistic sequence of minimum viable changes (MVCs).
   Each MVC is a (R)ed-(G)reen-(B)lue sequence:
-  - R-commits add only new tests that don't pass. No application code.
+  - R-commits carry expectations: contracts, tests, and documents.
     Doc changes go in the R-commit: the docs that describe the expected
     behaviour change together with the tests that pin it, before any
-    implementation.
-  - G-commits add only add and/or modify application code to pass all the tests.
+    implementation. No application code.
+  - G-commits carry product implementation: including dependency
+    declarations, as well as packaging, deployment or upgrade scripts.
+    No tests, no documents: those are the R-commit's.
   - B-commits are not mandatory. They are pure refactoring commits.
     The purpose of B-commits might be real historic code improvements
     or purposeful intermediate steps for explanation of code changes.

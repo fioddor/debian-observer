@@ -47,8 +47,14 @@ MAX_COLS = 72                                                     # For commits
 
 #: Paths each commit tag may touch (see Contributing guide's contract). A path
 #: is legal when it equals an entry or has an entry ending in "/" as prefix.
-R_PATHS = ("tests/", "docs/")
-G_PATHS = ("src/", "pyproject.toml")
+R_PATHS = ("tests/", "docs/", "deploy/README.md")
+G_PATHS = (
+    "src/",
+    "deploy/",
+    ".woodpecker/",
+    ".gitignore",
+    "pyproject.toml",
+)
 
 
 def _path_is_legal(path: str, legal: tuple[str, ...]) -> bool:

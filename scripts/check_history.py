@@ -3,36 +3,38 @@
 
 Mechanical gates (exit non-zero on ERROR; WARNs pass):
 
-1. MVC by subject tag: [R] touches only tests/ (+docs/); [G] touches
-   only src/ (+ pyproject.toml: a G that registers an executable
-   edits its entrypoint there); [B] unconstrained by directory.
-2. Empty commits (0 files changed) are errors: a commit that adds
-   nothing is a reconstruction artifact.
-3. Message width: subject lines over 72 columns WARN (subjects are
-   format-limited); body lines over 72 columns are ERRORS.
-4. Development history in the product: references to the project's
-   own development (release numbers, planning docs) inside src/ and
-   tests/ are errors. The product describes what it is, not when it
-   was written. Configurable patterns with explicit exceptions.
-5. Parallel artifacts: names like ``*_r2`` (a second version of an
-   existing module living beside it) are errors by name pattern.
-6. Reconstruction integrity (opt-in, --expect-tree SHA): when a
-   history surgery must NOT change the final content, the new tip's
-   tree must equal the expected tree - a differing tree means the
-   reconstruction dropped or added content.
+1. MVC by subject tag: The gate helps to mechanically enforce that [R] and [G]
+   commits comply with their Contributing guide's contracts by checking that
+   they only touch whitelisted paths (prefixes in R_PATHS/G_PATHS).
+   [B] is unconstrained by directory.
+2. Empty commits (0 files changed) are errors: a commit that adds nothing is a
+   reconstruction artifact.
+3. Message width:
+   - Warn of subject lines over 72 columns.
+   - Body lines over 72 columns are **errors**.
+4. Development history in the product: references to the project's own
+   development (release numbers, planning docs) inside src/ and tests/ are
+   errors. The product describes what it is, not when it was written.
+   Configurable patterns with explicit exceptions.
+   - Parallel artifacts: names like ``*_r2`` (a second version of an
+     existing module living beside it) are errors by name pattern.
+6. Reconstruction integrity (opt-in, --expect-tree SHA): when a history surgery
+   must NOT change the final content, the new tip's tree must equal the
+   expected tree - a differing tree means the reconstruction dropped or added
+   content.
 
 7. MVC order by subject pair: a [G] commit whose subject matches an [R]
    commit LATER in the chain is an error - the red test must exist before
    the green implementation makes it pass. (A late R is born green.)
 
-Non-mechanical checks (subject scope coherence, body promises vs diff
-promises, tests living with the implementation they motivate) are
-review-checklist material: this script does not attempt them.
+This script does not attempt non-mechanical checks (subject scope coherence,
+body promises vs diff promises, tests living with the implementation they
+motivate) are review-checklist material.
 
 Usage:
     check_history.py BASE..TIP [--expect-tree SHA]
 
-Run before every push; in CI against every PR targeting tdd.
+Run before every push. In CI against every PR targeting tdd.
 """
 from __future__ import annotations
 

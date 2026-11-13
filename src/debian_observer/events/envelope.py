@@ -1,7 +1,7 @@
 """Canonical event envelope for Debian Observatory domain events.
 
 The ``EventEnvelope`` is the universal wrapper used for all messages
-published to the event backbone (NATS JetStream in R1). It provides:
+published to the event backbone (NATS JetStream). It provides:
 
 - Identity          — ``event_id`` for idempotency and deduplication
 - Typing            — ``event_type`` for routing and deserialization

@@ -14,7 +14,7 @@ All payload models:
 * Serialize cleanly to JSON (for messaging) and can be flattened
   to Parquet-compatible rows
 
-Event types defined here (R1):
+Event types defined here:
 
 - ``PackageObserved``          — a package entity was seen
 - ``PackageVersionObserved``   — a specific version was observed
@@ -313,9 +313,10 @@ class MigrationObservedPayload(BaseModel):
 
     Emitted when a migration-related fact is observed.
 
-    R1 uses a simplified migration model. The full Britney state
-    machine is deferred to R2. This payload captures the minimal
-    facts needed for historical analysis.
+    This payload captures the minimal migration facts needed for
+    historical analysis. The migration model is deliberately
+    simplified: the full Britney state machine is a downstream
+    question.
 
     Attributes:
         migration_id: Canonical migration identifier.

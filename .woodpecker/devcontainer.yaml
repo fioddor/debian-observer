@@ -13,6 +13,11 @@
 #          the repo into the probe container instead) and every gate
 #          cleans up after itself via sh traps. Findings from the
 #          2026-10-25 probe run live in agents/developer memory.
+#          Since 2026-11-14 the pytest trap also prunes dangling images:
+#          every push rebuilds deb-obs-devcontainer:ci and the previous
+#          run is left untagged (<none>) on the shared host (16 dangling
+#          images / 18GB were pruned there on that date). image prune only
+#          removes untagged images — the fresh :ci tag is never a candidate.
 # Authors: Igor Zubiaurre <igor@zubiaurre.es>
 # Pending: dind isolation if untrusted contributors ever land.
 
@@ -49,7 +54,7 @@ steps:
     commands:
       - |
         set -e
-        trap 'docker rm -f devcontainer-ci >/dev/null 2>&1 || true' EXIT
+        trap 'docker rm -f devcontainer-ci >/dev/null 2>&1 || true; docker image prune -f >/dev/null 2>&1 || true' EXIT
         docker run -d --name devcontainer-ci deb-obs-devcontainer:ci sleep infinity
         docker cp . devcontainer-ci:/workspace/
         docker exec devcontainer-ci sh -c "export PATH=/home/vscode/.local/bin:$PATH && cd /workspace && pip install --user -e '.[dev]' && pytest tests/ -q"

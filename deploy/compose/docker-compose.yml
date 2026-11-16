@@ -31,7 +31,7 @@ services:
     # this is the interactive CLI service -> disable it or  (CI gate) aborts: sleep infinity never listens.
     healthcheck:
       disable: true
-    command: bash -c "pipx install /app/dist/debian_observer.whl;while sleep 1000; do :; done"
+    command: bash -c "pipx install /app/dist/debian_observer-0.1.0-py3-none-any.whl;while sleep 1000; do :; done"
 
   nats:
     image: nats:2.10-alpine

@@ -17,7 +17,7 @@ pip install -e "."
 ### B) pipx
 
 ```shell
-pipx install dist/debian_observer.whl
+pipx install dist/debian_observer-<version>-py3-none-any.whl
 ```
 
 ### C) Docker (Compose)

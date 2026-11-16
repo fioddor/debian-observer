@@ -31,9 +31,11 @@ class AnalyticalStorage:
             parquet_dir: Directory containing event-log Parquet files.
             dataset_dir: Optional directory containing consolidated
                 dataset Parquet files (e.g. package_versions.parquet).
-                Each ``*.parquet`` file is registered as a view named
-                after its stem, so future prosumers are queryable
-                without code changes.
+                A dataset directory is ONE table: its files are the
+                writer's business and are registered as one view per
+                schema found, named from the directory (never from a
+                file name — see the ``cli`` contract in the design
+                docs).
         """
         self.parquet_dir = Path(parquet_dir)
         self.dataset_dir = Path(dataset_dir) if dataset_dir else None
@@ -48,8 +50,57 @@ class AnalyticalStorage:
             return []
         return list(sorted(self.dataset_dir.glob("*.parquet")))
 
+    @staticmethod
+    def _quoted(name: str) -> str:
+        """Return ``name`` as a quoted SQL identifier.
+
+        Dataset stems (``run-001.parquet``) carry hyphens, which are
+        not legal inside a bare SQL identifier; an unquoted CREATE
+        VIEW dies in the parser. Doubling embedded quotes is the SQL
+        escape.
+        """
+        return '"' + name.replace('"', '""') + '"'
+
+    def _dataset_views(self) -> dict[str, list[Path]]:
+        """Group the dataset files into views: one per schema.
+
+        A dataset directory is ONE table (the ``cli`` contract in the
+        design docs): its view is named from the directory, never from
+        a file name. When every file shares one schema the view carries
+        the directory's name; when N schemas mix, one view is
+        registered per schema as ``<directory>__<suffix>``, where
+        ``<suffix>`` is a short stable digest of the schema (column
+        names and types, in file order) — deterministic across runs,
+        never a file name. ``describe`` builds its names from this same
+        helper, so what it lists is exactly what goes in FROM.
+        """
+        import hashlib
+
+        import pyarrow.parquet as pq
+
+        files = self._get_dataset_files()
+        if not files:
+            return {}
+        groups: dict[tuple[str, ...], list[Path]] = {}
+        for f in files:
+            schema = pq.ParquetFile(f).schema_arrow
+            key = tuple(
+                (str(field.name), str(field.type)) for field in schema
+            )
+            groups.setdefault(key, []).append(f)
+        directory = self.dataset_dir.name
+        if len(groups) == 1:
+            return {directory: files}
+        views: dict[str, list[Path]] = {}
+        for key, members in groups.items():
+            digest = hashlib.sha256("\n".join(
+                f"{n}\u0000{ty}" for n, ty in key
+            ).encode()).hexdigest()[:8]
+            views[f"{directory}__{digest}"] = members
+        return views
+
     def _register_views(self, con: duckdb.DuckDBPyConnection) -> None:
-        """Register ``events`` and per-file dataset views in DuckDB.
+        """Register ``events`` and per-directory dataset views in DuckDB.
 
         The ``events`` view is only created when event-log files
         exist; a missing event log is not an error here — queries
@@ -64,9 +115,12 @@ class AnalyticalStorage:
                 f"CREATE VIEW events AS SELECT * FROM "
                 f"read_parquet([{file_list}], union_by_name=true)"
             )
-        for p in self._get_dataset_files():
-            view_name = p.stem
-            con.execute(f"CREATE VIEW {view_name} AS SELECT * FROM read_parquet('{p}')")
+        for view_name, files in self._dataset_views().items():
+            file_list = ", ".join(f"'{f}'" for f in files)
+            con.execute(
+                f"CREATE VIEW {self._quoted(view_name)} AS SELECT * FROM "
+                f"read_parquet([{file_list}])"
+            )
 
     def query(self, sql: str) -> Any:
         """Execute a SQL query over registered views.
@@ -120,13 +174,17 @@ class AnalyticalStorage:
         """
         con = duckdb.connect(":memory:")
         self._register_views(con)
-        tables = [p.stem for p in self._get_dataset_files()]
+        # same naming rule as _register_views — by construction,
+        # not by coincidence
+        tables = list(self._dataset_views())
         if self._get_event_files():
             tables = ["events"] + tables
         result: dict[str, list[tuple[str, str]]] = {}
         for table in tables:
             try:
-                rel = con.execute(f"SELECT * FROM {table} LIMIT 0")
+                rel = con.execute(
+                    f"SELECT * FROM {self._quoted(table)} LIMIT 0"
+                )
                 result[table] = [(desc[0], desc[1]) for desc in (rel.description or [])]
             except Exception:
                 pass

@@ -169,6 +169,11 @@ total 88
 -rw-r--r-- 1 root root 52926 oct  8 00:18 debian_observer-0.1.0.tar.gz
 ```
 
+`dist/` is a BUILD ARTIFACT: it is never committed, it does not exist
+in a fresh clone, and the wheel name carries the version. Regenerate
+it whenever the sources change; the versioned name below is the one
+the build writes, substitute the current version.
+
 # Distributing
 
 `ln -sf debian_observer-0.1.0-py3-none-any.whl debian_observer.whl` facilitates
@@ -176,7 +181,7 @@ the distribution:
 
 
 ```shell
-pipx install dist/debian_observer.whl
+pipx install dist/debian_observer-0.1.0-py3-none-any.whl
 ```
 
 

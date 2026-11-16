@@ -5,6 +5,7 @@ Lightweight analytical queries over Parquet via DuckDB.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -14,8 +15,9 @@ import duckdb
 class AnalyticalStorage:
     """Provides analytical query access over normalized Parquet datasets.
 
-    Each query creates a fresh DuckDB in-memory connection. This is
-    lightweight for R1; persistent DuckDB databases belong to R2+R3.
+    Each query creates a fresh DuckDB in-memory connection; a
+    persistent DuckDB database would only pay off once queries
+    outlive a single process.
     """
 
     def __init__(
@@ -47,13 +49,15 @@ class AnalyticalStorage:
         return list(sorted(self.dataset_dir.glob("*.parquet")))
 
     def _register_views(self, con: duckdb.DuckDBPyConnection) -> None:
-        """Register ``events`` and per-file dataset views in DuckDB."""
+        """Register ``events`` and per-file dataset views in DuckDB.
+
+        The ``events`` view is only created when event-log files
+        exist; a missing event log is not an error here — queries
+        and describes over datasets alone must reach the database.
+        Raising on a missing event log belongs to ``query`` when
+        the SQL actually references ``events``.
+        """
         event_files = self._get_event_files()
-        if not event_files:
-            raise RuntimeError(
-                f"No Parquet files found in {self.parquet_dir} — "
-                "ingest first or point --events-dir at the event log"
-            )
         if event_files:
             file_list = ", ".join(f"'{f}'" for f in event_files)
             con.execute(
@@ -62,9 +66,7 @@ class AnalyticalStorage:
             )
         for p in self._get_dataset_files():
             view_name = p.stem
-            con.execute(
-                f"CREATE VIEW {view_name} AS SELECT * FROM read_parquet('{p}')"
-            )
+            con.execute(f"CREATE VIEW {view_name} AS SELECT * FROM read_parquet('{p}')")
 
     def query(self, sql: str) -> Any:
         """Execute a SQL query over registered views.
@@ -78,27 +80,54 @@ class AnalyticalStorage:
         Returns:
             A DuckDB relation (lazy). Call ``.fetchdf()`` for a pandas
             DataFrame, ``.fetchall()`` for a list of tuples, etc.
+
+        Raises:
+            RuntimeError: the SQL references ``events`` but the
+                events directory holds no Parquet files. Dataset-only
+                queries never raise for the event log.
         """
         con = duckdb.connect(":memory:")
         self._register_views(con)
+        event_files = self._get_event_files()
+        if not event_files and self._references_events(sql):
+            raise RuntimeError(
+                f"No Parquet files found in {self.parquet_dir} — "
+                "ingest first or point --events-dir at the event log"
+            )
         return con.execute(sql)
+
+    @staticmethod
+    def _references_events(sql: str) -> bool:
+        """True when the SQL mentions the ``events`` view.
+
+        Word-boundary match so ``package_events`` or a string literal
+        like 'events_dir' do not count. Conservative by design: when
+        in doubt we treat the SQL as event-referencing so the
+        interpreter's own error surfaces instead of a silent pass.
+        """
+        return re.search(r"\bevents\b", sql) is not None
 
     def describe(self) -> dict[str, list[tuple[str, str]]]:
         """Return schema info for every registered table/view.
+
+        ``events`` is only listed when event-log files exist;
+        a describe never requires the event log. Dataset views
+        (one per ``*.parquet`` in ``dataset_dir``) are always
+        listed when their files exist.
 
         Returns:
             Mapping ``table_name -> [(column_name, duckdb_type), ...]``.
         """
         con = duckdb.connect(":memory:")
         self._register_views(con)
-        tables = ["events"] + [p.stem for p in self._get_dataset_files()]
+        tables = [p.stem for p in self._get_dataset_files()]
+        if self._get_event_files():
+            tables = ["events"] + tables
         result: dict[str, list[tuple[str, str]]] = {}
         for table in tables:
             try:
                 rel = con.execute(f"SELECT * FROM {table} LIMIT 0")
-                result[table] = [
-                    (desc[0], desc[1]) for desc in (rel.description or [])
-                ]
+                result[table] = [(desc[0], desc[1]) for desc in (rel.description or [])]
             except Exception:
                 pass
         return result

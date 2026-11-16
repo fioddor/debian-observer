@@ -28,9 +28,7 @@ def test_query_reads_events_dir(tmp_path):
     runner = CliRunner()
     events_dir = tmp_path / "events"
     events_dir.mkdir()
-    table = pa.Table.from_pylist(
-        [{"package_id": "hello:amd64", "version": "2.10-3"}]
-    )
+    table = pa.Table.from_pylist([{"package_id": "hello:amd64", "version": "2.10-3"}])
     pq.write_table(table, events_dir / "run-001.parquet")
 
     result = runner.invoke(
@@ -38,6 +36,72 @@ def test_query_reads_events_dir(tmp_path):
         ["query", "SELECT count(*) AS c FROM events", "--events-dir", str(events_dir)],
     )
     assert result.exit_code == 0
+
+
+def test_query_dataset_dir_alone_reaches_the_database(tmp_path):
+    """A query over a dataset never needs the event log.
+
+    --dataset-dir points the query at consolidated Parquet tables;
+    --events-dir is an optional extra source, not a precondition.
+    The default events dir (data/events) does not exist here.
+    """
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    runner = CliRunner()
+    dataset_dir = tmp_path / "datasets"
+    dataset_dir.mkdir()
+    ds_table = pa.Table.from_pylist([{"package_id": "vim:amd64", "version": "9.0"}])
+    pq.write_table(ds_table, dataset_dir / "package_versions.parquet")
+
+    result = runner.invoke(
+        cli,
+        [
+            "query",
+            "SELECT * FROM package_versions",
+            "--dataset-dir",
+            str(dataset_dir),
+        ],
+    )
+    assert result.exit_code == 0
+    assert "vim:amd64" in result.output
+
+
+def test_query_describe_dataset_dir_alone_describes_only_datasets(tmp_path):
+    """--describe with --dataset-dir only reads the dataset structure.
+
+    describe answers "what tables/columns are here", it never
+    consults the event log. The default events dir does not exist.
+    """
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    runner = CliRunner()
+    dataset_dir = tmp_path / "datasets"
+    dataset_dir.mkdir()
+    ds_table = pa.Table.from_pylist([{"package_id": "vim:amd64", "version": "9.0"}])
+    pq.write_table(ds_table, dataset_dir / "package_versions.parquet")
+
+    result = runner.invoke(
+        cli,
+        ["query", "--dataset-dir", str(dataset_dir), "--describe"],
+    )
+    assert result.exit_code == 0
+    assert "package_versions" in result.output
+    # the events view is absent because there is no event log
+    assert "events" not in result.output
+
+
+def test_query_events_sql_without_event_log_shows_clean_error(tmp_path):
+    """SQL that touches `events` without an event log still errors cleanly."""
+    runner = CliRunner()
+    result = runner.invoke(
+        cli, ["query", "SELECT * FROM events", "--dataset-dir", str(tmp_path)]
+    )
+    assert result.exit_code == 1
+    assert "Error:" in result.output
+    assert "events" in result.output or "No Parquet" in result.output
+    assert len(result.output.splitlines()) < 10
 
 
 def test_query_bad_sql_shows_clean_error(tmp_path):
@@ -57,7 +121,7 @@ def test_query_bad_sql_shows_clean_error(tmp_path):
     )
     assert result.exit_code == 1
     assert "Error:" in result.output
-    # tracebacks span many lines; a clean error is brief
+    # tracebacks span many lines; a clean error is short
     assert len(result.output.splitlines()) < 10
 
 
@@ -122,9 +186,7 @@ def test_query_dataset_dir_registers_view(tmp_path):
 
     dataset_dir = tmp_path / "datasets"
     dataset_dir.mkdir()
-    ds_table = pa.Table.from_pylist(
-        [{"package_id": "vim:amd64", "version": "9.0"}]
-    )
+    ds_table = pa.Table.from_pylist([{"package_id": "vim:amd64", "version": "9.0"}])
     pq.write_table(ds_table, dataset_dir / "package_versions.parquet")
 
     result = runner.invoke(

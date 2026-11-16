@@ -50,6 +50,7 @@ MAX_COLS = 72                                                     # For commits
 R_PATHS = ("tests/", "docs/", "deploy/README.md")
 G_PATHS = (
     "src/",
+    "README.md",
     "deploy/",
     ".woodpecker/",
     ".gitignore",

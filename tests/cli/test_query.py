@@ -58,7 +58,7 @@ def test_query_dataset_dir_alone_reaches_the_database(tmp_path):
         cli,
         [
             "query",
-            "SELECT * FROM package_versions",
+            "SELECT * FROM datasets",
             "--dataset-dir",
             str(dataset_dir),
         ],
@@ -87,7 +87,7 @@ def test_query_describe_dataset_dir_alone_describes_only_datasets(tmp_path):
         ["query", "--dataset-dir", str(dataset_dir), "--describe"],
     )
     assert result.exit_code == 0
-    assert "package_versions" in result.output
+    assert "datasets" in result.output
     # the events view is absent because there is no event log
     assert "events" not in result.output
 
@@ -102,6 +102,46 @@ def test_query_events_sql_without_event_log_shows_clean_error(tmp_path):
     assert "Error:" in result.output
     assert "events" in result.output or "No Parquet" in result.output
     assert len(result.output.splitlines()) < 10
+
+
+def test_query_dataset_dir_with_hyphenated_name(tmp_path):
+    """A query over a dataset never needs the event log.
+
+    A dataset directory is one table named from the directory, and
+    directory names carry hyphens (``deep-dependencies`` is the
+    layout's own example). A hyphen is not a legal SQL identifier;
+    the view name must be quoted or the CREATE VIEW dies in the
+    parser. The describe answers with the same name.
+    """
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    runner = CliRunner()
+    dataset_dir = tmp_path / "deep-dependencies"
+    dataset_dir.mkdir()
+    ds_table = pa.Table.from_pylist([{"package_id": "vim:amd64", "version": "9.0"}])
+    pq.write_table(ds_table, dataset_dir / "run-74923dbac560.parquet")
+
+    # the query reaches the rows through the hyphenated view name
+    result = runner.invoke(
+        cli,
+        [
+            "query",
+            'SELECT * FROM "deep-dependencies"',
+            "--dataset-dir",
+            str(dataset_dir),
+        ],
+    )
+    assert result.exit_code == 0
+    assert "vim:amd64" in result.output
+
+    # the describe answers the same name the view is registered with
+    result = runner.invoke(
+        cli,
+        ["query", "--dataset-dir", str(dataset_dir), "--describe"],
+    )
+    assert result.exit_code == 0
+    assert "deep-dependencies" in result.output
 
 
 def test_query_bad_sql_shows_clean_error(tmp_path):
@@ -193,7 +233,7 @@ def test_query_dataset_dir_registers_view(tmp_path):
         cli,
         [
             "query",
-            "SELECT * FROM package_versions",
+            "SELECT * FROM datasets",
             "--events-dir",
             str(events_dir),
             "--dataset-dir",

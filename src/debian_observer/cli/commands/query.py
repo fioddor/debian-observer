@@ -53,9 +53,12 @@ def query(
     """Run a SQL query over Parquet events and datasets.
 
     ``events`` is a view over all ``*.parquet`` files inside
-    ``--events-dir``.  Each ``*.parquet`` file inside
-    ``--dataset-dir`` is also available as a view named after its
-    stem (e.g. ``package_versions``).
+    ``--events-dir``. A ``--dataset-dir`` directory is ONE table:
+    its ``*.parquet`` files are registered as one view per schema,
+    named from the directory — never from a file name. When every
+    file shares one schema the view carries the directory's name;
+    N schemas register ``<directory>__<suffix>`` views. What
+    ``--describe`` lists is exactly what goes in FROM.
     """
     if sql is None and not describe_flag:
         click.echo("Error: Missing argument 'SQL'.", err=True)

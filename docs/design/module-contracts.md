@@ -223,9 +223,30 @@ cannot reconstruct without reading everything.
        optional `--limit`,
      - ADR-012 amendment 2026-10-23 introduced a breaking rename
        of the old `normalize <paths>` surface).
+  - `query` exposes the event log and the consolidated datasets
+    to ad-hoc DuckDB SQL. It registers views the caller names in FROM.
+    - `--events-dir` registers the `events` view over the event log
+      (required only when a query looks at the event log),
+    - `--dataset-dir` registers views over the consolidated datasets,
+    - a dataset directory is ONE table: views are registered per
+      directory, never per file — the file layout is the writer's
+      business and is not a query interface,
+    - view names derive from the directory name — one schema found
+      carries the directory's name, N schemas found register
+      `<directory>__<suffix>`, one view per schema, where `<suffix>`
+      is a short stable digest of the schema (column names and types
+      in file order), deterministic across runs, never a file name,
+    - `--describe` lists schemas and their fields, and names tables
+      with the SAME rule the views are registered with: what
+      `--describe` lists is exactly what goes in FROM.
 - **Guarantees**:
   - no `consume` subcommand (2026-10-23) — a queue
     consumer is a pipeline the researcher owns, not a command.
+  - no view name is derived from a file name — the file layout is
+    the writer's business and never a query interface.
+  - `--describe` and `query` share one naming rule by
+    construction — what `--describe` lists is exactly what goes
+    in FROM.
 
 ## `consumer_app`
 

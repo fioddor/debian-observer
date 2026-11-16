@@ -1,20 +1,22 @@
 # Debian Release Observatory
 
-A reproducible, event-driven observatory for studying the evolution of Debian releases from public historical data.
+A reproducible and scalable observatory for studying
+the evolution of Debian releases from public historical data.
 
 
 # Using
 
-See the [User Guide](docs/user-guide.md)
-
-# Design
-
- - [Design layer: DRY rules and index](docs/design/README.md)
- - [Data model](docs/design/data-model.md)
- - [Module contracts](docs/design/module-contracts.md)
- - [Key flows](docs/design/key-flows.md)
++See the [User Guide](docs/user-guide.md) and the [key flows](docs/design/key-flows.md)
 
 # Contributing
 
- - [Project for release 1](docs/release1.project.v0.4.md)
- - [How to contribute](docs/CONTRIBUTING.md)
+Our technical [documentation](docs/) includes:
+
+  - [How to contribute](docs/CONTRIBUTING.md).
+    - **Instructions** on [how to contribute](docs/CONTRIBUTING.md).
+    - evolving **product internals** documentation covering
+      [architecture](docs/architecture/overview.md) and
+      [design](docs/design/README.md) (data models, module contracts, etc.)
+    - a phase-planned evolution **roadmap** as a collection of
+      project documents per release.
+    - Software Bill of Materials (SBOM) in standard format.

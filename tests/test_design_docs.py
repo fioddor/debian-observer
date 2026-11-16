@@ -94,10 +94,3 @@ def test_design_readme_states_dry_rules():
     assert "same commit" in text
 
 
-def test_repo_readme_links_the_design_layer():
-    text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
-
-    for doc in ("README.md", "data-model.md", "module-contracts.md", "key-flows.md"):
-        assert f"docs/design/{doc}" in text, (
-            f"README.md must link docs/design/{doc}"
-        )

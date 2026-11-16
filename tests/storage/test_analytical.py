@@ -100,3 +100,58 @@ class TestAnalyticalStorage:
         assert summary["files"] == 1
         assert summary["events"] == 3
         assert summary["types"]["PackageVersionObserved"] == 3
+
+
+    # -- dataset views: one per directory, named from the directory ----
+
+    def _two_runs_same_schema(self, tmp_path: Path) -> Path:
+        """A dataset directory with two shards of ONE schema."""
+        dataset = tmp_path / "package_versions"
+        dataset.mkdir()
+        writer = ParquetWriter(output_dir=dataset)
+        now = datetime.now(timezone.utc)
+        for run in ("run-a", "run-b"):
+            writer.write_events(
+                [
+                    EventEnvelope(
+                        event_type="PackageVersionObserved",
+                        source="udd",
+                        entity_id="vim:amd64",
+                        payload={
+                            "package_id": "vim:amd64",
+                            "version": "2:9.0-1",
+                            "distribution": "debian",
+                            "release": "sid",
+                        },
+                        observed_at=now,
+                        effective_at=now,
+                    )
+                ],
+                ingestion_run_id=run,
+            )
+        return dataset
+
+    def test_view_named_after_directory(self, tmp_path: Path):
+        """Two shards, one schema: ONE view, named from the directory."""
+        dataset = self._two_runs_same_schema(tmp_path)
+        analytics = AnalyticalStorage(tmp_path / "no-events", dataset)
+
+        described = analytics.describe()
+        assert list(described) == ["package_versions"], (
+            "describe must list the directory, not the shards"
+        )
+        n = analytics.query(
+            "SELECT COUNT(*) AS n FROM package_versions"
+        ).fetchone()
+        assert n[0] == 2, "both shards must read as one table"
+
+    def test_describe_names_are_from_names(self, tmp_path: Path):
+        """What describe lists is exactly what goes in FROM."""
+        dataset = self._two_runs_same_schema(tmp_path)
+        analytics = AnalyticalStorage(tmp_path / "no-events", dataset)
+
+        for name in analytics.describe():
+            cols = analytics.query(
+                f"SELECT COUNT(*) AS n FROM {name}"
+            ).fetchone()
+            assert cols is not None, f"FROM {name} must resolve"

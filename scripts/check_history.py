@@ -55,6 +55,7 @@ G_PATHS = (
     ".woodpecker/",
     ".gitignore",
     "pyproject.toml",
+    ".devcontainer/",
 )
 
 

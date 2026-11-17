@@ -316,3 +316,18 @@ cannot reconstruct without reading everything.
 - **Guarantees**: examples stay self-contained — a user can copy one
   to start their own prosumer without reaching into
   `debian_observer` internals beyond the public libraries.
+
+
+
+
+## `version`
+
+- **Exposes**: `__version__` — the package version, as the single
+  source of truth (read by hatchling via `[tool.hatch.version]`
+  in `pyproject.toml`; `__init__` re-exports it).
+- **Guarantees**: one version literal in the whole repository —
+  the built wheel, the sdist and the runtime all see the same
+  value without any manual synchronisation.
+- **Expects**: nothing — a standalone module, no imports, so the
+  devcontainer image can copy just this file before the editable
+  install (a version bump invalidates only that layer).

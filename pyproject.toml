@@ -2,9 +2,12 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.version]
+path = "src/debian_observer/version.py"
+
 [project]
 name = "debian-observer"
-version = "0.1.0"
+dynamic = ["version"]
 description = "A reproducible, event-driven observatory for studying the evolution of Debian releases."
 readme = "README.md"
 requires-python = ">=3.11"

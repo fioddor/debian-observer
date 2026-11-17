@@ -46,8 +46,11 @@ RUN id -u vscode >/dev/null 2>&1 || useradd -m -s /bin/bash vscode
 USER vscode
 WORKDIR /workspace
 
-# Pre-install development dependencies for faster container startup
+# Pre-install development dependencies for faster container startup.
+# The dynamic version needs its source file at metadata time: copy just
+# version.py (a bump invalidates only this layer, the deps stay cached).
 COPY --chown=vscode:vscode pyproject.toml README.md ./
+COPY --chown=vscode:vscode src/debian_observer/version.py src/debian_observer/
 RUN pip install --user --upgrade pip \
     && pip install --user -e ".[dev]"
 

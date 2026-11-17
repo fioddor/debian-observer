@@ -103,14 +103,17 @@ The value is in the *dynamics* — evolution and concentration
 
 R2 introduces:
 
- 1. a dependency **eventizer** for the `udddump` source,
- 2. a `popcon` eventizer (popularity, used to weight impact),
- 3. a family of dependency **prosumers** that build analytical tables
-    (direct, reverse, cycles, statistics, deep dependencies),
- 4. use of **benchmark** (R1 §16) to evaluate parallelization and
-    to dimension the cache limit for deep-dependency tables,
- 5. a **parallel worker in Go** as the experimental arm of that
-    benchmark, distributing work over NATS JetStream.
+ 1. a dependency **eventizer** for the `udddump` source in debian-observer,
+ 2. a `popcon` eventizer (popularity, used to weight impact) in debian-observer,
+ 3. a family of external dependency **prosumers** that build analytical tables
+    (direct, reverse, cycles, statistics, deep dependencies). This will be a
+    project of its own "Debian Observer Plug-In: Packages Deploy-Dependency
+    Analysis (DOPI-PDDA)",
+ 4. use of debian-observer's **benchmark** (R1 §16) to evaluate parallelization
+    and to dimension the cache limit for deep-dependency tables,
+ 5. a **parallel worker in Go** in DOPI-PDDA, as the experimental arm of that
+    debian-observer's benchmark, processing in DOPI-PDDA work distributed over
+    debian-observer's NATS JetStream.
 
 R2 is useful by itself (dependency analytics over real data) while
 preparing R3 (operating many workers reliably: SLOs, Kubernetes,
@@ -434,7 +437,7 @@ later release.
  8. Cross-release and cross-components comparison queries (SQL files):
     the same analysis per release, and per component list
     (See Coordinates, §4.3).
- 9. ADR-013..021, design docs, user guide updates.
+ 9. ADR-013..022, design docs, user guide updates.
 
 #### 3.2.2. Known limitations (to be documented, not hidden)
 
@@ -498,10 +501,9 @@ platform, no autoscaling, no SLO machinery.
 This section documents expectations, it's NOT a requirement.
 
 ```text
-src/debian_observer/
+debian-observer.git/src/debian_observer/          # the platform
 ├── normalization/
 │   ├── udddump.py                      # + COPY row iterator
-│   ├── event_types.py                  # + DependencyObservedPayload, PopconObservedPayload
 │   └── eventizers/                     # NEW subpackage: one module per eventizer
 │       ├── __init__.py                 # registry: source -> {name: eventizer}
 │       ├── package_versions.py         # R1 behaviour, moved, unchanged output
@@ -510,19 +512,32 @@ src/debian_observer/
 ├── consumers/
 │   └── events_reader.py                # NEW library: batched event-lake reader
 │                                       #   (iter_batches + fold; never read_table)
-└── prosumers
-    ├── consolidate/                    # unchanged
-    └── deploy_dependencies/            # NEW example executables (one per table)
-        ├── dependencies.py             # NEW library: relationship parser, table writers
-        ├── graph.py                    # NEW library: adjacency, BFS levels, iterative Tarjan
-        ├── analytics/models.py         # + benchmark fields (Benchmarked Performance, §16)
-        ├── deep_go/                    # NEW: Go module (deep-dependency worker)
-        │   ├── go.mod
-        │   └── cmd/deepdeps-worker/
-        └── benchmarks/
-            ├── queries/                # SQL files of the cross-release comparisons
-            └── results/                # measured outputs (CSV/MD), committed
+├── prosumers/                          # the prosumer library (a plug-in's substrate)
+│   ├── lake.py                         # batched lake source (Reading the lake, §10.2)
+│   ├── coordinates.py                   # coordinate filter, incl. component lists
+│   ├── cli.py                          # common I/O options, build_source/build_sink
+│   ├── stream.py                       # Record, sinks/sources (ND-JSON, NATS)
+│   └── dependencies.py                 # clause/edge table builders (fold helpers)
+└── cli/commands/query.py               # + AnalyticalStorage, dataset views
+                                        #   (this spec's §12 API is DOPI-PDDA's)
+
+dopi-pdda.git/src/dopi_pdda/            # the plug-in (new executables, one per table)
+├── packages_deploy_deps_net_direct.py  # P1 straight (entry point)
+├── packages_deploy_deps_net_reverse.py # P2 reverse (entry point)
+├── dependencies.py                     # clause parser, resolution, table writers
+├── graph.py                            # adjacency, BFS levels, iterative Tarjan
+├── deep_go/                            # Go module (deep-dependency worker)
+│   ├── go.mod
+│   └── cmd/deepdeps-worker/
+└── benchmarks/
+    ├── queries/                        # SQL files of the cross-release comparisons
+    └── results/                        # measured outputs (CSV/MD), committed
 ```
+
+The dependency analysis CLIs and their entry-points moved to the plug-in:
+ - the platform keeps the prosumer **library** they import
+   (`prosumers.{lake,coordinates,cli,stream,dependencies}`)
+ - the plug-in ships the **executables** and their tests.
 
 Existing R1 files expected to change (non-exhaustive):
 `normalization/udddump.py`, `cli/commands/normalize.py`,
@@ -549,15 +564,18 @@ Each ADR follows the R1 ADR format:
  6. evidence,
  7. revisit conditions.
 
-| ADR     | Title                                     | Decision (summary) |
-|:--------|:------------------------------------------|:-------------------|
-| ADR-013 | Dependency observation model              | 1 event per **alternative-bearing clause**, with every alternative parsed (no first-alternative shortcut). `kind` ∈ {depends, pre-depends}. `clause_index` groups the alternatives of one clause and is a uniqueness discriminator, not an order (Dependency clause, §5.1.1). The AND (clause) / OR (alternative) levels are both preserved; constraints are **evaluated** against the coordinate's versions (Clause resolution, §5.1.2) |
-| ADR-014 | Eventizers per source                     | A source owns a registry of eventizers; `normalize <source> --eventizer NAME`; R1 behaviour = default eventizer `package-versions` |
-| ADR-015 | Streaming reads of the event lake         | Neither reading UDD nor writing events needs streaming (measured flat at 267 MB for 8.4 M events). The wall is the **prosumer read**: R1's `read_table`+`to_pandas`+`list(source)` extrapolates to **19.3 GB** for the real lake vs **0.73 GB** with `iter_batches` (Memory, §2.2). Prosumers consume the log in batches and fold as they go. They may materialize heavily filtered outputs. |
-| ADR-016 | No graph database, no Hive partitioning   | DuckDB SQL for joins/aggregates + in-memory algorithms (BFS, Tarjan) in the prosumers. Derived tables are one directory per table, one file per `(coordinate, components)` with those values in the columns (Layout, §10.1 — researchers query cross-coordinate. Hive leaks storage layout into every reader and strips the coordinate from the files). Revisit conditions stated |
-| ADR-017 | Go for parallel graph workers             | Go worker is the experimental arm; Python `fork()`+CoW is the baseline, sharing the graph rather than copying it (measured 0.9 MB/child, Memory, §2.2). The decision rests on traversal speed per core and on static-binary deployability (Deployment, §14), not on memory per worker; the measured result decides |
-| ADR-018 | Work distribution over JetStream          | Work-queue stream for deep-dependency jobs. Explicit ack after the output file is atomically written |
-| ADR-019 | Idempotency by deterministic output keys  | Derived tables are folds by primary key and per-job outputs have deterministic paths. Supersedes R1's "persistent IdempotencyStore deferred to R2" (`module-contracts.md` `idempotency` block and the `idempotency.py` docstring are updated to point here) |
+| ADR     | Title                                     | Binds           | Decision (summary) |
+|:--------|:------------------------------------------|:----------------|:-------------------|
+| ADR-013 | Dependency observation model              | Both equally    | 1 event per **alternative-bearing clause**, with every alternative parsed (no first-alternative shortcut). `kind` ∈ {depends, pre-depends}. `clause_index` groups the alternatives of one clause and is a uniqueness discriminator, not an order (Dependency clause, §5.1.1). The AND (clause) / OR (alternative) levels are both preserved; constraints are **evaluated** against the coordinate's versions (Clause resolution, §5.1.2) |
+| ADR-014 | Eventizers per source                     | Debian Observer | A source owns a registry of eventizers; `normalize <source> --eventizer NAME`; R1 behaviour = default eventizer `package-versions` |
+| ADR-015 | Streaming reads of the event lake         | Both equally    | Neither reading UDD nor writing events needs streaming (measured flat at 267 MB for 8.4 M events). The wall is the **prosumer read**: R1's `read_table`+`to_pandas`+`list(source)` extrapolates to **19.3 GB** for the real lake vs **0.73 GB** with `iter_batches` (Memory, §2.2). Prosumers consume the log in batches and fold as they go. They may materialize heavily filtered outputs. |
+| ADR-016 | No graph database, no Hive partitioning   | Both equally    | DuckDB SQL for joins/aggregates + in-memory algorithms (BFS, Tarjan) in the prosumers. Derived tables are one directory per table, one file per `(coordinate, components)` with those values in the columns (Layout, §10.1 — researchers query cross-coordinate. Hive leaks storage layout into every reader and strips the coordinate from the files). Revisit conditions stated |
+| ADR-017 | Go for parallel graph workers             | DOPI-PDDA       | Go worker is the experimental arm; Python `fork()`+CoW is the baseline, sharing the graph rather than copying it (measured 0.9 MB/child, Memory, §2.2). The decision rests on traversal speed per core and on static-binary deployability (Deployment, §14), not on memory per worker; the measured result decides |
+| ADR-018 | Work distribution over JetStream          | DOPI-PDDA       | Work-queue stream for deep-dependency jobs. Explicit ack after the output file is atomically written |
+| ADR-019 | Idempotency by deterministic output keys  | Both equally    | Derived tables are folds by primary key and per-job outputs have deterministic paths. Supersedes R1's "persistent IdempotencyStore deferred to R2" (`module-contracts.md` `idempotency` block and the `idempotency.py` docstring are updated to point here) |
+| ADR-020 | Cache budget for deep dependencies        | DOPI-PDDA       | E3 (Cache sizing, §16.4) measures the cache curve; the ADR fixes the sample (`all` / `top-indegree:N` / `top-popcon:N` / `stratified:N`, Work distribution, §11.2) and the N that fit an explicit storage budget. The API's cached subset is whatever this budget allows — never a complete cache (CLI & API, §12) |
+| ADR-021 | Component list as part of the coordinate  | DOPI-PDDA       | A coordinate is `(distribution, release, architecture, components)`; `components` is a multi-valued selector exactly like `architecture` (Coordinates, §4.3). Every derived row carries the list it was built under |
+| ADR-022 | Plug-in API endpoints                      | Debian Observer | API endpoints are mounted from plug-in-discovered FastAPI routers: the platform discovers routers by entry point (`debian_observer.api_routers`) and mounts them under the shared coordinate prefix — **it never imports or depends on any plug-in**; the dependency arrow stays plug-in → platform (API Extensibility, §12.1). A path-template collision between two plug-ins **fails fast at startup** with both packages named — kept deliberately: it prevents mistakes |
 
 ADR-017 is written in two steps:
  1. decision frame first (day 1),
@@ -698,7 +716,7 @@ self-contained graphs.
 ---
 ## 5. Data Model
 
-### 5.1. Domain entities (new)
+### 5.1. Domain entities (DOPI-PDDA's)
 
 #### 5.1.1. Dependency clause
 
@@ -858,7 +876,7 @@ Popcon counters per binary package name (no version, no coordinate):
 
 
 ---
-## 6. Event Model
+## 6. Event Model (Debian Observer's)
 
 ### 6.1. New event types
 
@@ -962,7 +980,8 @@ Never a claim about Debian semantics.
                          event log ──►  publish CLI ──► JetStream/FastAPI
                       (Parquet. DuckDB)                        │
                              ├─────────────────────────────────┘
-          ┌──────────────────┼───────────┐...other consumers
+                         DOPI-PDDA
+          ┌──────────────────┼───────────┐...other (DOPI) consumers
           ▼                  ▼           ▼
     R1 consolidate        popcon   straight table
    package_versions       table?         ├──► reverse table
@@ -976,8 +995,7 @@ Never a claim about Debian semantics.
      (Python baseline | Go)   worker   worker   worker
                                  └───────┼────────┘
                                          ▼
-     <package>-<version>-deploy-deep_dependencies (cache)
-                         │
+                 <package>-<version>-deploy-deep_dependencies (cache)
 ```
 
 Principle (inherited from R1) regenerable state:
@@ -985,7 +1003,7 @@ The event log is the backbone,
 every analytic table is derived directly or indirectly from it.
 
 ---
-## 8. Ingestion & the eventizer concept
+## 8. Ingestion & the eventizer concept (Debian Observer)
 
 Ingestion is **unchanged**: R2 reuses the raw UDD dump artifact.
 
@@ -1011,7 +1029,7 @@ with `name`, `event_type`, `shape` (a `TableShape`) and
 
 
 ---
-## 9. Normalization: eventizers
+## 9. Normalization: eventizers (Debian Observer)
 
 ### 9.1. CLI
 
@@ -1139,6 +1157,9 @@ One `PopconObserved` per `popcon` row.
 ---
 ## 10. Analytical Storage: derived dependency tables
 
+This describes a Debian Observer standard, mandatory for all its
+analytical plug-ins.
+
 ### 10.1. Layout
 
 One directory per derived table; the files inside it are an
@@ -1202,12 +1223,13 @@ Coordinates live in columns, file names are flat.
 
 ### 10.2. The prosumers
 
-Each prosumer is a standalone executable under `src/prosumers/` built
-on library code under `src/debian_observer/prosumers/`, per
-CONTRIBUTING's prosumer layout rule. The `consolidate` example is the
-reference for entry points and `--help` style.
+Each prosumer is a standalone executable built on library code under
+`src/debian_observer/prosumers/`, per CONTRIBUTING's prosumer layout rule.
+The `consolidate` example is the reference for entry points and `--help` style.
+When provided by the platform (Debian Observer), it lives under
+`src/prosumers/`.
 
-#### I/O: R1's four options, unchanged
+#### I/O: R1's four options (unchanged, Debian Observer)
 
 R2 adds **no new I/O vocabulary**. Every prosumer speaks the dialect
 R1 already defines in `debian_observer.prosumers.cli::common_io_options`
@@ -1221,17 +1243,17 @@ and documents in the user guide:
 | `--stream-out`    | write ND-JSON to stdout |
 
 `--file-in` and `--file-out` are **repeatable** in R2, and accept a
-directory or a glob as well as a single file — that is the only
-extension, and it keeps pipes working exactly as the user guide shows
-them. An event-log directory or a derived-table directory is just a
-path handed to `--file-in`.
+directory or a glob as well as a single file — that is the only extension,
+and it keeps pipes working exactly as the user guide shows them.
+An event-log directory or a derived-table directory is just a path handed to
+`--file-in`.
 
-(`--events-dir` stays what R1 made it — an option of `ingest`,
-`consolidate` and now `normalize`, naming where the log is *written*.
+(`--events-dir` stays what R1 made it — an option of `ingest`, `consolidate`,
+and now `normalize`, naming where the log is *written*.
 It is not part of the prosumer I/O dialect.)
 
-On top of the fourflags, the graph prosumers take the coordinate
-selectors of Coordinates (§4.3):
+On top of the four flags, the graph prosumers take the coordinate selectors
+(§4.3):
 
 ```text
 --distribution D  --release R  --architecture A
@@ -1240,10 +1262,9 @@ selectors of Coordinates (§4.3):
 
 `--components` is a list, like any other multi-valued selector.
 It is almost a filter (defaults to "all components") to be applied
-**before** the graph is built. It decides which packages exist for
-resolution.
+**before** the graph is built. It decides which packages exist for resolution.
 
-#### Reading the lake: batched
+#### Reading the lake: batched (new, Debian Observer)
 
 **This is where streaming becomes mandatory** (Memory, §2.2). R1's
 `FileSource.__iter__` loads the whole file — `pq.read_table()` then
@@ -1254,16 +1275,16 @@ batches: a 26× difference between "does not run on the hardware" and
 "runs comfortably".
 
 R2 therefore adds a batched source to the shared prosumer library
-(`prosumers/lake.py`), so every prosumer gets it from the same place
-R1 gets `FileSource`: `iter_batches()` under the hood (or DuckDB,
-which streams natively), folding batch by batch and keeping only the
-accumulator for the coordinate in hand. R1's `FileSource` stays as it
-is for the small single-file cases it already serves.
+(`prosumers/lake.py`), so every prosumer gets it from the same place R1 gets
+`FileSource`: `iter_batches()` under the hood (or DuckDB, which streams
+natively), folding batch by batch and keeping only the accumulator for the
+coordinate in hand. R1's `FileSource` stays as it is for the small single-file
+cases it already serves.
 
 Reads use plain `read_parquet()`
 — **no `hive_partitioning`** (Layout, §10.1) — 
 
-#### P1 `packages_deploy_direct_straight_dependencies` (cmd `do-deps-direct`)
+#### P1 `packages_deploy_direct_straight_dependencies` (DOPI-PDDA)
 
 prosumer `packages_deploy_direct_straight_dependencies`
 will read the event log and 
@@ -1276,7 +1297,7 @@ selecting the first alternative and marking an output field `complexdeps='yes'`.
 Sorted by `(package, version)`. Purpose: walk the graph **upwards**
 (what does X need?).
 
-#### P2 `packages_deploy_direct_reverse_dependencies` (cmd `do-deps-reverse`)
+#### P2 `packages_deploy_direct_reverse_dependencies` (DOPI-PDDA)
 
 `packages_deploy_direct_reverse_dependencies`
 will read the `packages_deploy_direct_straight_dependencies` table and
@@ -1285,7 +1306,7 @@ all the same dependency network, **indexed by dependency** (second package).
 
 Purpose: walk the graph **downwards** (who needs X?).
 
-#### P3 `packages_deploy_direct_dependency_statistics` (cmd `do-deps-stats`)
+#### P3 `packages_deploy_direct_dependency_statistics` (DOPI-PDDA)
 
 Input: P1, P2. One row per coordinate:
 
@@ -1316,7 +1337,7 @@ sccs_potential, largest_scc_potential  -- from P6 cycle_class='potential'
 cache, but that is the benchmark's business: this table answers a
 question about Debian, not about our software.)
 
-#### P4 `<package>-<version>-deploy-deep_dependencies` (cmd `d-o-deps-deep`)
+#### P4 `<package>-<version>-deploy-deep_dependencies` (cmd `packages-deploy-deps-deep`)
 
 Input: coordinate + `package` + `version`
 Options: `--max-level N` (default unlimited).
@@ -1337,7 +1358,7 @@ The Go worker (Work distribution, §11.2) implements the
 same contract and must produce equal files (order-insensitive
 comparison).
 
-#### Optional: P5 `packages_deploy_dependency_cycles` (cmd `do-deps-cycles`)
+#### Optional: P5 `packages_deploy_dependency_cycles` (DOPI-PDDA)
 
 **Cycles need the unfolded graph.** P2 keeps only the
 **first** alternative of a complex clause (Known limitations, §3.2.2), so a cycle that
@@ -1401,7 +1422,7 @@ on a sample.
 ---
 ## 11. Messaging
 
-### 11.1. Events
+### 11.1. Events (Debian Observer)
 
 New subjects `debian.dependency.observed` and `debian.popcon.observed`
 are registered (New event types, §6.1) so the stream view can be built.
@@ -1505,6 +1526,51 @@ CLI additions:
   - `deps-enqueue` (Work distribution, §11.2),
   - the `benchmark` extension (Benchmarked Performance, §16).
 
+### 12.1. API extensibility (plug-in endpoints)
+
+The API is **read-only and small**, but it must not be a closed list:
+analytical plug-ins like DOPI-PDDA need to serve their own tables
+without the platform shipping a router per plug-in
+(ADR-022). The platform therefore owns the **mechanism**, the
+plug-in owns the **endpoints**:
+
+ 1. **The platform never imports a plug-in.** A plug-in's router is
+    discovered by entry point (`debian_observer.api_routers` group):
+    each installed plug-in exports a FastAPI `APIRouter`, the
+    platform's app mounts every discovered router at startup. A
+    plug-in that is not installed adds nothing and breaks nothing,
+    and the platform has no dependency on any plug-in — the
+    dependency arrow stays plug-in → platform, never the reverse
+    (the platform does not even know the plug-in's import name:
+    it receives the router object, not a reference to import).
+ 2. **A standard FastAPI router, not a record format.** The plug-in
+    declares its routes the way any FastAPI application does
+    (`@router.get(...)`, path templates, dependencies, response
+    models). There is no intermediate declaration format and no
+    lazy handler strings: the entry point is a direct reference to
+    a module that builds the router.
+ 3. **The platform mounts and wraps; the plug-in computes.** The
+    platform mounts every discovered router under the shared
+    coordinate prefix (rule 4), echoes the component list in the
+    response (the rule of this §12 applies to plug-in endpoints
+    unchanged: a result can never be read as belonging to another
+    list), and applies its observability perimeter (spans/metrics,
+    Observability, §13) around every handler.
+ 4. **The path vocabulary is shared, the resources are the plug-in's.**
+    `/coordinates/{d}/{r}/{a}` is the platform's resource prefix for
+    anything measured per coordinate; what follows it belongs to
+    the declaring plug-in. Two plug-ins must not collide: a
+    declaration whose path template is already mounted **fails fast
+    at startup** with both declaring packages in the error — the
+    platform does not silently shadow (deliberately kept: it
+    prevents mistakes, ADR-022).
+
+The plugin-developer documentation (router shape, shared prefix,
+component-list echo, collision error) is
+`dopi-pdda.git/docs/plugin-api-endpoints.md`; the platform's
+`docs/design/module-contracts.md` keeps only the mechanism's
+contract (entry-point group, mounting rules, collision error).
+
 API (FastAPI, read-only, small): only endpoints backed by a demo use
 case:
 
@@ -1523,6 +1589,10 @@ result can never be read as belonging to another list.
 component list (`unresolved_outside_components`) and the
 cross-component edges inside it — the free-software-boundary question
 as an endpoint.
+
+The endpoints above are **DOPI-PDDA's**, declared through the
+mechanism of API extensibility (§12.1, ADR-022), not platform
+hard-coded routes; the platform's own API surface stays R1's.
 
 **Deep dependencies and the cache budget.** There is **no disk space
 to cache every closure**, so the API cannot assume a hit. Measured
@@ -1569,13 +1639,14 @@ No full observability platform (R3).
 
  - Docker Compose (dev) and OpenTofu (deploy) as R1; add the
    `debian-work` stream to the stream bootstrap (`ensure_stream`).
- - The Go worker is a static binary (`CGO_ENABLED=0`) — deployable on
-   the old 4 GB laptops without a Python environment; this is part of
-   the Go evaluation (operational argument, not only speed).
- - Devcontainer gains the Go toolchain; CI (Woodpecker) gains a Go
-   build/test step.
- - Resource budgets per service recorded (R1 §14.4), now including
-   per-worker RSS.
+ - DOPI-PDDA has its own deployment.
+   - The Go worker is a static binary (`CGO_ENABLED=0`) — deployable on
+     the old 4 GB laptops without a Python environment; this is part of
+     the Go evaluation (operational argument, not only speed).
+   - Its devcontainer gains the Go toolchain
+   - CI (Woodpecker?) gains a Go build/test step.
+   - Resource budgets per service recorded (R1 §14.4), now including
+     per-worker RSS.
 
 
 ---
@@ -1857,7 +1928,7 @@ invented.
 
 ### Portfolio
  - [ ] Architecture diagram updated.
- - [ ] ADR-013..021.
+ - [ ] ADR-013..022.
  - [ ] Benchmark results + cache recommendation.
  - [ ] Demo script.
  - [ ] R3 handoff section.
@@ -2073,19 +2144,6 @@ See Events (§11.1) for the constraint and the options.
    without the disk bill. Definition of Done (§18) lists it as functional, not as a
    full-volume guarantee.
 
-### D2 — Is the R1 execution-record fix in R2's scope at all?
-
-Reading the dump and writing events (§9.2) treats the missing
-`normalize` execution record as an **R1 bug**
-and proposes fixing it in R1 (brief T0), because R2's own benchmark
-story depends on it. The altitude rule makes this a real task: the
-originating commits are inside published `tdd`, so the fix enters as
-its own `[R]`/`[G]` pair after the upstream tip, and it touches
-`ExecutionType`, which is a published contract.
-
- - **Default if undecided**: do it as T0 before T2, since every later
-   measurement (E1–E6) files records through that path.
-
 ### D4 — Which component lists does R2 study?
 
 **Resolved: R2 builds the full matrix** (37 release×architecture
@@ -2116,19 +2174,19 @@ dependency to flag before T8, not a silent step.
 
 ### Settled (recorded so they are not re-opened)
 
-| # | Question | Resolution |
-|:--|:---------|:-----------|
-| 1 | Does normalization (UDD read + event write) need streaming or parallelism? | **No** to both. The read is ~1.3 GB and infrequent; eventization is flat at ~267 MB for 8.4 M events. The streaming requirement belongs to the **prosumer read of the lake** (19.3 GB vs 0.73 GB), not to normalization (Memory, §2.2). |
-| 2 | Do workers each copy the graph? | No. `fork()`+CoW shares it; measured 0.9 MB/child with CSR, so ADR-017 does not rest on memory (Memory, §2.2). |
-| 3 | Does `normalize udddump` select the eventizer? | No — it selects the source; `--eventizer` selects the eventizer (In scope, §3.2.1). |
-| 4 | Is `clause_index` needed if clauses are unordered? | Yes, as a *uniqueness discriminator*, not an order: dropping it collides 3,142 rows in trixie amd64+all (Dependency clause, §5.1.1, Ordering, §6.3). |
-| 5 | How is the event log laid out? | One **directory per event type**, one file per run inside it (owner, 2026-11-04): a Parquet file is one table, so there is no reason to union different types and pay NULL padding for it. Per-type schemas are mandatory either way (Normalization CLI, §9.1). |
-| 6 | Fix the missing `normalize` execution record in R1? | Yes — R1 bug, see D2 for sequencing (Reading the dump and writing events, §9.2). |
-| 7 | Hive partitioning for derived tables? | No, and no disguised equivalent (no coordinate subdirectories either). One directory per table, coordinate in the **columns**; file names are flat and are not a query interface (Layout, §10.1, ADR-016). |
-| 8 | Is `component` part of the coordinate? | **Yes** (owner, 2026-11-03/04), as a **list**, treated exactly like `architecture` — both are multi-valued selectors. A coordinate is `(distribution, release, architecture, components)` (Coordinates, §4.3, ADR-021). Measured: `main` needs **0** packages outside itself, 72 clauses stay inside only via a non-first alternative, and the 2 apparent `main`→non-`main` edges are artefacts of first-alternative simplification. |
-| 10 | Are version constraints evaluated? | **Yes** (owner, 2026-11-04). 57 % of clauses carry one (178,673 of 313,761), so ignoring them would discard the majority of the information. Prosumers filter the satisfying versions, count them and may pick one by a stated rule; `python-debian`'s `version_compare` does the comparison and is promoted from transitive to declared dependency (Clause resolution, §5.1.2). |
-| 11 | Are AND and OR dependencies distinguished? | **Yes** (owner, 2026-11-04). A field is a conjunction of disjunctions; edges carry `edge_class` ∈ {`required`, `alternative`} and alternatives of one clause share a `clause_index`, so a consumer asks "is the clause satisfied?" rather than "does the edge exist?" (Clause resolution, §5.1.2). |
-| 12 | Does the event log union different event types? | No. One table per event type, one directory each, plain reads with no `union_by_name` and no NULL padding (Normalization CLI, §9.1). |
-| 13 | Do prosumers get new I/O options? | No. R1's `--file-in/--file-out/--stream-in/--stream-out` are the contract (verified in `prosumers/cli.py` and the user guide); `--file-in`/`--file-out` merely become repeatable and accept directories/globs (The prosumers, §10.2). |
-| 14 | Does R2 build only part of the coordinate matrix? | No — the **full** matrix (D4). The earlier 74-of-111 cut had no measurement behind it. |
-| 9 | Can P4 find cycles from P2? | No. P2 keeps only first alternatives; P4 unfolds all of them and reports `hard` vs `potential` (The prosumers, §10.2 P4). |
+|  # | Question | Resolution |
+|---:|:---------|:-----------|
+|  1 | Does normalization (UDD read + event write) need streaming or parallelism? | **No** to both. The read is ~1.3 GB and infrequent; eventization is flat at ~267 MB for 8.4 M events. The streaming requirement belongs to the **prosumer read of the lake** (19.3 GB vs 0.73 GB), not to normalization (Memory, §2.2). |
+|  2 | Do workers each copy the graph?                     | No. `fork()`+CoW shares it; measured 0.9 MB/child with CSR, so ADR-017 does not rest on memory (Memory, §2.2). |
+|  3 | Does `normalize udddump` select the eventizer?      | No — it selects the source; `--eventizer` selects the eventizer (In scope, §3.2.1). |
+|  4 | Is `clause_index` needed if clauses are unordered?  | Yes, as a *uniqueness discriminator*, not an order: dropping it collides 3,142 rows in trixie amd64+all (Dependency clause, §5.1.1, Ordering, §6.3). |
+|  5 | How is the event log laid out?                      | One **directory per event type**, one file per run inside it (owner, 2026-11-04): a Parquet file is one table, so there is no reason to union different types and pay NULL padding for it. Per-type schemas are mandatory either way (Normalization CLI, §9.1). |
+|  6 | Fix the missing `normalize` execution record in R1? | Yes — R1 bug, see D2 for sequencing (Reading the dump and writing events, §9.2). |
+|  7 | Hive partitioning for derived tables?               | No, and no disguised equivalent (no coordinate subdirectories either). One directory per table, coordinate in the **columns**; file names are flat and are not a query interface (Layout, §10.1, ADR-016). |
+|  8 | Is `component` part of the coordinate?              | **Yes** (owner, 2026-11-03/04), as a **list**, treated exactly like `architecture` — both are multi-valued selectors. A coordinate is `(distribution, release, architecture, components)` (Coordinates, §4.3, ADR-021). Measured: `main` needs **0** packages outside itself, 72 clauses stay inside only via a non-first alternative, and the 2 apparent `main`→non-`main` edges are artefacts of first-alternative simplification. |
+| 10 | Are version constraints evaluated?                  | **Yes** (owner, 2026-11-04). 57 % of clauses carry one (178,673 of 313,761), so ignoring them would discard the majority of the information. Prosumers filter the satisfying versions, count them and may pick one by a stated rule; `python-debian`'s `version_compare` does the comparison and is promoted from transitive to declared dependency (Clause resolution, §5.1.2). |
+| 11 | Are AND and OR dependencies distinguished?          | **Yes** (owner, 2026-11-04). A field is a conjunction of disjunctions; edges carry `edge_class` ∈ {`required`, `alternative`} and alternatives of one clause share a `clause_index`, so a consumer asks "is the clause satisfied?" rather than "does the edge exist?" (Clause resolution, §5.1.2). |
+| 12 | Does the event log union different event types?     | No. One table per event type, one directory each, plain reads with no `union_by_name` and no NULL padding (Normalization CLI, §9.1). |
+| 13 | Do prosumers get new I/O options?                   | Maybe, but R1's `--file-in/--file-out/--stream-in/--stream-out` are the baseline contract (verified in `prosumers/cli.py` and the user guide); `--file-in`/`--file-out` merely become repeatable and accept directories/globs (The prosumers, §10.2). |
+| 14 | Does R2 build only part of the coordinate matrix?   | No — the **full** matrix (D4). The earlier 74-of-111 cut had no measurement behind it. |
+|  9 | Can P4 find cycles from P2?                         | No. P2 keeps only first alternatives; P4 unfolds all of them and reports `hard` vs `potential` (The prosumers, §10.2 P4). |

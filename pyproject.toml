@@ -11,7 +11,8 @@ dynamic = ["version"]
 description = "A reproducible, event-driven observatory for studying the evolution of Debian releases."
 readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "AGPL-3.0-or-later"}
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSES/*"]
 authors = [
     {name = "Debian Observatory Team"},
 ]

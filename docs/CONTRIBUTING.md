@@ -64,6 +64,15 @@ cd .devcontainer
 docker compose up -d
 ```
 
+The service image is tagged `deb-obs-devcontainer:${DEVCONTAINER_TAG:-latest}`:
+the plain command above builds and reuses the `latest` tag. To keep a
+concrete image, pass the optional tag on the lift — no versioned file
+to edit:
+
+```shell
+DEVCONTAINER_TAG=<tag> docker compose up -d
+```
+
 To tear it down without destroying it:
 ```shell
 docker stop debian-observer-dev
@@ -80,7 +89,7 @@ To destroy it:
 ```shell
 cd .devcontainer
 docker compose down
-docker rmi  devcontainer-debian-observer-development
+docker rmi deb-obs-devcontainer:latest
 ```
 
 ### Option C: VS Dev Container

@@ -5,6 +5,7 @@ Validates deployment artifacts without requiring Docker runtime.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -124,3 +125,64 @@ class TestDeploymentReadme:
         assert "Docker Compose" in content
         assert "NATS" in content
         assert "Parquet" in content
+
+class TestDevcontainerImageTag:
+    """The dev image tag is optional, latest by default.
+
+    The compose service pins the image to this repository's devcontainer
+    image and defaults its tag to ``latest``, so the plain
+    ``docker compose up -d`` keeps working; whoever wants to keep a
+    concrete image passes ``DEVCONTAINER_TAG`` on the lift, with no
+    versioned file to edit.
+    """
+
+    #: The compose variable that names the image tag.
+    TAG_VAR = "DEVCONTAINER_TAG"
+    #: The tag compose falls back to when the variable is unset.
+    DEFAULT_TAG = "latest"
+    #: The repository of the development image.
+    IMAGE_REPO = "deb-obs-devcontainer"
+    DEVCONTAINER = Path(__file__).parent.parent / ".devcontainer"
+    CONTRIBUTING = Path(__file__).parent.parent / "docs" / "CONTRIBUTING.md"
+
+    def test_compose_defaults_the_tag_to_latest(self) -> None:
+        """The service image is the devcontainer image, tag optional.
+
+        ``${DEVCONTAINER_TAG:-latest}`` keeps the variable optional: no
+        command has to run before compose, and unset means latest.
+        """
+        compose = yaml.safe_load(
+            (self.DEVCONTAINER / "docker-compose.yml").read_text(encoding="utf-8")
+        )
+        image = compose["services"]["debian-observer-development"]["image"]
+        repository, _, tag = image.partition(":")
+        assert repository == self.IMAGE_REPO
+        assert tag == "${%s:-%s}" % (self.TAG_VAR, self.DEFAULT_TAG)
+
+    def test_devcontainer_starts_compose_without_a_setup_command(self) -> None:
+        """No VS Code command writes the tag before compose starts.
+
+        The compose default is what keeps the tag optional: a mandatory
+        variable would need a command that writes it before
+        ``docker compose up -d``, and the default removes that need.
+        """
+        config = json.loads(
+            (self.DEVCONTAINER / "devcontainer.json").read_text(encoding="utf-8")
+        )
+        assert "initializeCommand" not in config
+
+    def test_contributing_documents_the_optional_tag(self) -> None:
+        """Docker (Compose) documents the optional tagged lift.
+
+        The plain commands stay intact: the optional tag is a paragraph
+        beside them, and the destroy step removes the image compose
+        builds instead of a name no tool ever produced.
+        """
+        content = self.CONTRIBUTING.read_text(encoding="utf-8")
+        flat = " ".join(content.split())
+        assert f"{self.TAG_VAR}=<tag> docker compose up -d" in flat
+        assert (
+            f"`{self.IMAGE_REPO}:${{{self.TAG_VAR}:-{self.DEFAULT_TAG}}}`" in flat
+        )
+        assert f"docker rmi {self.IMAGE_REPO}:{self.DEFAULT_TAG}" in flat
+        assert "devcontainer-debian-observer-development" not in flat

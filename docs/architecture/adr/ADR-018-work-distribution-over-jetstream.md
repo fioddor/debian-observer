@@ -117,3 +117,23 @@ survive `kill -9` (spec §15.2)?
  - If D1 is decided "publish", the *observations* stream's limits
    are sized separately (spec §11.1) — never merged into
    `debian-work`.
+
+
+## Amendment (2026-11-23): where distribution applies — ADR-027
+
+Measurement narrowed this decision's premise. The deep-dependency
+closures turned out too cheap to pay for a work queue: 0.1 ms of work
+per root against ~0.3 ms per queue message, and a whole coordinate
+computes in seconds in memory. The queue described above stays as
+built, but it is not where distribution pays off.
+
+ADR-027 (`docs/release3.project.v0.1.md` §7.2, §11.2) records where
+it does: the parse of britney's excuses snapshots, ~10 s and ~900 MB
+per independent unit, distributed over `britney-parse` while the
+pair eventizer stays sequential. The rule both share: distribute a
+unit of work only when its cost dwarfs the cost of a message, or when
+its failure semantics are needed.
+
+The revisit condition above names "R3" as the release that operates
+the workers on Kubernetes; that release is now R4. R3 is migration
+dynamics.

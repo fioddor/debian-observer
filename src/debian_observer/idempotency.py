@@ -1,7 +1,7 @@
 """Idempotency store for event processing.
 
-Prevents duplicate event processing by tracking seen event IDs
-with optional TTL-based expiration.
+Prevents duplicate event processing by tracking seen event IDs,
+in memory and per process.
 """
 
 from __future__ import annotations
@@ -10,10 +10,11 @@ from typing import Any
 
 
 class IdempotencyStore:
-    """In-memory idempotency tracker for R1.
+    """In-memory idempotency tracker.
 
-    R1 uses a simple in-memory store. R2 will replace this with
-    a persistent backend (DuckDB, Redis, or similar).
+    A per-process set of seen event IDs; there is no persistent
+    backend. Durable effects stay idempotent by construction
+    (deterministic output keys, idempotent folds), not by this store.
 
     Attributes:
         _seen: Set of processed event IDs.

@@ -33,7 +33,7 @@ pip install -e ".[dev]"
 
 To tear it down without destroying it:
 ```shell
-.your.venv/bin/deactivate
+deactivate
 ```
 
 To re-enter your virtual environment:
@@ -47,17 +47,17 @@ rm -rf .your.venv
 
 ### Option B: Docker (Compose)
 
-This repository provides a fully reproducible development environment
-with NATS JetStream pre-configured.
+This repository provides a reproducible development container based
+on Python 3.13 (the same minor as CI), with the `dev` extras, the
+NATS CLI, `woodpecker-cli` and `pg_restore` pre-configured.
 
-**Services included:**
+One service is included: `debian-observer-development` (container
+`debian-observer-dev`, image `deb-obs-devcontainer`). The devcontainer
+does not run a NATS server: NATS JetStream comes from
+`deploy/compose/docker-compose.yml` (start it there, host ports
+4222/8222, if you need a live server).
 
- - Python >=3.11 with project dependencies
- - NATS JetStream on `nats://nats:4222`
- - NATS CLI for stream inspection
- - Black, Ruff, MyPy pre-configured
-
-Create a virtual environment
+Start the development container:
 
 ```shell
 cd .devcontainer
@@ -104,14 +104,19 @@ connects the docker development containers to VS Code.
 **Quick start:**
 1. Open the project folder in VS Code
 2. Press `F1` → type "Dev Containers: Reopen in Container"
-3. VS Code builds the container, installs dependencies, and starts NATS
-4. Wait for the post-create setup to complete (installs `pip install -e ".[dev]"`)
+3. VS Code builds the container and installs dependencies
+   (no NATS server: `devcontainer.json` uses the same compose file)
+4. Wait for the post-create setup to complete
+   (`pip install -e ".[dev]" && pytest tests/ -q`: it installs the
+   dev extras and runs the tests)
 
 
 ## Verify
 
  - CLI: `debian-observer --help`
- - NATS: `nats server info`
+ - NATS: `nats server info` — only answers with a NATS server
+   running (start it via `deploy/compose/docker-compose.yml`, see
+   Option B) and the CLI pointed at it
 
 
 # Testing
@@ -147,6 +152,19 @@ action, outside the repo).
    threshold come from `pytest.ini` (`--cov-fail-under=80`), not
    from the pipeline
 
+Two further pipelines gate the same push events:
+
+ - `.woodpecker/devcontainer.yaml` builds `.devcontainer/Dockerfile`
+   as `deb-obs-devcontainer:ci`, checks the toolchain inside it
+   (`python`, `nats`, `woodpecker-cli`, `pg_restore`), and runs
+   `pytest` inside a container of that image (repo copied in,
+   no bind mounts).
+ - `.woodpecker/deploy.yaml` validates and boots the local
+   deployment: `docker compose -f deploy/compose/docker-compose.yml`
+   config + `up --build` under a CI override (no host ports, no CLI
+   bind mount), waits for NATS `healthz` and the API `/health` on
+   8088, then tears the stack down.
+
 There is no branch filter **by design**: every branch tip must be
 buildable ([Buildable state](#buildable-state)) — `fdd` tips and the
 last commit of each feature branch must pass; on `tdd`, R-commits are
@@ -163,6 +181,20 @@ woodpecker-cli --version
 woodpecker-cli lint .woodpecker/test.yaml
 ```
 
+## Before pushing
+
+Beyond `reuse lint` (see [Licensing](#licensing)), the repository
+ships mechanical history/quality gates in `scripts/` — run them
+before every push:
+
+ - `scripts/check_history.py BASE..TIP [--expect-tree SHA]` —
+   history linter: MVC path whitelist per [R]/[G]/[B] subject tag,
+   no empty commits, 72-column body lines, no development-history
+   references in `src/` and `tests/`; `--expect-tree` checks that a
+   history surgery changed nothing.
+ - `scripts/check_pdoc.py BASE..TIP` (or a single `COMMIT`) —
+   pdoc must render the package sources per commit.
+
 # Building/Packaging
 
 ```shell
@@ -170,27 +202,26 @@ python3 -m pip install --upgrade build
 python3 -m build
 ```
 
-Generates/refreshes:
+Generates/refreshes (version `<version>` from
+`src/debian_observer/version.py`, the single source):
+
 ```shell
-ls -l dist/
-total 88
--rw-r--r-- 1 root root 34413 oct  8 00:18 debian_observer-0.1.0-py3-none-any.whl
--rw-r--r-- 1 root root 52926 oct  8 00:18 debian_observer-0.1.0.tar.gz
+debian_observer-<version>-py3-none-any.whl
+debian_observer-<version>.tar.gz
 ```
 
 `dist/` is a BUILD ARTIFACT: it is never committed, it does not exist
 in a fresh clone, and the wheel name carries the version. Regenerate
-it whenever the sources change; the versioned name below is the one
-the build writes, substitute the current version.
+it whenever the sources change.
 
 # Distributing
 
-`ln -sf debian_observer-0.1.0-py3-none-any.whl debian_observer.whl` facilitates
-the distribution:
-
+Wheels must keep their built name (pip/pipx reject a file whose name
+is not a valid wheel name), so install the versioned artifact as
+built (`<version>` as above):
 
 ```shell
-pipx install dist/debian_observer-0.1.0-py3-none-any.whl
+pipx install dist/debian_observer-<version>-py3-none-any.whl
 ```
 
 

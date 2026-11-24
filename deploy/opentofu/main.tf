@@ -82,7 +82,7 @@ resource "docker_container" "observer_api" {
 
   env = [
     "NATS_URL=nats://${docker_container.nats.name}:14222",
-    "EVENTS_DIR=/data/events",
+    "EVENTS_DIR=/data/observed",
   ]
 
   ports {
@@ -91,7 +91,7 @@ resource "docker_container" "observer_api" {
   }
 
   volumes {
-    container_path = "/data/events"
+    container_path = "/data/observed"
     host_path      = abspath("${var.data_dir}/parquet")
   }
 

@@ -1,7 +1,7 @@
 # Key Flows
 
 End-to-end behaviour *across* modules — the level neither architecture
-nor code shows. Two flows; add here only what a reader cannot
+nor code shows. Four flows; add here only what a reader cannot
 reconstruct from the module contracts.
 
 ## Flow 1 — Ingestion run (UDD → raw artifact)
@@ -21,7 +21,11 @@ reconstruct from the module contracts.
    LZMA; `None` written as an empty field, lossless since sources emit
    no empty strings — ADR-002); a JSON manifest is persisted beside it
    (path, row count, checksums); provenance records source and run id.
-5. Same rows feed normalization → storage → messaging (Flow 2, async).
+5. With `--events-dir`, `ingest` eventizes the same rows in-process
+   (validation → canonical transformation → events) and appends
+   them to the flat Parquet event log (one file per run).
+   Publishing to NATS is a separate explicit `publish` command
+   (Flow 4, async).
 
 ## Flow 2 — Observation event end-to-end (ingest → consolidate → query)
 
@@ -34,8 +38,9 @@ the backbone — every later stage derives from it.
    `EventEnvelope` and `ingest` appends it to the Parquet event log
    (`--events-dir`, one file per ingestion run). `ingest` writes
    nothing consolidated — the per-run dataset step is gone
-   (ADR-003 amendment 2026-10-23); the log may also be published to
-   JetStream (`debian.observer.>` subjects) for the async path.
+   (ADR-003 amendment, 2026-10-23); the log may also be published
+   to JetStream by the explicit `publish` command (flat per-type
+   subjects, see Flow 4) for the async path.
 2. **Consolidate:** the batch feeder (`consolidate --events-dir`)
    folds the whole log — `PackageVersionObserved` events only,
    dedup by `event_id`, ordered by `(observed_at, event_id)` — into
@@ -59,16 +64,25 @@ the backbone — every later stage derives from it.
    sidecar (source `udddump`, checksum, size; `record_count` null)
    and a provenance record — acquisition only, no parsing
    (ADR-012 amendment, 2026-10-23).
-2. `normalize udddump <artifact> --table T [--limit N]` re-reads the
-   manifest sidecar (source name, run id), gates `--table` against
-   the dump's table of contents and the table's COPY header against
-   the registered shapes, streams the COPY block through host
-   `pg_restore --data-only --table` (no database restored, ADR-006)
-   and writes `PackageVersionObserved` events as JSON lines.
+2. `normalize udddump <artifact> --table T [--limit N]
+   [--eventizer NAME]` re-reads the manifest sidecar (source name,
+   run id), gates `--table` against the dump's table of contents and
+   the table's COPY header against the selected eventizer's shape,
+   streams the COPY block through host `pg_restore --data-only
+   --table` (no database restored, ADR-006) and emits events:
+   `--eventizer` selects the mapping — `package-versions` (default)
+   → `PackageVersionObserved`, `dependencies` →
+   `DependencyObserved`, `popcon` → `PopconObserved`. The events go
+   to the per-event-type Parquet log under `--events-dir` (one
+   directory per event type, one file per run; default
+   `data/observed`).
 3. A consumer step projects the eventized records into the
-   consolidated `package_versions` table (Flow 2, stage 2) — the
-   per-run pipeline projection (`ingest --dataset-dir`) is dead
-   (ADR-003 amendment, 2026-10-23).
+   consolidated `package_versions` table (Flow 2, stage 2): the fold
+   reads the `*.parquet` files directly in `--events-dir` (no
+   recursion) — i.e. the `package_version_observed/` directory of
+   the per-type log. The per-run pipeline projection
+   (`ingest --dataset-dir`) is dead (ADR-003 amendment,
+   2026-10-23).
 4. Re-eventizing the same raw artifact with other filters
    (`--table`/`--limit`) repeats step 2 only — the raw download is
    never consumed and never re-downloaded.

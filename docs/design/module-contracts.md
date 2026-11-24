@@ -60,9 +60,12 @@ cannot reconstruct without reading everything.
     - `postgresql-client` shipped by the dev and deploy images.
     - `--table` is mandatory and validated against the dump's table
       of contents at startup (failure lists the restorable tables).
-    - The table's COPY header must match a registered shape
-      Today `packages` (required COPY column `version` plus any of
-      `package`/`source`).
+    - The table's COPY header must match the shape declared by the
+      selected eventizer: `package-versions` expects the `packages`
+      shape (required COPY column `version` plus `package`/`source`),
+      `dependencies` expects `package`, `version`, `architecture`,
+      `distribution`, `release`, `depends`, `pre_depends`, `popcon`
+      expects `package`, `insts` (see `normalization/eventizers/`).
   - A manifest sidecar on the dump artifact
     (written by `ingest udddump`).
 - **Guarantees**:
@@ -134,7 +137,12 @@ cannot reconstruct without reading everything.
   then `event_id`); `observed_first_at`/`observed_last_at` are the
   min/max `observed_at` of the group; dedup by `event_id`; idempotent
   by construction (spec §15.1: A×3 == A) —
-  `fold(log parquet) == fold(stream)`. The output is ONE file —
+  `fold(log parquet) == fold(stream)`. Note the two event-log
+  layouts: `ingest --events-dir` appends a flat
+  `<events_dir>/<run_id>.parquet` file (ParquetWriter in
+  `ingestion/pipeline.py`), while `normalize udddump --events-dir`
+  writes the per-type directories above (`writer_for_event_type`).
+  The output is ONE file —
   `package_versions.parquet`, fixed name — written atomically (tmp
   file + `os.replace`), so a concurrent reader never sees a partial
   file. Clear errors, never tracebacks.
@@ -143,7 +151,7 @@ cannot reconstruct without reading everything.
 
 - **Exposes**: `EventEnvelope` + strongly-typed payload models
   (`PackageObserved`, `PackageVersionObserved`, `ReleaseObserved`,
-  `MigrationObserved`).
+  `MigrationObserved`, `DependencyObserved`, `PopconObserved`).
 - **Guarantees**: every payload carries `ObservationMeta` provenance.
   Payloads serialize to JSON and flatten to Parquet-compatible rows.
 
@@ -202,6 +210,8 @@ cannot reconstruct without reading everything.
 - **Exposes**: `click` commands; the operator's entry point into
   ingestion and the API service.
   - `ingest` is a command group with one subcommand per source:
+    - `sources` (sources.debian.org; `--package` is the source
+      package name),
     - `mirror`,
     - `udd`,
     - `udddump`: mandatory filter flags, ADR-012, URL-scoped.
@@ -218,11 +228,22 @@ cannot reconstruct without reading everything.
   - `validate` takes raw artifacts (positional, one or more) and
      reads each artifact's manifest sidecar for source and run id.
   - `normalize` is a command group with one subcommand per raw surface
-    - (positional) `artifacts`: pipeline `.csv.xz` artifacts.
+    (ADR-012 amendment 2026-10-23: a breaking rename of the old
+    `normalize <paths>` surface):
+    - `artifacts` (positional): pipeline `.csv.xz` artifacts,
     - `udddump`: dump downloads with mandatory `--table` and
-       optional `--limit`,
-     - ADR-012 amendment 2026-10-23 introduced a breaking rename
-       of the old `normalize <paths>` surface).
+      optional `--limit`,
+      `--eventizer` selects the eventizer
+      (`dependencies` | `package-versions` (default) | `popcon`);
+      `--events-dir` writes the Parquet event log
+      (one directory per event type, one file per run,
+      default `data/observed`).
+  - `serve` starts the FastAPI API service.
+  - `status` shows system status and data summary.
+  - `replay` replays events from a JSON-lines file to NATS.
+  - `benchmark` runs a quick benchmark of the ingestion pipeline.
+  - `execution-report` shows the historical execution report with
+    percentiles.
   - `query` exposes the event log and the consolidated datasets
     to ad-hoc DuckDB SQL. It registers views the caller names in FROM.
     - `--events-dir` registers the `events` view over the event log
@@ -248,22 +269,15 @@ cannot reconstruct without reading everything.
     construction — what `--describe` lists is exactly what goes
     in FROM.
 
-## `consumer_app`
-
-- **Exposes**: standalone async consumer entrypoint
-  - handler registration,
-  - idempotent processing,
-  - graceful lifecycle shutdown.
-- **Expects**:
-  - registered handlers by event type
-  - JetStream endpoints.
-
 ## `idempotency`
 
 - **Exposes**: in-memory `IdempotencyStore` (seen event IDs).
 - **Guarantees**:
-  - In-memory, per-process scope
-  - a persistent backend is deliberately deferred to R2.
+  - In-memory, per-process scope; no persistent backend.
+  - Durability of effects does not come from this store but from
+    deterministic output paths and idempotent folds (the
+    consolidation fold): replaying the same events converges to
+    the same state.
 
 ## `domain`
 
@@ -300,22 +314,33 @@ cannot reconstruct without reading everything.
 
 ## `prosumers`
 
-- **Exposes**: The shipped example prosumer executables
-    - Decoupled from the `debian-observer` package,
-    - `consolidate.py`, `filter.py` as Click scripts.
-    - Installed as the `debian-observer-consolidate` /
-      `debian-observer-filter` commands.
-    - They import the libraries from `debian_observer.prosumers`
-      (`stream`, `cli`, `packages`) exactly as a user-built prosumer
-      would
-    - `src/prosumers/` collects example CLIs only, no importable
-      library code.
+- **Exposes**: the prosumer *library* package
+  (`src/debian_observer/prosumers`) — the reusable building blocks
+  a prosumer is written from:
+  - `stream` — the I/O abstraction: `Record`, `Source`, `Sink`
+    over file (Parquet) or stream (ND-JSON),
+  - `cli` — the shared `click` option dialect
+    (`--file-in`/`--stream-in`/`--file-out`/`--stream-out`),
+  - `packages` — the consolidation logic
+    (fold `PackageVersionObserved` events),
+  - `coordinates` — the reusable coordinate filter:
+    `distribution`, `release`, `architecture`, `components`
+    (a '+'-list; an absent selector filters nothing; a filter for
+    an architecture also lets `all` through — a graph needs
+    both) — one piece, reused by every consumer of the event log,
+  - `lake` — the batched event-lake reader: one event-type
+    directory read batch by batch, never whole in memory
+    (ADR-015).
 - **Expects**: input records shaped by the prosumer contract —
   `--file-in`/`--stream-in` carrying `Record` envelopes (ND-JSON)
   or flat event-log rows (Parquet).
-- **Guarantees**: examples stay self-contained — a user can copy one
-  to start their own prosumer without reaching into
-  `debian_observer` internals beyond the public libraries.
+- **Guarantees**: the libraries are the public surface — a user
+  builds a prosumer from them without reaching into
+  `debian_observer` internals. The shipped examples live in
+  `src/prosumers/` (`consolidate.py`, `filter.py`, installed as
+  `debian-observer-consolidate` / `debian-observer-filter`):
+  example CLIs only, no importable library code, built solely on
+  these libraries exactly as a user-built prosumer would be.
 
 
 

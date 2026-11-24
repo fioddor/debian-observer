@@ -32,11 +32,15 @@ cd deploy/compose
 docker compose up -d
 ```
 
-The `api` service (port 8088) runs `debian-observer serve` built
-from the sources. The `debian-observer` CLI service pipx-installs a
-built wheel from `dist/` — build one first (see B), otherwise
-`docker exec -ti debian-observer bash` opens a shell without a
-working CLI.
+Both the `api` service (port 8088, `debian-observer serve`) and the
+`debian-observer` CLI service run the image built from the sources
+(`pip install -e .` at `/app`). The CLI service bind-mounts the repo
+over `/app`, so it runs your working tree — no wheel needed:
+
+```shell
+docker exec -ti debian-observer bash
+debian-observer --help
+```
 
 ## Services
 

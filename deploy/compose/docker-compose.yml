@@ -31,7 +31,9 @@ services:
     # this is the interactive CLI service -> disable it or  (CI gate) aborts: sleep infinity never listens.
     healthcheck:
       disable: true
-    command: bash -c "pipx install /app/dist/debian_observer-0.1.0-py3-none-any.whl;while sleep 1000; do :; done"
+    # The image installs the CLI from the sources (pip install -e .);
+    # the bind mount above makes it run the working tree. Keep alive.
+    command: sleep infinity
 
   nats:
     image: nats:2.10-alpine

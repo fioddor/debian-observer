@@ -12,10 +12,10 @@ Services:
 
 - **NATS JetStream** — event backbone with durable streams
 - **API Service** — FastAPI analytical endpoints on port 8088
-- **CLI** — `debian-observer` (container `debian-observer`),
-  bind-mounts the repo at `/app` and pipx-installs a wheel from
-  `dist/`; it needs the wheel built into `dist/` first
-  (see docs/CONTRIBUTING.md, "Building/Packaging")
+- **CLI** — `debian-observer` (container `debian-observer`): the
+  same image as the API, with the repo bind-mounted at `/app`, so
+  the image's editable install runs the working tree
+  (`docker exec -ti debian-observer bash`)
 
 ### Verify
 

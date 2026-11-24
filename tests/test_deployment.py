@@ -68,6 +68,21 @@ class TestDockerCompose:
         assert cli["build"]["context"] == "../.."
         assert cli["build"]["dockerfile"] == "deploy/compose/Dockerfile"
 
+    def test_cli_service_uses_the_image_install(self, compose: dict):
+        """The CLI service runs the CLI its image already installs.
+
+        The observer image installs the package from the sources
+        (``pip install -e .`` at /app); the service bind-mounts the
+        repo over /app, so the editable install serves the mounted
+        sources. Installing a wheel from dist/ on top needs pipx, which
+        the image does not ship, and a wheel name that drifts with the
+        version: it can only fail.
+        """
+        command = compose["services"]["debian-observer"]["command"]
+        command = " ".join(command) if isinstance(command, list) else command
+        assert "pipx" not in command
+        assert "dist/" not in command
+
     def test_volumes_defined(self, compose: dict):
         assert "volumes" in compose
         assert "nats-data" in compose["volumes"]
@@ -113,6 +128,43 @@ class TestDockerfile:
 
     def test_events_env_handled(self, dockerfile: str):
         assert "EVENTS_DIR" in dockerfile
+
+
+class TestOpenTofuApiPort:
+    """The OpenTofu API container publishes the port the image serves.
+
+    The observer image (deploy/compose/Dockerfile) serves the API on
+    8088 (EXPOSE, HEALTHCHECK and the serve CMD): 8000 collides with
+    other services on the deployment host. The OpenTofu stack builds
+    that same image, so the API container must map the image's port;
+    mapping any other internal port leaves ``api_url`` answering
+    nothing while the container reports healthy.
+    """
+
+    DEPLOY = Path(__file__).parent.parent / "deploy"
+
+    def _api_internal_port(self) -> int:
+        """The internal port of the ``observer_api`` container."""
+        main_tf = (self.DEPLOY / "opentofu" / "main.tf").read_text(
+            encoding="utf-8"
+        )
+        block = main_tf.split('resource "docker_container" "observer_api"', 1)[1]
+        block = block.split("\nresource ", 1)[0]
+        match = re.search(r"internal\s*=\s*(\d+)", block)
+        assert match, "observer_api declares no internal port"
+        return int(match.group(1))
+
+    def _image_port(self) -> int:
+        """The port the observer image EXPOSEs."""
+        dockerfile = (self.DEPLOY / "compose" / "Dockerfile").read_text(
+            encoding="utf-8"
+        )
+        match = re.search(r"^EXPOSE\s+(\d+)", dockerfile, re.MULTILINE)
+        assert match, "the observer Dockerfile EXPOSEs no port"
+        return int(match.group(1))
+
+    def test_api_container_maps_the_port_the_image_serves(self) -> None:
+        assert self._api_internal_port() == self._image_port() == 8088
 
 
 class TestDeploymentReadme:

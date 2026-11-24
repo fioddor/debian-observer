@@ -75,7 +75,7 @@ the backbone — every later stage derives from it.
    `DependencyObserved`, `popcon` → `PopconObserved`. The events go
    to the per-event-type Parquet log under `--events-dir` (one
    directory per event type, one file per run; default
-   `data/observed`).
+   `data/observed`); `--output FILE` adds a JSON-lines copy.
 3. A consumer step projects the eventized records into the
    consolidated `package_versions` table (Flow 2, stage 2): the fold
    reads the `*.parquet` files directly in `--events-dir` (no

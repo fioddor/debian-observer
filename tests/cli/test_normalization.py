@@ -426,6 +426,49 @@ class TestNormalizeUdddump:
     @patch("debian_observer.cli.commands.normalize.list_dump_tables")
     @patch("debian_observer.cli.commands.normalize.peek_dump_copy_columns")
     @patch("debian_observer.cli.commands.normalize.iter_dump_rows")
+    def test_udddump_output_adds_json_lines_to_the_parquet_log(
+        self, read_mock, peek_mock, list_mock, tmp_path
+    ):
+        """`--output FILE` adds JSON lines; the Parquet log is still written.
+
+        The Parquet event log is the prosumers' input, so it is always
+        written (`--events-dir` has a default). JSON lines are an opt-in
+        copy for a reader that wants them: asking for them must not
+        silently produce nothing, and the same events land in both.
+        """
+        import pyarrow.parquet as pq
+
+        artifact = _write_dump_artifact(tmp_path)
+        read_mock.return_value = iter([dict(record) for record in self.RECORDS])
+        list_mock.return_value = ["packages"]
+        peek_mock.return_value = ["package", "version"]
+        events_dir = tmp_path / "observed"
+        output = tmp_path / "events.jsonl"
+
+        result = CliRunner().invoke(
+            cli,
+            [
+                "normalize", "udddump", str(artifact),
+                "--table", "packages",
+                "--limit", "3",
+                "--events-dir", str(events_dir),
+                "--output", str(output),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        lines = [json.loads(line) for line in output.read_text().splitlines()]
+        files = sorted(events_dir.glob("**/*.parquet"))
+        assert len(files) == 1
+        rows = pq.read_table(files[0]).to_pylist()
+        assert len(lines) == len(rows) == 2
+        assert {line["event_id"] for line in lines} == {
+            row["event_id"] for row in rows
+        }
+
+    @patch("debian_observer.cli.commands.normalize.list_dump_tables")
+    @patch("debian_observer.cli.commands.normalize.peek_dump_copy_columns")
+    @patch("debian_observer.cli.commands.normalize.iter_dump_rows")
     def test_udddump_records_execution_run(
         self, read_mock, peek_mock, list_mock, tmp_path
     ):
@@ -443,6 +486,7 @@ class TestNormalizeUdddump:
                 "normalize", "udddump", str(artifact),
                 "--table", "packages",
                 "--limit", "3",
+                "--events-dir", str(tmp_path / "observed"),
             ],
         )
 
@@ -586,7 +630,11 @@ class TestNormalizeUdddump:
         runner = CliRunner()
         result = runner.invoke(
             cli,
-            ["normalize", "udddump", str(artifact), "--table", "packages"],
+            [
+                "normalize", "udddump", str(artifact),
+                "--table", "packages",
+                "--events-dir", str(tmp_path / "observed"),
+            ],
         )
 
         assert result.exit_code == 0

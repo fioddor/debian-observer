@@ -258,8 +258,11 @@ def normalize_artifacts(
     "--output",
     "output_file",
     type=click.File("w"),
-    default="-",
-    help="Output JSON lines file (default: stdout).",
+    default=None,
+    help=(
+        "Also write the events as JSON lines to this file (- for "
+        "stdout); the Parquet event log is always written."
+    ),
 )
 @click.option(
     "--invalid",
@@ -344,32 +347,18 @@ def normalize_udddump(
         )
     except UDDDumpError as exc:
         raise click.ClickException(str(exc)) from exc
-    if (
-        eventizer.name != "package-versions"
-        and events_dir is None
-        and output_file.name == "<stdout>"
-    ):
-        raise click.ClickException(
-            f"eventizer {eventizer.name!r} writes millions of events; "
-            "pass --events-dir (Parquet event log) or --output FILE"
-        )
     run_id = _run_id_from(manifest)
     start = time.perf_counter()
-    events: list = []
     invalid: list = []
     # Incremental writer (ADR-015): events stream into the Parquet
-    # file row group by row group; only --output (JSON lines)
-    # materializes, and only when it is not stdout.
-    inc_writer = None
-    if events_dir is not None:
-        from debian_observer.storage.parquet import (
-            writer_for_event_type,
-        )
+    # file row group by row group. The --output JSON lines are a
+    # copy written line by line beside it: nothing materializes.
+    from debian_observer.storage.parquet import writer_for_event_type
 
-        parquet_writer = writer_for_event_type(
-            eventizer.event_type, events_dir=str(events_dir)
-        )
-        inc_writer = parquet_writer.open_parquet_file(run_id)
+    parquet_writer = writer_for_event_type(
+        eventizer.event_type, events_dir=str(events_dir)
+    )
+    inc_writer = parquet_writer.open_parquet_file(run_id)
     total_events = 0
     for row in iter_dump_rows(
         str(dump_artifact),
@@ -381,21 +370,15 @@ def normalize_udddump(
                 invalid.append(out)
                 continue
             total_events += 1
-            if inc_writer is not None:
-                inc_writer.append_event(out)
-            else:
-                events.append(out)
-    if inc_writer is not None:
-        inc_writer.close()
+            inc_writer.append_event(out)
+            if output_file is not None:
+                _write_events([out], output_file)
+    inc_writer.close()
     duration = time.perf_counter() - start
 
-    if not inc_writer:
-        _write_events(events, output_file)
     if invalid_file:
         _write_invalid(invalid, invalid_file)
     total_invalid = len(invalid)
-
-    events_written = total_events if inc_writer is not None else 0
 
     _record_execution(
         artifact=dump_artifact,
@@ -409,8 +392,8 @@ def normalize_udddump(
         metadata={
             "table": table,
             "eventizer": eventizer.name,
-            "events_dir": str(events_dir) if events_dir else None,
-            "parquet_events": events_written,
+            "events_dir": str(events_dir),
+            "parquet_events": total_events,
         },
     )
 

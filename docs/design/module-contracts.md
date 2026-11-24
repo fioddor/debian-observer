@@ -237,7 +237,8 @@ cannot reconstruct without reading everything.
       (`dependencies` | `package-versions` (default) | `popcon`);
       `--events-dir` writes the Parquet event log
       (one directory per event type, one file per run,
-      default `data/observed`).
+      default `data/observed`; always written),
+      `--output FILE` adds a JSON-lines copy of the same events.
   - `serve` starts the FastAPI API service.
   - `status` shows system status and data summary.
   - `replay` replays events from a JSON-lines file to NATS.

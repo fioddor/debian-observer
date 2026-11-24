@@ -208,10 +208,10 @@ one directory per event type, one file per run (the prosumers'
 input). `--limit` unset normalizes the whole table with a warning on
 stderr.
 
-`--events-dir` always has a value, so `normalize udddump` always
-writes the Parquet log; the `--output` JSON-lines stream is not
-written by this subcommand today. For JSON lines use `normalize
-artifacts`; to inspect udddump events, `query` the Parquet log.
+The Parquet log is always written (`--events-dir` has a default).
+`--output FILE` adds a JSON-lines copy of the same events (`-` for
+stdout); without it, nothing goes to stdout but the summary on
+stderr.
 
 ```bash
 debian-observer normalize udddump \

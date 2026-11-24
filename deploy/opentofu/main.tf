@@ -1,5 +1,5 @@
-# OpenTofu configuration for Debian Observatory R1
-# Deploys NATS JetStream + app services via Docker Compose
+# OpenTofu configuration for Debian Observer
+# Deploys NATS JetStream + the API service as Docker containers
 
 terraform {
   required_providers {

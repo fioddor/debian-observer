@@ -31,6 +31,7 @@ from debian_observer.api.routers import (
 from debian_observer.api.store import InMemoryStore
 from debian_observer.observability.metrics import APIMetrics
 from debian_observer.observability.tracing import get_tracer
+from debian_observer.version import __version__
 
 
 def create_app(
@@ -50,7 +51,7 @@ def create_app(
     app = FastAPI(
         title="Debian Observer",
         description="Event-driven observatory for Debian releases.",
-        version="0.1.0",
+        version=__version__,
         **fastapi_kwargs,
     )
 

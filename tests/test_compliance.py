@@ -8,6 +8,7 @@ Covers the repository compliance feature:
 
 import json
 import re
+from fnmatch import fnmatch
 import subprocess
 import sys
 import tomllib
@@ -62,3 +63,42 @@ def test_reuse_lint_clean():
         f"reuse lint reported violations (rc={result.returncode}):"
         f"\n{result.stdout}{result.stderr}"
     )
+
+#: The license the project is distributed under (REUSE.toml's
+#: SPDX-License-Concluded and the default annotation).
+PROJECT_LICENSE = "AGPL-3.0-or-later"
+#: The directory the license texts live in (REUSE 3.3: each License
+#: File lives in LICENSES/, at the root of the project).
+LICENSES_DIR = "LICENSES"
+#: Root files a build backend picks up as license texts by default:
+#: none of them may exist, or the texts travel twice.
+ROOT_LICENSE_FILES = ("LICENSE", "COPYING", "NOTICE", "AUTHORS")
+
+
+def test_manifest_declares_the_license_files() -> None:
+    """The wheel ships the license texts that LICENSES/ holds.
+
+    The manifest declares the license as an SPDX expression and
+    ``license-files`` patterns that cover ``LICENSES/<expression>.txt``
+    (the file exists), so a build that follows the manifest carries
+    the texts with the package.
+    """
+    manifest = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    project = manifest["project"]
+    assert project["license"] == PROJECT_LICENSE
+    patterns = project["license-files"]
+    license_file = REPO_ROOT / LICENSES_DIR / f"{PROJECT_LICENSE}.txt"
+    assert license_file.exists(), f"{license_file} does not exist"
+    relative = license_file.relative_to(REPO_ROOT).as_posix()
+    covering = [p for p in patterns if fnmatch(relative, p)]
+    assert covering, f"license-files {patterns} do not cover {relative}"
+
+
+def test_no_license_text_at_the_root() -> None:
+    """No license text lives at the repository root.
+
+    The texts live exactly once, in LICENSES/; a root file the build
+    backend picks up by default would be a second copy.
+    """
+    stray = [name for name in ROOT_LICENSE_FILES if (REPO_ROOT / name).exists()]
+    assert not stray, f"license texts at the repository root: {stray}"

@@ -218,8 +218,9 @@ def normalize_artifacts(
     type=str,
     default=None,
     help=(
-        "Eventizer for this source (default: package-versions, the "
-        "retro-compatible behaviour)."
+        "Eventizer for this source: one of "
+        + ", ".join(list_eventizers("udddump"))
+        + " (default: package-versions, the retro-compatible behaviour)."
     ),
 )
 @click.option(

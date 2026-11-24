@@ -6,8 +6,10 @@
 #          supported by v3.19; see devcontainer.yaml header). Under a
 #          socket-mounted daemon, relative bind mounts resolve on the
 #          HOST and would be CREATED there as garbage trees — so CI
-#          ALWAYS runs with an override file: no host ports, no CLI bind
-#          mount, CLI command sleep.
+#          ALWAYS runs with an override file: no host ports (BOTH api
+#          and nats — a live host NATS on 8222 turned the gate red on
+#          2026-11-23: port already allocated), no CLI bind mount,
+#          CLI command sleep.
 #          The gate rolls its own readiness loop instead of
 #          `compose up --wait`: api cold boot is slow AND variable on
 #          old spinning disks (pyarrow import, cold page cache:
@@ -48,6 +50,8 @@ steps:
             volumes: !reset []
             command: sleep infinity
           api:
+            ports: !reset []
+          nats:
             ports: !reset []
         OVR
         $COMPOSE down -v --remove-orphans || true

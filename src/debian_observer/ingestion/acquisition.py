@@ -7,14 +7,20 @@ This module defines:
 - ``DataSource`` — abstract base for all data sources
 - ``InMemoryDataSource`` — simple in-memory source for tests
 - ``MockDebianDataSource`` — generates realistic synthetic Debian data
+- ``SourcesDebianOrgDataSource`` — a package's version history from
+  sources.debian.org (``ingest sources``)
+- ``DebianMirrorDataSource`` — a suite's ``Packages.gz`` from a Debian
+  mirror (``ingest mirror``)
+- ``UDDDataSource`` — a table of a UDD PostgreSQL mirror (``ingest udd``)
+- ``download_dump`` — the byte-preserving UDD ``pg_dump`` download
+  (``ingest udddump``)
 - ``AcquisitionService`` — orchestrates retrieval and validation
 
 Design notes
 ------------
 
-* ``DataSource`` is intentionally minimal. R1 focuses on the pipeline
-  structure; real UDD database connections can be added later as a
-  ``UDDDataSource`` implementation.
+* ``DataSource`` is intentionally minimal: a source only retrieves
+  records; validation, raw storage and eventization live downstream.
 * ``MockDebianDataSource`` produces deterministic output when seeded,
   making tests reproducible.
 * Checksums are SHA-256 of the JSON-serialized record set, providing

@@ -86,7 +86,7 @@ resource "docker_container" "observer_api" {
   ]
 
   ports {
-    internal = 8000
+    internal = 8088
     external = var.api_port
   }
 

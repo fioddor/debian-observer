@@ -1,5 +1,5 @@
 {
-  "name": "Debian Observer R1",
+  "name": "Debian Observer",
   "dockerComposeFile": "docker-compose.yml",
   "service": "debian-observer-development",
   "workspaceFolder": "/workspace",

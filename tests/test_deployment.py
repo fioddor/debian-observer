@@ -68,6 +68,21 @@ class TestDockerCompose:
         assert cli["build"]["context"] == "../.."
         assert cli["build"]["dockerfile"] == "deploy/compose/Dockerfile"
 
+    def test_cli_service_uses_the_image_install(self, compose: dict):
+        """The CLI service runs the CLI its image already installs.
+
+        The observer image installs the package from the sources
+        (``pip install -e .`` at /app); the service bind-mounts the
+        repo over /app, so the editable install serves the mounted
+        sources. Installing a wheel from dist/ on top needs pipx, which
+        the image does not ship, and a wheel name that drifts with the
+        version: it can only fail.
+        """
+        command = compose["services"]["debian-observer"]["command"]
+        command = " ".join(command) if isinstance(command, list) else command
+        assert "pipx" not in command
+        assert "dist/" not in command
+
     def test_volumes_defined(self, compose: dict):
         assert "volumes" in compose
         assert "nats-data" in compose["volumes"]

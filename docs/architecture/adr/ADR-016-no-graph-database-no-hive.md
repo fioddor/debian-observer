@@ -1,6 +1,6 @@
 # ADR-016 — No graph database, no Hive partitioning
 
-Spec: `docs/release2.project.v0.2.md` §3.2.5, §10.1
+Spec: `docs/release2.project.v0.4.md` §3.2.5, §10.1
 Status: Accepted
 Date: 2026-11-08
 

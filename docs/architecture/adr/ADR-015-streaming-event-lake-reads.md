@@ -1,6 +1,6 @@
 # ADR-015 — Streaming reads of the event lake
 
-Spec: `docs/release2.project.v0.2.md` §2.2, §9.2, §10.2
+Spec: `docs/release2.project.v0.4.md` §2.2, §9.2, §10.2
 Status: Accepted
 Date: 2026-11-08
 

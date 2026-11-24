@@ -261,7 +261,7 @@ class ParquetWriter:
 
     Usage::
 
-        writer = ParquetWriter(output_dir="data/events")
+        writer = ParquetWriter(output_dir="data/observed")
         writer.write_events(events, ingestion_run_id="run-001")
 
         # Or stream incrementally (bounded memory, ADR-015):

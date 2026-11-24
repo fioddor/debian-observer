@@ -8,15 +8,15 @@ is stateless, it can be inserted anywhere in a pipeline.
 Usage::
 
     # Filter a Parquet file on disk
-    debian-observer-filter-packages --file-in events.parquet \
+    debian-observer-filter --file-in events.parquet \
         --distribution debian --release sid --file-out filtered.parquet
 
-    # Pipe through a streaming pipeline
+    # Pipe through a streaming pipeline (--stream-out is ND-JSON)
     debian-observer-consolidate --stream-in --stream-out | \
-        debian-observer-filter-packages --stream-in --stream-out \
+        debian-observer-filter --stream-in --stream-out \
         --distribution debian | \
         debian-observer-consolidate --stream-in --stream-out \
-        > debian-only.parquet
+        > debian-only.ndjson
 """
 
 from __future__ import annotations

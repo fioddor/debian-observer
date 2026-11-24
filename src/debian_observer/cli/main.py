@@ -20,10 +20,11 @@ from debian_observer.cli.commands import (
     status,
     validate,
 )
+from debian_observer.version import __version__
 
 
 @click.group()
-@click.version_option(version="0.1.0", prog_name="debian-observer")
+@click.version_option(version=__version__, prog_name="debian-observer")
 def cli() -> None:
     """Debian Observer CLI
 

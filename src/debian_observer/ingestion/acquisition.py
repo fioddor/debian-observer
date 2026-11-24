@@ -40,6 +40,11 @@ from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any
 
+from debian_observer.version import __version__
+
+#: Identifies the installed version to the servers we download from.
+USER_AGENT = f"debian-observer/{__version__}"
+
 # ---------------------------------------------------------------------------
 # Abstract base
 # ---------------------------------------------------------------------------
@@ -610,7 +615,7 @@ class DebianMirrorDataSource(DataSource):
 
         req = urllib.request.Request(
             self._url,
-            headers={"User-Agent": "debian-observer/0.1.0"},
+            headers={"User-Agent": USER_AGENT},
         )
         with urllib.request.urlopen(req, timeout=60) as resp:
             raw = gzip.decompress(resp.read())
@@ -702,7 +707,7 @@ def download_dump(url: str, dest: Path) -> Path:
 
     req = urllib.request.Request(
         url,
-        headers={"User-Agent": "debian-observer/0.1.0"},
+        headers={"User-Agent": USER_AGENT},
     )
     dest.parent.mkdir(parents=True, exist_ok=True)
     with urllib.request.urlopen(req, timeout=60) as resp, open(dest, "wb") as out:

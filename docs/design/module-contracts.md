@@ -353,7 +353,9 @@ cannot reconstruct without reading everything.
   in `pyproject.toml`; `__init__` re-exports it).
 - **Guarantees**: one version literal in the whole repository —
   the built wheel, the sdist and the runtime all see the same
-  value without any manual synchronisation.
+  value without any manual synchronisation. The runtime readers
+  are `debian-observer --version`, the API's OpenAPI version and
+  the HTTP User-Agent of the acquisition downloads.
 - **Expects**: nothing — a standalone module, no imports, so the
   devcontainer image can copy just this file before the editable
   install (a version bump invalidates only that layer).

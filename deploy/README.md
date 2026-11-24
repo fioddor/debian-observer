@@ -1,20 +1,21 @@
 # Deployment
 
-Debian Observer R1 deployment configurations.
+Deployment configurations for Debian Observer.
 
 ## Local Development (Docker Compose)
 
-The `compose/` directory contains a Docker Compose setup for local deployment:
+The `compose/` directory contains a Docker Compose setup for local
+deployment. Usage:
+`docker compose -f deploy/compose/docker-compose.yml up -d`.
 
-- **NATS JetStream** — Event backbone with durable streams
-- **API Service** — FastAPI analytical endpoints
+Services:
 
-### Quick Start
-
-```bash
-cd deploy/compose
-docker compose up -d
-```
+- **NATS JetStream** — event backbone with durable streams
+- **API Service** — FastAPI analytical endpoints on port 8088
+- **CLI** — `debian-observer` (container `debian-observer`),
+  bind-mounts the repo at `/app` and pipx-installs a wheel from
+  `dist/`; it needs the wheel built into `dist/` first
+  (see docs/CONTRIBUTING.md, "Building/Packaging")
 
 ### Verify
 
@@ -32,7 +33,7 @@ curl http://localhost:8088/metrics/
 ### Stop
 
 ```bash
-docker compose down
+docker compose -f deploy/compose/docker-compose.yml down
 ```
 
 ## Ports
@@ -41,7 +42,7 @@ docker compose down
 |--------|---------|
 | 4222 | NATS JetStream |
 | 8222 | NATS monitoring |
-| 8088 | API (changed from 8000 on 2026-10-26: collided with nginx-proxy on the deployment host) |
+| 8088 | API |
 
 ## Data Volumes
 
@@ -52,5 +53,9 @@ docker compose down
 
 ## Infrastructure as Code (OpenTofu)
 
-The `opentofu/` directory is reserved for future Terraform/OpenTofu configurations.
-R1 focuses on local deployment; cloud mappings are documented in the architecture spec.
+The `opentofu/` directory holds a declarative deployment of the same
+stack (Docker network, NATS, observer image, API) as an alternative
+to Docker Compose. See [opentofu/README.md](opentofu/README.md) and
+the decision matrix in
+[docs/CONTRIBUTING.md](../docs/CONTRIBUTING.md)
+("Deployment: OpenTofu vs Docker Compose").

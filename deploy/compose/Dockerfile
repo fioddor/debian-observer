@@ -26,7 +26,7 @@ COPY src/ ./src/
 RUN pip install --no-cache-dir -e "."
 
 # Create data directories
-RUN mkdir -p /app/data/raw /app/data/events
+RUN mkdir -p /app/data/raw /app/data/observed
 
 # Expose API port (8088 since 2026-10-26: 8000 collided with nginx-proxy
 # on the deployment host; the CLI default matches — serve.py)

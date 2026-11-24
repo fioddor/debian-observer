@@ -14,7 +14,8 @@ def test_query_help_mentions_events_dir():
     # the event-log flag is content-named, not format-named (ADR-012 amendment)
     assert "--events-dir" in result.output
     assert "--parquet-dir" not in result.output
-    assert "data/events" in result.output
+    # the same default event log as every other command
+    assert "data/observed" in result.output
     assert "--dataset-dir" in result.output
     assert "--debug" in result.output
     assert "--describe" in result.output
@@ -43,7 +44,7 @@ def test_query_dataset_dir_alone_reaches_the_database(tmp_path):
 
     --dataset-dir points the query at consolidated Parquet tables;
     --events-dir is an optional extra source, not a precondition.
-    The default events dir (data/events) does not exist here.
+    The default events dir (data/observed) does not exist here.
     """
     import pyarrow as pa
     import pyarrow.parquet as pq

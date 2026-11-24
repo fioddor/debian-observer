@@ -10,14 +10,15 @@ import sys
 import click
 
 from debian_observer.storage.analytical import AnalyticalStorage
+from debian_observer.storage.parquet import EVENTS_DIR_DEFAULT
 
 
 @click.command(name="query")
 @click.argument("sql", required=False)
 @click.option(
     "--events-dir",
-    default="data/events",
-    help="Directory with the event log (default: data/events).",
+    default=EVENTS_DIR_DEFAULT,
+    help=f"Directory with the event log (default: {EVENTS_DIR_DEFAULT}).",
 )
 @click.option(
     "--dataset-dir",

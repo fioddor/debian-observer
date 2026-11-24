@@ -159,7 +159,8 @@ def publish(events_dir: Path, stream: str, servers: tuple[str, ...]) -> None:
     Reads every *.parquet event-log file in --events-dir and
     publishes each event to its flat per-type subject —
     debian.package_version.observed, debian.package.observed,
-    debian.release.observed, debian.migration.observed (ADR-004)
+    debian.release.observed, debian.migration.observed,
+    debian.dependency.observed, debian.popcon.observed (ADR-004)
     — with Nats-Msg-Id: <event_id>, so JetStream absorbs
     re-published duplicates server-side: publishing the same log
     twice is a no-op. The stream is NOT a source of truth — it is a

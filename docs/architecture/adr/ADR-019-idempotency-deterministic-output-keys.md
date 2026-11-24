@@ -1,6 +1,6 @@
 # ADR-019 — Idempotency by deterministic output keys
 
-Spec: `docs/release2.project.v0.2.md` §6.2, §10.1, §11.2
+Spec: `docs/release2.project.v0.4.md` §6.2, §10.1, §11.2
 Status: Accepted
 Date: 2026-11-08
 

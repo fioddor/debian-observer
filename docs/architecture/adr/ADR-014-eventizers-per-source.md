@@ -1,6 +1,6 @@
 # ADR-014 — Eventizers per source
 
-Spec: `docs/release2.project.v0.2.md` §8, §9
+Spec: `docs/release2.project.v0.4.md` §8, §9
 Status: Accepted
 Date: 2026-11-08
 

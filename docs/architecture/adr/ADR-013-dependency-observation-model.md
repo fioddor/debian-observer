@@ -1,6 +1,6 @@
 # ADR-013 — Dependency observation model
 
-Spec: `docs/release2.project.v0.2.md` §5.1, §6
+Spec: `docs/release2.project.v0.4.md` §5.1, §6
 Status: Accepted
 Date: 2026-11-08
 

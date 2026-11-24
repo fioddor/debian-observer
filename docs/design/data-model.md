@@ -29,9 +29,15 @@ This heading is the glossary
 | Term | Intent | Where it lives |
 |---|---|---|
 | **ingestor** | Acquires a raw artifact from a source (`ingest`). | `ingestion` |
-| **eventizer** | The source-specific function that, when the user runs `normalize`, reads a raw artifact and emits domain events (it *observes* the source). A source owns a collection of ingestors and a collection of eventizers; `normalize <source> --eventizer NAME` selects one (default `package-versions`). | `normalization/eventizers/` (ADR-014) |
+| **eventizer** | The source-specific function that, when the user runs `normalize`, reads a raw artifact and emits domain events (it *observes* the source). A source owns a collection of eventizers; `normalize udddump --eventizer NAME` selects one (default `package-versions`). | `normalization/eventizers/` (ADR-014) |
 | **prosumer** | Consumes events/records and produces derived records or tables. | `prosumers/` |
 
 The coordinate of a derived graph is
 `(distribution, release, architecture, components)` — `components`
-is a list on equal footing with `architecture` (ADR-021).
+is a list on equal footing with `architecture` (the R2 spec's
+ADR-021, `docs/release2.project.v0.4.md`; the filter itself is
+platform code, `prosumers/coordinates.py`).
+
+Dependency and popcon observations are event payloads only
+(`DependencyObserved`, `PopconObserved` in `events/types.py`):
+they are not domain entities.

@@ -1,6 +1,6 @@
 # User Guide
 
-Quick start and operational guide for Debian Observer Release 1.
+Quick start and operational guide for the Debian Observer CLI.
 
 ## Installation
 
@@ -9,14 +9,19 @@ Quick start and operational guide for Debian Observer Release 1.
 ```shell
 git clone <repository>
 cd debian-observer
-python3 -m venv your.venv
-source your.venv/bin/activate
+python3 -m venv .your.venv
+source .your.venv/bin/activate
 pip install -e "."
 ```
 
 ### B) pipx
 
+Wheels are build artifacts (never committed). Build one from the
+repo root (see docs/CONTRIBUTING.md, Building/Packaging):
+
 ```shell
+python3 -m pip install --upgrade build
+python3 -m build
 pipx install dist/debian_observer-<version>-py3-none-any.whl
 ```
 
@@ -27,11 +32,11 @@ cd deploy/compose
 docker compose up -d
 ```
 
-Then
-
-```shell
-docker exec -ti debian-observer bash
-```
+The `api` service (port 8088) runs `debian-observer serve` built
+from the sources. The `debian-observer` CLI service pipx-installs a
+built wheel from `dist/` — build one first (see B), otherwise
+`docker exec -ti debian-observer bash` opens a shell without a
+working CLI.
 
 ## Services
 
@@ -104,7 +109,9 @@ debian-observer ingest udd \
 ```
 
 This queries the `packages` table from `udd-mirror.debian.net:5432`.
-The default table is `packages`, which includes package (binary), source, version, distribution, release (suite/pocket), architecture, component, section and priority columns.
+`--table` is required. The `packages` table includes package
+(binary), source, version, distribution, release (suite/pocket),
+architecture, component, section and priority columns.
 
 **Expected output (udd):**
 ```
@@ -191,24 +198,51 @@ tables) and the table's COPY header against the registered shapes,
 then streams the COPY block through `pg_restore --data-only --table`
 **on the host** (`pg_restore` on PATH; the dev and deploy images ship
 `postgresql-client`) — no database connection, no restore, and no
-container indirection (ADR-006) — and writes `PackageVersionObserved`
-events as JSON lines to `--output` (default stdout). `--limit` unset
-normalizes the whole table with a warning on stderr.
+container indirection (ADR-006) — and writes the events to the
+Parquet event log under `--events-dir` (default `data/observed`):
+one directory per event type, one file per run (the prosumers'
+input). `--limit` unset normalizes the whole table with a warning on
+stderr.
+
+`--events-dir` always has a value, so `normalize udddump` always
+writes the Parquet log; the `--output` JSON-lines stream is not
+written by this subcommand today. For JSON lines use `normalize
+artifacts`; to inspect udddump events, `query` the Parquet log.
 
 ```bash
 debian-observer normalize udddump \
   data/raw/udddump-20261023-101500-run-9f2c1ab34d5e.dump \
   --table packages \
-  --limit 3 > events.jsonl
+  --limit 3
+# -> data/observed/package_version_observed/<run_id>.parquet
 ```
 
 Re-eventizing the same artifact with other filters (`--table`,
 `--limit`) is supported: the raw download is not consumed, and each
 run re-reads the manifest sidecar.
 
-Today only packages-shaped tables are eventizable (required COPY
-columns: version + any of: package, source — mirroring the
-validator); more table shapes will land as new event types do.
+The event type comes from `--eventizer` (one of `dependencies`,
+`package-versions` — the default — and `popcon`):
+
+- `package-versions`: `PackageVersionObserved`, one event per row.
+  Required COPY columns: `version` plus any of `package`/`source`
+  (the `packages` shape).
+- `dependencies`: `DependencyObserved`, one event per
+  `depends`/`pre_depends` clause (the `packages` table carries
+  both columns). Required COPY columns: `package`, `version`,
+  `architecture`, `distribution`, `release`, `depends`,
+  `pre_depends`.
+- `popcon`: `PopconObserved`, for the UDD `popcon` table. Required
+  COPY columns: `package`, `insts`.
+
+```bash
+debian-observer normalize udddump \
+  data/raw/udddump-20261023-101500-run-9f2c1ab34d5e.dump \
+  --table packages \
+  --eventizer dependencies \
+  --events-dir data/observed
+```
+
 Records that fail canonical transformation are skipped with a warning
 naming the cause — the raw artifact preserves them (ADR-002).
 
@@ -238,29 +272,14 @@ For larger datasets (e.g. complete UDD), the acquisition layer supports configur
 debian-observer ingest udd \
   --table packages \
   --raw-dir data/raw \
-  --events-dir data/events
+  --events-dir data/observed
 ```
 
-### Verify:
-
-```bash
-debian-observer --help
-```
-
-## Quick Start
-
-Run a basic ingestion using a configured data source:
-
-```bash
-debian-observer ingest sources \
-  --package <package> \
-  --raw-dir data/raw
-```
-
-Options: `--limit` (mirror/udd; unset ingests the whole source
-with a warning), `--component`/`--architecture` (mirror; default
-`main`/`amd64`), `--events-dir` (event log output).
-See `debian-observer ingest <source> --help` for full options.
+Ingestion options across sources: `--limit` (mirror/udd; unset ingests
+the whole source with a warning), `--component`/`--architecture`
+(mirror; default `main`/`amd64`), `--events-dir` (event log output,
+default `data/observed`). See `debian-observer ingest <source> --help`
+for full options and `debian-observer --help` for the command list.
 
 ## Observability
 
@@ -297,8 +316,9 @@ Run `debian-observer normalize <surface> --help` for all options
 
 Each `normalize` invocation records a `normalization` run (records,
 events, duration, throughput) into `execution_runs.duckdb` beside the
-directory of the artifacts it reads — the same analytics database
-`execution-report` reads; see the Execution report section.
+directory of the artifacts it reads (see Data layout; `ingest` records
+into `<raw_dir>/../execution_runs.duckdb`) — the same analytics
+database `execution-report` reads; see the Execution report section.
 
 
 ## Validate raw records
@@ -328,7 +348,7 @@ Run DuckDB SQL queries over ingested Parquet events:
 ```bash
 debian-observer query \
   "SELECT package_id, version, release FROM events WHERE release = 'sid'" \
-  --events-dir data/events
+  --events-dir data/observed
 ```
 
 **Aggregations:**
@@ -336,7 +356,7 @@ debian-observer query \
 ```bash
 debian-observer query \
   "SELECT architecture, COUNT(*) as count FROM events GROUP BY architecture ORDER BY count DESC" \
-  --events-dir data/events
+  --events-dir data/observed
 ```
 
 **Output formats:**
@@ -352,7 +372,7 @@ debian-observer query \
 ```bash
 debian-observer query \
   "SELECT entity_id, version, observed_at FROM events" \
-  --events-dir data/events \
+  --events-dir data/observed \
   --format csv > events.csv
 ```
 
@@ -368,6 +388,31 @@ are available in `data/`. Ingestion eventizes raw observations into
 the append-only event log — one Parquet file per ingestion run —
 and nothing else: the consolidated `package_versions` dataset is a
 **consumer output** (see Consolidate below), not a pipeline step.
+
+### Data layout
+
+- Raw artifacts (`.csv.xz`, dump files) and their manifest sidecars
+  live under `--raw-dir` (default `data/raw`).
+- Event log from `ingest <source> --events-dir DIR`: ONE flat
+  Parquet file per run, `DIR/<run_id>.parquet` (default `data/observed`).
+- Event log from `normalize udddump --events-dir DIR`: one
+  directory per event type, one file per run —
+  `DIR/<event_type_snake>/<run_id>.parquet` (e.g.
+  `data/observed/package_version_observed/`,
+  `data/observed/dependency_observed/`).
+- `consolidate`, `publish`, `query` (events view) and `serve` read
+  `*.parquet` directly inside the given `--events-dir` (no
+  recursion): after `normalize udddump`, point them at the
+  event-type directory, e.g.
+  `--events-dir data/observed/package_version_observed`.
+- The consolidated dataset lands in
+  `data/normalized/package_versions/package_versions.parquet`
+  (`consolidate --dataset-dir`, same default for `query`).
+- Execution analytics: each `ingest` run is recorded into
+  `<raw_dir>/../execution_runs.duckdb` (`data/execution_runs.duckdb`
+  with defaults — the `execution-report --db` default); each
+  `normalize` run into `execution_runs.duckdb` beside the directory
+  of the artifacts it reads.
 
 
 
@@ -436,7 +481,7 @@ debian-observer-filter --file-in events.parquet --file-out sid.parquet \
 # Pipe: consolidate then filter
 debian-observer-consolidate --stream-in --stream-out | \
   debian-observer-filter --stream-in --stream-out --distribution debian | \
-  debian-observer-consolidate --stream-in --stream-out > debian-only.parquet
+  debian-observer-consolidate --stream-in --stream-out > debian-only.ndjson
 ```
 
 
@@ -446,7 +491,7 @@ The `consolidate` command folds the event log into the consolidated
 `package_versions` table (spec §10.2, ADR-003 amendment 2026-10-23):
 
 ```bash
-debian-observer consolidate --events-dir data/events \
+debian-observer consolidate --events-dir data/observed \
   --dataset-dir data/normalized/package_versions
 ```
 
@@ -490,7 +535,7 @@ same log is a no-op (every message carries
 server-side within the stream's duplicate window):
 
 ```bash
-debian-observer publish --events-dir data/events \
+debian-observer publish --events-dir data/observed \
   [--stream debian-events] [--server nats://localhost:4222]
 ```
 
@@ -499,7 +544,8 @@ and `--server` to `nats://localhost:4222` (repeatable). The stream
 is created if missing with the ADR-004 topology. Subjects are
 **flat per event type** — `debian.package.observed`,
 `debian.package_version.observed`, `debian.release.observed`,
-`debian.migration.observed` — no per-package partitioning: the
+`debian.migration.observed`, `debian.dependency.observed`,
+`debian.popcon.observed` — no per-package partitioning: the
 package id travels in the payload (ADR-004 amendment, 2026-10-23).
 Echo: files read, events read, per-subject publish counts,
 duplicates absorbed, stream name and servers.
@@ -536,7 +582,7 @@ from debian_observer.consumer_app import ConsumerApp
 from debian_observer.storage.handlers import PersistingHandler
 
 app = ConsumerApp()
-handler = PersistingHandler("data/events", flush_threshold=100)
+handler = PersistingHandler("data/observed", flush_threshold=100)
 app.register_handler("PackageVersionObserved", handler)
 ```
 
@@ -562,10 +608,15 @@ curl http://localhost:8222/healthz
 
 ### Replay events
 
-Re-publish events to NATS (dry-run by default):
+Replay events from a JSON-lines file (`--input`, required) to NATS.
+Publishing happens unless `--dry-run` is given (parse only, no
+publish). Other options: `--nats-url` (default
+`nats://localhost:4222`), `--create-stream` (create the JetStream
+stream if missing), `--timeout` (default 5 s).
 
 ```bash
-debian-observer replay --input events.jsonl --dry-run
+debian-observer replay --input events.jsonl [--dry-run] \
+  [--nats-url nats://localhost:4222] [--create-stream]
 ```
 
 ### Consume and persist to storage
@@ -583,7 +634,7 @@ Start the FastAPI service with data loaded from Parquet:
 
 ```bash
 debian-observer serve \
-  --events-dir data/events \
+  --events-dir data/observed \
   --host 0.0.0.0 \
   --port 8088
 ```
@@ -600,7 +651,7 @@ Without `--events-dir`, the API starts with an empty store (useful for testing),
 | `/packages/{name}/versions` | GET | Package versions |
 | `/releases/` | GET | List releases |
 | `/migrations/` | GET | List migrations |
-| `/datasets/` | GET | List dataset manifests |
+| `/datasets/{dataset_name}` | GET | Manifest of one dataset (404 if absent) |
 | `/events/{event_id}` | GET | Event by ID |
 
 
@@ -619,8 +670,8 @@ pytest tests/ -q
 ### Local virtual environment
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv .your.venv
+source .your.venv/bin/activate
 pip install -e ".[dev]"
 pytest tests/
 ```
@@ -635,7 +686,10 @@ process. The crash test scripts it end to end:
 scripts/crash-test-consumer.sh
 ```
 
-In the devcontainer, NATS is available on `localhost:4222`.
+NATS is not part of the devcontainer: the devcontainer image ships
+the NATS CLI only. Start NATS from deploy/compose —
+`docker compose up -d nats` — ports 4222/8222 are published on the
+host (NATS on `localhost:4222`).
 
 
 ## Troubleshooting

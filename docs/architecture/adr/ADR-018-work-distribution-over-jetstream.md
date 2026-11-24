@@ -1,6 +1,6 @@
 # ADR-018 — Work distribution over JetStream
 
-Spec: `docs/release2.project.v0.2.md` §11.2
+Spec: `docs/release2.project.v0.4.md` §11.2
 Status: Accepted
 Date: 2026-11-08
 

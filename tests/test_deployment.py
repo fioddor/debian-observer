@@ -130,6 +130,31 @@ class TestDockerfile:
         assert "EVENTS_DIR" in dockerfile
 
 
+class TestDefaultEventLog:
+    """The deployments prepare the event log every command defaults to.
+
+    Every CLI command reads and writes the event log under
+    ``data/observed`` by default (``storage.parquet.EVENTS_DIR_DEFAULT``).
+    An image that prepares another directory leaves the defaults
+    pointing at nothing.
+    """
+
+    DEPLOY = Path(__file__).parent.parent / "deploy"
+
+    def test_the_observer_image_creates_the_default_event_log(self) -> None:
+        from debian_observer.storage.parquet import EVENTS_DIR_DEFAULT
+
+        dockerfile = (self.DEPLOY / "compose" / "Dockerfile").read_text(
+            encoding="utf-8"
+        )
+        mkdir = next(
+            line for line in dockerfile.splitlines()
+            if line.startswith("RUN mkdir")
+        )
+        assert f"/app/{EVENTS_DIR_DEFAULT}" in mkdir.split()
+        assert "/app/data/events" not in mkdir.split()
+
+
 class TestOpenTofuApiPort:
     """The OpenTofu API container publishes the port the image serves.
 

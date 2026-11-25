@@ -7,6 +7,7 @@ the evolution of Debian releases from public historical data.
 # Using
 
 See the [User Guide](docs/user-guide.md) and the [key flows](docs/design/key-flows.md).
+
 Installation: see
 [docs/user-guide.md#installation](docs/user-guide.md#installation).
 

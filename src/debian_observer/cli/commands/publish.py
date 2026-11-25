@@ -2,8 +2,9 @@
 
 The stream is a **view** of the append-only Parquet event log
 (ADR-004 amendment, 2026-10-23), not a source of truth: it is fully
-rebuildable from ``--events-dir`` at any time, and ``consolidate
---events-dir`` regenerates the same consolidated table the
+rebuildable from ``--events-dir`` at any time, and the batch
+prosumer ``debian-observer-consolidate`` regenerates the same
+consolidated table the
 streaming consumers derive from it. Every message carries
 ``Nats-Msg-Id: <event_id>``, so JetStream deduplicates server-side
 within the stream's duplicate window — re-publishing the same log

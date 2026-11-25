@@ -709,6 +709,7 @@ def record_execution(
     raw_dir: Path,
     duration_seconds: float,
     codename: str | None = None,
+    extra: dict[str, Any] | None = None,
 ) -> None:
     """Write this run's ExecutionRecord: files fetched/skipped/failed/gaps."""
     from debian_observer.analytics.models import ExecutionRecord
@@ -721,6 +722,7 @@ def record_execution(
         "gaps": len(result.manifest["gaps"]),
         "year": result.year,
         "codename": codename,
+        **(extra or {}),
     }
     record = ExecutionRecord(
         run_id=result.manifest["run_id"],
@@ -737,3 +739,200 @@ def record_execution(
         metadata=json.dumps(counts),
     )
     ExecutionStore(str(raw_dir.parent / "execution_runs.duckdb")).insert(record)
+
+# ---------------------------------------------------------------------------
+# Live following (§4.1.3, §7.4)
+# ---------------------------------------------------------------------------
+
+#: Subtree of the raw store for snapshots taken from the live endpoint.
+LIVE_SUBDIR = "live"
+
+
+def _live_state_path(raw_dir: Path) -> Path:
+    """Where the live followers keep their HTTP validators between runs."""
+    return raw_dir / RAW_SUBDIR / LIVE_SUBDIR / "state.json"
+
+
+def _live_snapshot_id(generated_date: Any) -> str:
+    """The snapshot id of one live state: live-<generated-date>."""
+    if isinstance(generated_date, datetime):
+        moment = generated_date
+    else:
+        try:
+            moment = datetime.fromisoformat(str(generated_date))
+        except ValueError:
+            moment = datetime.now(timezone.utc)
+    return "live-" + moment.strftime("%Y%m%dT%H%M%SZ")
+
+
+def follow_live(
+    *,
+    raw_dir: Path,
+    url: str = LIVE_URL,
+    poll_interval: float = MIN_LIVE_POLL_INTERVAL,
+    sleep: Callable[[float], None] = time.sleep,
+    monotonic: Callable[[], float] = time.monotonic,
+    min_interval: float = MIN_REQUEST_INTERVAL,
+    timeout: float = HTTP_TIMEOUT_SECONDS,
+    codename: str | None = None,
+    run_id: str | None = None,
+    max_polls: int | None = None,
+) -> WindowResult:
+    """Follow the live endpoint politely until stopped.
+
+    The poll is conditional (``If-None-Match``/``If-Modified-Since``
+    from the state file) and never more often than every
+    :data:`MIN_LIVE_POLL_INTERVAL` seconds (§4.1.3) — a shorter
+    interval is a usage error, never silently clamped. A 304 changes
+    nothing; a new generated-date is one more snapshot, stored in the
+    live subtree with the same manifest metadata as an archive
+    snapshot (§7.4: archive and live share every step after
+    acquisition). A ``KeyboardInterrupt`` stops the loop and still
+    records the run. One ExecutionRecord per run (§8), with
+    ``live: true`` in its metadata.
+    """
+    if poll_interval < MIN_LIVE_POLL_INTERVAL:
+        raise ValueError(
+            f"poll_interval must be at least {MIN_LIVE_POLL_INTERVAL} s "
+            f"(no more often than every 15 min), got {poll_interval}"
+        )
+    run_id = run_id or f"run-{uuid.uuid4().hex[:12]}"
+    started = time.monotonic()
+    politeness = _Politeness(min_interval, sleep, monotonic)
+    live_dir = raw_dir / RAW_SUBDIR / LIVE_SUBDIR
+    live_dir.mkdir(parents=True, exist_ok=True)
+    state_path = _live_state_path(raw_dir)
+    state: dict[str, Any] = {}
+    if state_path.exists():
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+        except ValueError:
+            state = {}
+
+    fetched: list[str] = []
+    skipped: list[str] = []
+    failures: list[SnapshotFailure] = []
+    entries: list[dict[str, Any]] = []
+    unchanged = 0
+    polls = 0
+
+    conditional = {
+        key: value
+        for key, value in (
+            ("If-None-Match", state.get("etag")),
+            ("If-Modified-Since", state.get("last_modified")),
+        )
+        if value
+    }
+    try:
+        while max_polls is None or polls < max_polls:
+            if polls:
+                sleep(poll_interval)
+            polls += 1
+            politeness.wait()
+            try:
+                body, validators = _http_get(
+                    url, headers=conditional, timeout=timeout
+                )
+            except urllib.error.HTTPError as error:
+                if error.code == 304:
+                    unchanged += 1
+                    continue
+                failures.append(
+                    SnapshotFailure(
+                        snapshot_id=f"poll-{polls}", url=url, error=str(error)
+                    )
+                )
+                continue
+            except (urllib.error.URLError, OSError) as error:
+                failures.append(
+                    SnapshotFailure(
+                        snapshot_id=f"poll-{polls}", url=url, error=str(error)
+                    )
+                )
+                continue
+            metadata = read_snapshot_metadata("live", body)
+            snapshot_id = _live_snapshot_id(metadata["generated_date"])
+            path = live_dir / f"{snapshot_id}.yaml.gz"
+            if path.exists() and path.read_bytes() == body:
+                skipped.append(snapshot_id)
+            else:
+                path.write_bytes(body)
+                fetched.append(snapshot_id)
+            entries.append(
+                {
+                    "snapshot_id": snapshot_id,
+                    "url": url,
+                    "retrieved_at": _retrieved_now(),
+                    "etag": validators.get("etag"),
+                    "last_modified": validators.get("last-modified"),
+                    "size_bytes": len(body),
+                    "sha256": sha256_bytes(body),
+                    "generated_date": _manifest_generated_date(
+                        metadata["generated_date"]
+                    ),
+                    "item_count": metadata["item_count"],
+                    "top_level_keys": metadata["top_level_keys"],
+                    "from_store": snapshot_id in skipped,
+                }
+            )
+            state = {
+                "etag": validators.get("etag"),
+                "last_modified": validators.get("last-modified"),
+                "last_snapshot_id": snapshot_id,
+            }
+            state_path.write_text(
+                json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+            # The next poll is conditional on this response's validators.
+            conditional = {
+                key: value
+                for key, value in (
+                    ("If-None-Match", state.get("etag")),
+                    ("If-Modified-Since", state.get("last_modified")),
+                )
+                if value
+            }
+    except KeyboardInterrupt:
+        # A service stop ends the run; what was fetched stands.
+        pass
+
+    manifest = {
+        "source": "britney",
+        "run_id": run_id,
+        "year": datetime.now(timezone.utc).year,
+        "retrieved_at": _retrieved_now(),
+        "coordinates": {**COORDINATES, "codename": codename},
+        "index": {"url": url, "listed": None},
+        "snapshots": entries,
+        "skipped": sorted(skipped),
+        "failures": [
+            {"snapshot_id": f.snapshot_id, "url": f.url, "error": f.error}
+            for f in failures
+        ],
+        "gaps": [],
+        "loader": LOADER_NAME,
+        "live": True,
+        "polls": polls,
+        "unchanged": unchanged,
+    }
+    manifest_path = live_dir / f"manifest-{run_id}.json"
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    result = WindowResult(
+        year=manifest["year"],
+        fetched=fetched,
+        skipped=skipped,
+        failures=failures,
+        manifest=manifest,
+        manifest_path=manifest_path,
+    )
+    record_execution(
+        result,
+        raw_dir=raw_dir,
+        duration_seconds=time.monotonic() - started,
+        codename=codename,
+        extra={"live": True, "polls": polls, "unchanged": unchanged, "url": url},
+    )
+    return result

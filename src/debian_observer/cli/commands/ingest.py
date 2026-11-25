@@ -40,6 +40,7 @@ from debian_observer.ingestion.britney import (
     BACKOFF_BASE,
     FETCH_ATTEMPTS,
     HTTP_TIMEOUT_SECONDS,
+    MIN_LIVE_POLL_INTERVAL,
     fetch_index,
     select_window,
 )
@@ -340,6 +341,20 @@ def ingest_udddump(
     help="Base of the exponential backoff between download attempts, "
     "in seconds (default: 2.0).",
 )
+@click.option(
+    "--live",
+    is_flag=True,
+    default=False,
+    help="Follow the live endpoint instead of a fixed window: conditional requests, "
+    "a poll no more often than every 15 min (with --from: backfill first, then follow).",
+)
+@click.option(
+    "--poll-interval",
+    type=float,
+    default=MIN_LIVE_POLL_INTERVAL,
+    help="Seconds between two live polls (default: 900 s, the poll floor; "
+    "never more often than every 15 min; --live only).",
+)
 def ingest_britney(
     year: int | None,
     from_ts: str | None,
@@ -351,6 +366,8 @@ def ingest_britney(
     timeout: float,
     attempts: int,
     backoff_base: float,
+    live: bool,
+    poll_interval: float,
 ) -> None:
     """Ingest britney's migration excuses over an archive window.
 
@@ -365,8 +382,8 @@ def ingest_britney(
       request given up after --timeout s, retried --attempts times
       with a --backoff-base exponential backoff,
     - --live: follow the live endpoint (with --from: backfill, then
-      follow); polls no more often than every 15 minutes with
-      conditional requests.
+      follow); polls no more often than every 15 minutes
+      (--poll-interval) with conditional requests.
 
     Each listed snapshot is fetched once, politely (one request at a
     time, at least 1 s apart, --min-interval), stored byte-preserving
@@ -381,6 +398,7 @@ def ingest_britney(
     from debian_observer.ingestion.britney import (
         MIN_REQUEST_INTERVAL,
         acquire_window,
+        follow_live,
     )
 
     chosen_year = year or datetime.now(timezone.utc).year
@@ -397,11 +415,24 @@ def ingest_britney(
     if index.from_cache:
         click.echo(f"Index cache: {index.cache_path}")
     click.echo(f"Window: {len(window)} snapshots")
+    interval = (
+        min_interval if min_interval is not None else MIN_REQUEST_INTERVAL
+    )
+    if live and from_ts is None:
+        # --live without --from follows the endpoint; no archive window.
+        follow_live(
+            raw_dir=raw_dir_path,
+            min_interval=interval,
+            codename=codename,
+            poll_interval=poll_interval,
+        )
+        click.echo("Live following stopped")
+        return
     result = acquire_window(
         window,
         year=chosen_year,
         raw_dir=raw_dir_path,
-        min_interval=min_interval if min_interval is not None else MIN_REQUEST_INTERVAL,
+        min_interval=interval,
         codename=codename,
         timeout=timeout,
         attempts=attempts,
@@ -412,3 +443,12 @@ def ingest_britney(
     click.echo(f"Failed: {len(result.failures)}")
     click.echo(f"Gaps: {len(result.manifest['gaps'])}")
     click.echo(f"Manifest: {result.manifest_path}")
+    if live:
+        # --live --from X: the backfill ran above; now follow.
+        follow_live(
+            raw_dir=raw_dir_path,
+            min_interval=interval,
+            codename=codename,
+            poll_interval=poll_interval,
+        )
+        click.echo("Live following stopped")

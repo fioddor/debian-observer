@@ -10,6 +10,7 @@ endpoint, Grafana dashboards and alerting rules.
 from __future__ import annotations
 
 import logging
+import sys
 from typing import Any
 
 from opentelemetry import metrics
@@ -34,7 +35,7 @@ def _init_provider() -> MeterProvider:
     if _Provider is not None:
         return _Provider
 
-    exporter = ConsoleMetricExporter()
+    exporter = ConsoleMetricExporter(out=sys.stderr)
     reader = PeriodicExportingMetricReader(exporter, export_interval_millis=5_000)
     provider = MeterProvider(metric_readers=[reader])
     metrics.set_meter_provider(provider)

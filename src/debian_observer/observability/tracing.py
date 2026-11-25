@@ -12,6 +12,7 @@ from __future__ import annotations
 import functools
 import inspect
 import logging
+import sys
 from typing import Any, Callable, TypeVar
 
 from opentelemetry import trace
@@ -36,7 +37,7 @@ def _init_provider() -> TracerProvider:
     if _Provider is not None:
         return _Provider
 
-    exporter = ConsoleSpanExporter()
+    exporter = ConsoleSpanExporter(out=sys.stderr)
     processor = BatchSpanProcessor(exporter)
     provider = TracerProvider()
     provider.add_span_processor(processor)

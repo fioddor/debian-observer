@@ -35,6 +35,8 @@ from debian_observer.ingestion.acquisition import (
     download_dump,
 )
 from debian_observer.ingestion.manifest import DatasetManifest
+from debian_observer.ingestion import britney
+from debian_observer.ingestion.britney import fetch_index, select_window
 from debian_observer.ingestion.pipeline import IngestionPipeline
 from debian_observer.ingestion.provenance import ProvenanceRecorder, RawArtifact
 from debian_observer.ingestion.raw import sha256_raw
@@ -51,7 +53,9 @@ def ingest() -> None:
     - `sources` (sources.debian.org API; `--package` is the source package name),
     -  `mirror` (Packages.gz from a Debian mirror; `--suite` is the suite role, codename or pocket),
     - `udd` (UDD PostgreSQL mirror; `--table` is the table name),
-    - `udddump` (UDD `pg_dump` file) downloads the dump (`--url`).
+    - `udddump` (UDD `pg_dump` file) downloads the dump (`--url`),
+    - `britney` (the migration excuses; `--from`/`--to`/`--last` select an
+      archive window from the listed index, `--live` follows the endpoint).
 
     Behaviour:
 
@@ -268,3 +272,80 @@ def ingest_udddump(
     click.echo(f"Manifest: {manifest_path}")
     click.echo(f"Checksum: {checksum}")
     click.echo(f"Size: {size_bytes} bytes")
+
+
+@ingest.command(name="britney")
+@click.option(
+    "--year",
+    type=int,
+    default=None,
+    help="Archive year to ingest (default: the current UTC year).",
+)
+@click.option(
+    "--from",
+    "from_ts",
+    default=None,
+    help="Inclusive UTC lower bound of the window (ISO 8601; naive means UTC).",
+)
+@click.option(
+    "--to",
+    "to_ts",
+    default=None,
+    help="Inclusive UTC upper bound of the window (ISO 8601; naive means UTC).",
+)
+@click.option(
+    "--last",
+    type=int,
+    default=None,
+    help="The N most recent snapshots of the index (positive integer).",
+)
+@click.option(
+    "--raw-dir", default="data/raw", help="Directory for raw artifacts (default: data/raw)."
+)
+def ingest_britney(
+    year: int | None,
+    from_ts: str | None,
+    to_ts: str | None,
+    last: int | None,
+    raw_dir: str,
+) -> None:
+    """Ingest britney's migration excuses over an archive window.
+
+    The truth of the archive is the file listing of
+    release.debian.org/britney/update_excuses/<year>/ — file names are
+    never computed. The window:
+
+    \b
+    - --from/--to: inclusive UTC bounds on the snapshot timestamp,
+    - --last N: the N most recent snapshots of the index,
+    - --live: follow the live endpoint (with --from: backfill, then
+      follow); polls no more often than every 15 minutes with
+      conditional requests.
+
+    Each listed snapshot is fetched once, politely (one request at a
+    time, at least 1 s apart), stored byte-preserving in the raw store
+    (re-runs skip by SHA-256), and described in a window manifest with
+    its gaps (periods with no published snapshot) and failures (listed
+    files that could not be retrieved) as data.
+
+    Acquisition only: the parse and the eventization are
+    `debian-observer normalize britney`.
+    """
+    from datetime import datetime, timezone
+
+    chosen_year = year or datetime.now(timezone.utc).year
+    raw_dir_path = Path(raw_dir)
+    raw_dir_path.mkdir(parents=True, exist_ok=True)
+    index = fetch_index(chosen_year, raw_dir=raw_dir_path)
+    window = select_window(
+        index.refs,
+        from_ts=from_ts,
+        to_ts=to_ts,
+        last=last,
+    )
+    click.echo(f"Index: {britney.index_url(chosen_year)}")
+    if index.from_cache:
+        click.echo(f"Index cache: {index.cache_path}")
+    click.echo(f"Window: {len(window)} snapshots")
+    for ref in window:
+        click.echo(f"{ref.snapshot_id} {ref.url}")

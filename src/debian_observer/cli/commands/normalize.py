@@ -400,3 +400,184 @@ def normalize_udddump(
     click.echo(
         f"Normalized: {total_events} events, {total_invalid} invalid", err=True
     )
+
+
+@normalize.command(name="britney")
+@click.argument(
+    "manifest",
+    type=click.Path(path_type=Path, exists=True),
+)
+@click.option(
+    "--raw-dir",
+    "raw_dir",
+    default="data/raw",
+    help="Root of the raw store the window was ingested into "
+    "(default: data/raw).",
+)
+@click.option(
+    "--eventizer",
+    "eventizer_name",
+    default="excuses",
+    help=(
+        "Eventizer for this source: one of "
+        + ", ".join(list_eventizers("britney"))
+        + " (default: excuses, the only eventization — the pair "
+        "eventizer, ADR-024)."
+    ),
+)
+@click.option(
+    "--events-dir",
+    "events_dir",
+    type=click.Path(path_type=Path),
+    default=Path(EVENTS_DIR_DEFAULT),
+    help=(
+        "Write the Parquet event lake here: one directory per "
+        "event type, one file per run (default: "
+        + EVENTS_DIR_DEFAULT + "), the prosumers' input."
+    ),
+)
+@click.option(
+    "--checkpoint",
+    "checkpoint_path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help=(
+        "Checkpoint file of the eventizer: the last eventized "
+        "snapshot; a restart resumes after it "
+        "(default: <events-dir>/checkpoint-britney-excuses.json)."
+    ),
+)
+@click.option(
+    "--output",
+    "output_file",
+    type=click.File("w"),
+    default=None,
+    help=(
+        "Also write the events as JSON lines to this file (- for "
+        "stdout); the Parquet event lake is always written."
+    ),
+)
+def normalize_britney(
+    manifest: Path,
+    raw_dir: str,
+    eventizer_name: str,
+    events_dir: Path,
+    checkpoint_path: Path | None,
+    output_file,
+) -> None:
+    """Eventize an ingested britney window: seed, pairs, lake, resume.
+
+    Reads a window MANIFEST written by `ingest britney`, parses each
+    observed snapshot from the raw store (verifying SHA-256 against
+    the manifest), orders them by generated-date, seeds the first
+    snapshot complete (ADR-028) and eventizes each following one as
+    deltas against its predecessor (ADR-024) — sequentially
+    (ADR-027). The events go to the Parquet event lake (one
+    directory per event type, one file per run), their event_ids are
+    derived (ADR-025: a re-eventized pair keeps its ids), and a
+    checkpoint advances per eventized snapshot: a restart resumes
+    after it, and re-running a published window writes ZERO new
+    events and rewrites none of the old ones.
+
+    C2 produces to the lake only; publication to the migration
+    stream is C3.
+    """
+    import json as _json
+    import uuid as _uuid
+
+    from debian_observer.ingestion.britney import RAW_SUBDIR, sha256_bytes
+    from debian_observer.normalization.britney import parse_snapshot
+    from debian_observer.normalization.eventizers.excuses import (
+        EventizerCheckpoint,
+    )
+    from debian_observer.storage.parquet import writer_for_event_type
+
+    window = _json.loads(manifest.read_text(encoding="utf-8"))
+    if window.get("source") != "britney":
+        raise click.ClickException(
+            f"manifest {manifest.name} was ingested from source "
+            f"{window.get('source')!r}, not 'britney'; `normalize "
+            "britney` reads britney window manifests only"
+        )
+    eventizer = get_eventizer("britney", eventizer_name)
+    # The raw subtree of this window: archive runs live under their
+    # year, the live follower under `live` (the acquisition's own
+    # layout, §4.2/§7.4).
+    subdir = "live" if window.get("live") else str(window.get("year"))
+    parsed = []
+    for entry in window.get("snapshots", []):
+        snapshot_id = entry["snapshot_id"]
+        path = (
+            Path(raw_dir) / RAW_SUBDIR / subdir / f"{snapshot_id}.yaml.gz"
+        )
+        if not path.exists():
+            raise click.ClickException(
+                f"snapshot {snapshot_id} is not in the raw store "
+                f"({path}); run `ingest britney` first"
+            )
+        body = path.read_bytes()
+        if sha256_bytes(body) != entry.get("sha256"):
+            raise click.ClickException(
+                f"snapshot {snapshot_id} fails its manifest sha256: "
+                f"{path} is not the published file"
+            )
+        parsed.append(
+            parse_snapshot(snapshot_id, body, url=entry.get("url"))
+        )
+
+    checkpoint = EventizerCheckpoint.load(
+        checkpoint_path or Path(events_dir) / "checkpoint-britney-excuses.json"
+    )
+    lake_run = f"norm-{window.get('run_id', 'britney')}-{_uuid.uuid4().hex[:8]}"
+    writers: dict[str, IncrementalParquetWriter] = {}
+    snapshots_eventized = 0
+    total_events = 0
+    start = time.perf_counter()
+    for snapshot_id, events in eventizer.iter_eventized(
+        parsed, checkpoint=checkpoint
+    ):
+        for event in events:
+            writer = writers.get(event.event_type)
+            if writer is None:
+                writer = writer_for_event_type(
+                    event.event_type, events_dir=str(events_dir)
+                ).open_parquet_file(lake_run)
+                writers[event.event_type] = writer
+            writer.append_event(event)
+            if output_file is not None:
+                _write_events([event], output_file)
+        checkpoint.save(snapshot_id)
+        snapshots_eventized += 1
+        total_events += len(events)
+    for writer in writers.values():
+        writer.close()
+
+    if snapshots_eventized == 0:
+        click.echo(
+            f"Eventized: 0 new events (checkpoint at "
+            f"{checkpoint.last_snapshot})", err=True
+        )
+    else:
+        click.echo(
+            f"Eventized: {snapshots_eventized} snapshots, "
+            f"{total_events} events", err=True
+        )
+
+    _record_execution(
+        artifact=manifest,
+        source_name="britney",
+        records_processed=len(parsed),
+        events_produced=total_events,
+        invalid_count=0,
+        duration=time.perf_counter() - start,
+        metadata={
+            "eventizer": eventizer.name,
+            "snapshots": len(parsed),
+            "snapshots_eventized": snapshots_eventized,
+            "events_dir": str(events_dir),
+            "checkpoint": str(
+                checkpoint_path
+                or Path(events_dir) / "checkpoint-britney-excuses.json"
+            ),
+        },
+    )

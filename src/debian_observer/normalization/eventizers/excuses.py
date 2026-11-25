@@ -30,8 +30,10 @@ is C3 and is not here.
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Iterator, Mapping, Sequence
 
 from debian_observer.ingestion.britney import (
@@ -58,6 +60,7 @@ __all__ = [
     "EVENT_ID_NAMESPACE",
     "EXCUSE_EVENT_TYPES",
     "SUBJECTS",
+    "EventizerCheckpoint",
     "ExcusesEventizer",
     "derive_event_id",
     "subject_for",
@@ -478,3 +481,130 @@ class ExcusesEventizer:
                 + ", ".join(_iso_z(d) for d in tied)
             )
         return ordered
+
+    # -- the resumable window (§9.3: the checkpoint) ------------------------
+
+    def iter_eventized(
+        self,
+        window: Sequence[Any],
+        *,
+        checkpoint: "EventizerCheckpoint | None" = None,
+    ) -> Iterator[tuple[str, list[EventEnvelope]]]:
+        """Yield ``(snapshot_id, events)`` per eventized snapshot, in order.
+
+        The resumable form of :meth:`eventize_window`: with no
+        checkpoint the first chunk is the seed of ``window[0]``, then
+        one chunk per following snapshot, each paired against its
+        predecessor — sequentially (ADR-027). With a checkpoint, the
+        run resumes **after** the last eventized snapshot: its pairs
+        are not re-derived, so a re-run of a published window yields
+        zero chunks — zero new events. A checkpoint naming a snapshot
+        outside the window is an error (the window is a different
+        selection; guessing would re-seed or skip silently).
+
+        The caller persists the checkpoint per chunk (the CLI does):
+        a crash loses at most the pair in flight.
+        """
+        ordered = self.order_window(window)
+        if not ordered:
+            return
+        ids = [parsed.metadata.snapshot_id for parsed in ordered]
+        start = 0
+        if checkpoint is not None and checkpoint.last_snapshot is not None:
+            last = checkpoint.last_snapshot
+            if last not in ids:
+                raise ValueError(
+                    f"checkpoint names snapshot {last!r} outside this "
+                    f"window; the window holds: {', '.join(ids)}"
+                )
+            start = ids.index(last) + 1
+        if start >= len(ordered):
+            return
+        if start == 0:
+            seed = ordered[0]
+            yield (
+                seed.metadata.snapshot_id,
+                list(self.eventize_seed(seed.states, snapshot=seed.metadata)),
+            )
+            start = 1
+        for prev, nxt in zip(ordered[start - 1 :], ordered[start :]):
+            yield (
+                nxt.metadata.snapshot_id,
+                list(
+                    self.eventize_pair(
+                        prev.states,
+                        nxt.states,
+                        prev=prev.metadata,
+                        next=nxt.metadata,
+                    )
+                ),
+            )
+
+
+# ---------------------------------------------------------------------------
+# The checkpoint (§9.3)
+# ---------------------------------------------------------------------------
+
+
+class EventizerCheckpoint:
+    """Where the pair eventizer stopped: the last eventized snapshot.
+
+    A small JSON record beside the lake: ``source``, ``eventizer``,
+    ``last_snapshot`` and an ``updated_at`` timestamp. ``save`` writes
+    atomically (a temp file, then rename), so a crash never leaves a
+    half-written checkpoint that would resume mid-pair.
+
+    A pathless checkpoint (``at``) is in-memory only: ``save`` is a
+    no-op — useful for a dry run and for the battery.
+    """
+
+    _KIND = ("britney", "excuses")
+
+    def __init__(self, path: Path | None = None) -> None:
+        self._path = Path(path) if path is not None else None
+        self._last: str | None = None
+
+    @property
+    def last_snapshot(self) -> str | None:
+        """The last fully eventized snapshot id, or None (fresh)."""
+        return self._last
+
+    @classmethod
+    def load(cls, path: Path | None) -> "EventizerCheckpoint":
+        """Read the checkpoint from ``path`` (missing file: fresh)."""
+        checkpoint = cls(path)
+        if path is not None and Path(path).exists():
+            record = json.loads(Path(path).read_text(encoding="utf-8"))
+            source, eventizer = record.get("source"), record.get("eventizer")
+            if (source, eventizer) != cls._KIND:
+                raise ValueError(
+                    f"checkpoint {path} belongs to source {source!r} "
+                    f"eventizer {eventizer!r}, not {cls._KIND}"
+                )
+            checkpoint._last = record.get("last_snapshot")
+        return checkpoint
+
+    @classmethod
+    def at(cls, last_snapshot: str) -> "EventizerCheckpoint":
+        """An in-memory checkpoint as if ``last_snapshot`` was published."""
+        checkpoint = cls(None)
+        checkpoint._last = last_snapshot
+        return checkpoint
+
+    def save(self, snapshot_id: str) -> None:
+        """Record ``snapshot_id`` as the last eventized snapshot."""
+        self._last = snapshot_id
+        if self._path is None:
+            return
+        record = {
+            "source": self._KIND[0],
+            "eventizer": self._KIND[1],
+            "last_snapshot": snapshot_id,
+            "updated_at": _iso_z(datetime.now(timezone.utc)),
+        }
+        tmp = self._path.with_suffix(".json.tmp")
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_text(
+            json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        os.replace(tmp, self._path)

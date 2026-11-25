@@ -212,6 +212,15 @@ EVENT_TYPE_SCHEMAS.update(
                 ("after", pa.string()),
             ]
         ),
+        "ExcuseMigrateAfterChanged": pa.schema(
+            _envelope_columns()
+            + _snapshot_columns()
+            + [
+                ("item_name", pa.string()),
+                ("before", pa.string()),
+                ("after", pa.string()),
+            ]
+        ),
         "ExcuseVersionChanged": pa.schema(
             _envelope_columns()
             + _snapshot_columns()

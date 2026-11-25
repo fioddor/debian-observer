@@ -35,6 +35,7 @@ Event types added by the migration-dynamics release (R3, C2):
 - ``ExcuseLeft``              — an item left (ambiguous by design)
 - ``ExcuseVerdictChanged``    — an item's verdict changed
 - ``ExcuseBlockedByChanged`` — an item's blocked-by set changed
+- ``ExcuseMigrateAfterChanged`` — an item's migrate-after set changed
 - ``ExcuseVersionChanged``    — an item's new-version changed
 - ``SnapshotObserved``       — one snapshot's frame (pair data)
 """
@@ -585,6 +586,24 @@ class ExcuseBlockedByChangedPayload(_SnapshotFields):
     item_name: str = Field(..., description="The item's name.")
     before: list[str] = Field(..., description="Blocked-by in prev.")
     after: list[str] = Field(..., description="Blocked-by in next.")
+
+
+class ExcuseMigrateAfterChangedPayload(_SnapshotFields):
+    """Payload for ``ExcuseMigrateAfterChanged``: the set differs.
+
+    ``before``/``after`` are the compared sets, sorted — order is not
+    a change (§9.3).
+    """
+
+    model_config = FrozenModelConfig
+
+    observation: ObservationMeta = Field(
+        ..., description="Provenance metadata."
+    )
+    item_name: str = Field(..., description="The item's name.")
+    before: list[str] = Field(..., description="Migrate-after in prev.")
+    after: list[str] = Field(..., description="Migrate-after in next.")
+
 
 
 class ExcuseVersionChangedPayload(_SnapshotFields):

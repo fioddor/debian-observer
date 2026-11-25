@@ -49,6 +49,7 @@ from debian_observer.events.types import (
     ExcuseBlockedByChangedPayload,
     ExcuseEnteredPayload,
     ExcuseLeftPayload,
+    ExcuseMigrateAfterChangedPayload,
     ExcuseObservedPayload,
     ExcuseVerdictChangedPayload,
     ExcuseVersionChangedPayload,
@@ -127,6 +128,7 @@ EXCUSE_EVENT_TYPES = (
     "ExcuseLeft",
     "ExcuseVerdictChanged",
     "ExcuseBlockedByChanged",
+    "ExcuseMigrateAfterChanged",
     "ExcuseVersionChanged",
 )
 
@@ -140,6 +142,9 @@ SUBJECTS: dict[str, str] = {
     "ExcuseLeft": "debian.migration.excuse.left",
     "ExcuseVerdictChanged": "debian.migration.excuse.verdict_changed",
     "ExcuseBlockedByChanged": "debian.migration.excuse.blocked_by_changed",
+    "ExcuseMigrateAfterChanged": (
+        "debian.migration.excuse.migrate_after_changed"
+    ),
     "ExcuseVersionChanged": "debian.migration.excuse.version_changed",
     "SnapshotObserved": "debian.migration.snapshot.observed",
 }
@@ -319,10 +324,12 @@ class ExcusesEventizer:
 
         Deltas: entered (in next, not prev), left (in prev, not next,
         with its last state), verdict changed, blocked-by changed
-        (compared as a **set**), version changed (``new_version``
-        only — ``old_version`` is the testing side and changes when
-        the item migrates, §9.3). Plus one ``SnapshotObserved`` frame
-        for ``next``. No order within the pair (§6.3).
+        (compared as a **set**), migrate-after changed (compared as a
+        **set** too — britney serves it in the item's dependencies),
+        version changed (``new_version`` only — ``old_version`` is the
+        testing side and changes when the item migrates, §9.3). Plus
+        one ``SnapshotObserved`` frame for ``next``. No order within
+        the pair (§6.3).
         """
         observation = self._observation(next)
         for item_name in sorted(set(prev_states) | set(next_states)):
@@ -405,6 +412,24 @@ class ExcusesEventizer:
                         item_name=item_name,
                         before=sorted(set(before.blocked_by)),
                         after=sorted(set(after.blocked_by)),
+                    ),
+                    snapshot=next,
+                    prev_snapshot=prev.snapshot_id,
+                )
+            # migrate-after compares as a set too: order is not a
+            # change (§9.3) — britney serves it in the item's
+            # dependencies.
+            if set(before.migrate_after) != set(after.migrate_after):
+                yield self._envelope(
+                    event_type="ExcuseMigrateAfterChanged",
+                    entity_id=item_name,
+                    payload_model=ExcuseMigrateAfterChangedPayload(
+                        observation=observation,
+                        snapshot=next.snapshot_id,
+                        prev_snapshot=prev.snapshot_id,
+                        item_name=item_name,
+                        before=sorted(set(before.migrate_after)),
+                        after=sorted(set(after.migrate_after)),
                     ),
                     snapshot=next,
                     prev_snapshot=prev.snapshot_id,

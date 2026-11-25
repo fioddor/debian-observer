@@ -202,6 +202,13 @@ def _as_utc_datetime(value: Any) -> datetime:
         return value.astimezone(timezone.utc)
     if isinstance(value, date):
         return datetime(value.year, value.month, value.day, tzinfo=timezone.utc)
+    if isinstance(value, str):
+        # A quoted timestamp: the same ISO 8601 form the archive
+        # names carry. Naive means UTC (§8).
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
     raise ValueError(f"generated-date is not a date: {value!r}")
 
 

@@ -40,5 +40,9 @@ def test_help_names_the_source_eventizers(source):
     assert result.exit_code == 0
     for name in offered:
         assert name in result.output
-    # the default is named among them
-    assert "package-versions" in result.output
+    # the retro-compatible default is named among them — for the
+    # sources that have one. A source whose only eventization is a
+    # named eventizer (britney: the pair eventizer, §9.1) has no
+    # default to name.
+    if "package-versions" in offered:
+        assert "package-versions" in result.output

@@ -145,6 +145,47 @@ class TestEventLake:
         assert json.loads(row["blocked_by"]) == ["beta", "gamma"]
         assert json.loads(row["reason"]) == ["waiting for 5 days"]
 
+    def test_the_lake_keeps_the_migrate_after_change(
+        self, tmp_path: Path
+    ) -> None:
+        """The migrate-after change lands in its own typed directory."""
+        before = SEED
+        after = parsed(
+            "20260601T020000Z_0001",
+            "2026-06-01T02:00:00Z",
+            [
+                dict(
+                    ALPHA,
+                    dependencies={
+                        "blocked-by": ["beta", "gamma"],
+                        "migrate-after": ["beta"],
+                    },
+                )
+            ],
+        )
+        events = list(EVENTIZER.eventize_window([before, after]))
+        changed = [
+            e for e in events if e.event_type == "ExcuseMigrateAfterChanged"
+        ]
+        assert [e.entity_id for e in changed] == ["alpha"]
+        assert changed[0].payload["before"] == []
+        assert changed[0].payload["after"] == ["beta"]
+        write_window(events, tmp_path / "lake", "run-lake")
+        files = sorted(
+            (tmp_path / "lake" / "excuse_migrate_after_changed").glob(
+                "*.parquet"
+            )
+        )
+        assert files, "no lake file for ExcuseMigrateAfterChanged"
+        table = pq.read_table(files[0])
+        assert table.schema.equals(
+            schema_for_event_type("ExcuseMigrateAfterChanged")
+        )
+        assert table.column_names == schema_for_event_type(
+            "ExcuseMigrateAfterChanged"
+        ).names
+        assert table.num_rows == 1
+
     def test_the_fold_by_event_id_absorbs_a_duplicate_run(
         self, tmp_path: Path
     ) -> None:

@@ -99,6 +99,27 @@ class TestDerivationVectors:
         )
         assert event_id == uuid.UUID(self.FRAME_VECTOR)
 
+    #: Vector 4 — a delta ``ExcuseMigrateAfterChanged``: the
+    #: migrate-after set differs; before/after are the compared sets.
+    MIGRATE_AFTER_VECTOR = "9a6ddfaf-3644-5d4a-971d-75f5215182ca"
+
+    def test_a_migrate_after_changed_delta(self) -> None:
+        event_id = derive_event_id(
+            event_type="ExcuseMigrateAfterChanged",
+            entity="alpha",
+            prev_snapshot="20260601T010000Z_0001",
+            next_snapshot="20260601T020000Z_0001",
+            payload={
+                "item_name": "alpha",
+                "before": ["beta"],
+                "after": ["gamma"],
+                "prev_snapshot": "20260601T010000Z_0001",
+                "snapshot": "20260601T020000Z_0001",
+            },
+        )
+        assert event_id == uuid.UUID(self.MIGRATE_AFTER_VECTOR)
+        assert event_id.version == 5
+
     def test_a_payload_change_mints_a_new_id(self) -> None:
         base = {
             "item_name": "alpha",

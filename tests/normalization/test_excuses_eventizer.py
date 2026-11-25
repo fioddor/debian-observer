@@ -323,6 +323,75 @@ class TestPairDeltas:
         assert changed[0].payload["before"] == ["beta", "gamma"]
         assert changed[0].payload["after"] == ["beta"]
 
+    def test_a_migrate_after_change_emits_its_own_event(
+        self, eventizer
+    ) -> None:
+        """The migrate-after set differs: its own event, before/after."""
+        before = snapshot(
+            "20260602T010000Z_0001",
+            "2026-06-02T01:00:00Z",
+            [item("alpha", dependencies={"migrate-after": []})],
+        )
+        after = snapshot(
+            "20260602T020000Z_0001",
+            "2026-06-02T02:00:00Z",
+            [item("alpha", dependencies={"migrate-after": ["gamma", "beta"]})],
+        )
+        events = list(
+            eventizer.eventize_pair(
+                before.states,
+                after.states,
+                prev=before.metadata,
+                next=after.metadata,
+            )
+        )
+        changed = [
+            e for e in events if e.event_type == "ExcuseMigrateAfterChanged"
+        ]
+        assert [e.entity_id for e in changed] == ["alpha"]
+        event = changed[0]
+        assert event.payload["before"] == []
+        assert event.payload["after"] == ["beta", "gamma"]
+        assert event.event_id == derive_event_id(
+            event_type="ExcuseMigrateAfterChanged",
+            entity="alpha",
+            prev_snapshot="20260602T010000Z_0001",
+            next_snapshot="20260602T020000Z_0001",
+            payload=event.payload,
+        )
+        assert event.event_id.version == 5
+
+    def test_the_migrate_after_change_carries_the_spec_subject(
+        self, eventizer
+    ) -> None:
+        assert subject_for("ExcuseMigrateAfterChanged") == (
+            "debian.migration.excuse.migrate_after_changed"
+        )
+
+    def test_a_migrate_after_reorder_emits_no_event(self, eventizer) -> None:
+        """Order is not a change: [beta, gamma] == [gamma, beta]."""
+        before = snapshot(
+            "20260602T010000Z_0001",
+            "2026-06-02T01:00:00Z",
+            [item("alpha", dependencies={"migrate-after": ["beta", "gamma"]})],
+        )
+        after_same_set = snapshot(
+            "20260602T020000Z_0001",
+            "2026-06-02T02:00:00Z",
+            [item("alpha", dependencies={"migrate-after": ["gamma", "beta"]})],
+        )
+        events = list(
+            eventizer.eventize_pair(
+                before.states,
+                after_same_set.states,
+                prev=before.metadata,
+                next=after_same_set.metadata,
+            )
+        )
+        assert not [
+            e for e in events if e.event_type == "ExcuseMigrateAfterChanged"
+        ]
+
     def test_the_pair_has_one_snapshot_frame(self, eventizer) -> None:
         frames = [
             e for e in pair_events(eventizer)

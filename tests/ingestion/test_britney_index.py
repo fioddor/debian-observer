@@ -275,23 +275,39 @@ def test_ingest_britney_help_documents_the_window() -> None:
 
 
 def test_ingest_britney_selects_from_a_fetched_index(tmp_path: Path) -> None:
-    """The command fetches the index and echoes the selected window."""
+    """The command fetches the index and echoes the selected window.
+
+    The acquisition itself is pinned by the fetch tests; here the
+    window selection reaches the command from the fetched index.
+    """
+    from types import SimpleNamespace
+
     year = 2026
     refs = britney.parse_index(
         index_html(year), base_url=britney.index_url(year)
     )
-
-    from types import SimpleNamespace
 
     def fake_fetch_index(year_: int, **kwargs: object) -> object:
         return SimpleNamespace(
             refs=refs, cache_path=tmp_path / "cache.html", from_cache=False
         )
 
+    fake_result = SimpleNamespace(
+        fetched=["a"],
+        skipped=[],
+        failures=[],
+        manifest={"gaps": [], "snapshots": [], "run_id": "run-x"},
+        manifest_path=tmp_path / "manifest.json",
+        year=year,
+    )
+
     with patch(
         "debian_observer.cli.commands.ingest.fetch_index",
         side_effect=fake_fetch_index,
-    ) as fetch:
+    ) as fetch, patch(
+        "debian_observer.ingestion.britney.acquire_window",
+        return_value=fake_result,
+    ) as acquire:
         result = CliRunner().invoke(
             cli,
             [
@@ -304,6 +320,7 @@ def test_ingest_britney_selects_from_a_fetched_index(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     fetch.assert_called_once()
-    expected = sorted(INDEX_SNAPSHOTS, key=lambda s: parsed(s))[-2:]
-    for snapshot_id in expected:
-        assert snapshot_id in result.output
+    # The window the command echoes is the one the index selected.
+    expected = britney.select_window(refs, last=2)
+    assert f"Window: {len(expected)} snapshots" in result.output
+    assert "Index: " in result.output

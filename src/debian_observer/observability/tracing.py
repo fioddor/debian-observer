@@ -1,11 +1,10 @@
 """Observability: OpenTelemetry tracing.
 
-Configures a ``TracerProvider`` with a ``ConsoleSpanExporter`` for R1.
+Configures a ``TracerProvider`` with a console span exporter.
 Provides a ``@span`` decorator and ``get_tracer()`` helper.
 
-Upgrade path:
-- R2: swap ConsoleSpanExporter for OTLPSpanExporter
-- R3: add Jaeger/Tempo collector
+A later upgrade swaps the console exporter for OTLP and a Jaeger/
+Tempo collector.
 """
 
 from __future__ import annotations

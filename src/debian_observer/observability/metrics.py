@@ -1,11 +1,10 @@
 """Observability: OpenTelemetry metrics.
 
-Configures a ``MeterProvider`` with a ``ConsoleMetricExporter`` for R1.
+Configures a ``MeterProvider`` with a console metric exporter.
 Provides metric helpers for ingestion, messaging, and API operations.
 
-Upgrade path:
-- R2: add OTLPMetricExporter + Prometheus pull endpoint
-- R3: Grafana dashboards + alerting rules
+A later upgrade adds an OTLP exporter plus a Prometheus pull
+endpoint, Grafana dashboards and alerting rules.
 """
 
 from __future__ import annotations

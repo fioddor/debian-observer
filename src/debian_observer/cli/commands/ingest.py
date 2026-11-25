@@ -36,7 +36,13 @@ from debian_observer.ingestion.acquisition import (
 )
 from debian_observer.ingestion.manifest import DatasetManifest
 from debian_observer.ingestion import britney
-from debian_observer.ingestion.britney import fetch_index, select_window
+from debian_observer.ingestion.britney import (
+    BACKOFF_BASE,
+    FETCH_ATTEMPTS,
+    HTTP_TIMEOUT_SECONDS,
+    fetch_index,
+    select_window,
+)
 from debian_observer.ingestion.pipeline import IngestionPipeline
 from debian_observer.ingestion.provenance import ProvenanceRecorder, RawArtifact
 from debian_observer.ingestion.raw import sha256_raw
@@ -302,12 +308,49 @@ def ingest_udddump(
 @click.option(
     "--raw-dir", default="data/raw", help="Directory for raw artifacts (default: data/raw)."
 )
+@click.option(
+    "--codename",
+    default=None,
+    help="The testing codename at generated-date (coordinates; optional, recorded in the manifest).",
+)
+@click.option(
+    "--min-interval",
+    type=float,
+    default=None,
+    help="Seconds between two source requests (default: at least 1 s; never 0).",
+)
+@click.option(
+    "--timeout",
+    type=float,
+    default=HTTP_TIMEOUT_SECONDS,
+    help="Seconds before one source request is given up as lost "
+    "(default: 60 s, generous for one archive file).",
+)
+@click.option(
+    "--attempts",
+    type=int,
+    default=FETCH_ATTEMPTS,
+    help="Download attempts per listed snapshot before it is recorded as "
+    "failed (default: 3).",
+)
+@click.option(
+    "--backoff-base",
+    type=float,
+    default=BACKOFF_BASE,
+    help="Base of the exponential backoff between download attempts, "
+    "in seconds (default: 2.0).",
+)
 def ingest_britney(
     year: int | None,
     from_ts: str | None,
     to_ts: str | None,
     last: int | None,
     raw_dir: str,
+    codename: str | None,
+    min_interval: float | None,
+    timeout: float,
+    attempts: int,
+    backoff_base: float,
 ) -> None:
     """Ingest britney's migration excuses over an archive window.
 
@@ -318,25 +361,32 @@ def ingest_britney(
     \b
     - --from/--to: inclusive UTC bounds on the snapshot timestamp,
     - --last N: the N most recent snapshots of the index,
+    - --timeout/--attempts/--backoff-base: the fetch perimeter — a
+      request given up after --timeout s, retried --attempts times
+      with a --backoff-base exponential backoff,
     - --live: follow the live endpoint (with --from: backfill, then
       follow); polls no more often than every 15 minutes with
       conditional requests.
 
     Each listed snapshot is fetched once, politely (one request at a
-    time, at least 1 s apart), stored byte-preserving in the raw store
-    (re-runs skip by SHA-256), and described in a window manifest with
-    its gaps (periods with no published snapshot) and failures (listed
-    files that could not be retrieved) as data.
+    time, at least 1 s apart, --min-interval), stored byte-preserving
+    in the raw store (re-runs skip by SHA-256), and described in a
+    window manifest with its gaps (periods with no published
+    snapshot) and failures (listed files that could not be retrieved)
+    as data. One execution record per run.
 
     Acquisition only: the parse and the eventization are
     `debian-observer normalize britney`.
     """
-    from datetime import datetime, timezone
+    from debian_observer.ingestion.britney import (
+        MIN_REQUEST_INTERVAL,
+        acquire_window,
+    )
 
     chosen_year = year or datetime.now(timezone.utc).year
     raw_dir_path = Path(raw_dir)
     raw_dir_path.mkdir(parents=True, exist_ok=True)
-    index = fetch_index(chosen_year, raw_dir=raw_dir_path)
+    index = fetch_index(chosen_year, raw_dir=raw_dir_path, timeout=timeout)
     window = select_window(
         index.refs,
         from_ts=from_ts,
@@ -347,5 +397,18 @@ def ingest_britney(
     if index.from_cache:
         click.echo(f"Index cache: {index.cache_path}")
     click.echo(f"Window: {len(window)} snapshots")
-    for ref in window:
-        click.echo(f"{ref.snapshot_id} {ref.url}")
+    result = acquire_window(
+        window,
+        year=chosen_year,
+        raw_dir=raw_dir_path,
+        min_interval=min_interval if min_interval is not None else MIN_REQUEST_INTERVAL,
+        codename=codename,
+        timeout=timeout,
+        attempts=attempts,
+        backoff_base=backoff_base,
+    )
+    click.echo(f"Fetched: {len(result.fetched)}")
+    click.echo(f"Skipped (SHA-256 in store): {len(result.skipped)}")
+    click.echo(f"Failed: {len(result.failures)}")
+    click.echo(f"Gaps: {len(result.manifest['gaps'])}")
+    click.echo(f"Manifest: {result.manifest_path}")

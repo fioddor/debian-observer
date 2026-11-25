@@ -41,7 +41,9 @@ the backbone — every later stage derives from it.
    (ADR-003 amendment, 2026-10-23); the log may also be published
    to JetStream by the explicit `publish` command (flat per-type
    subjects, see Flow 4) for the async path.
-2. **Consolidate:** the batch feeder (`consolidate --events-dir`)
+2. **Consolidate:** the batch feeder — the example prosumer
+   `debian-observer-consolidate --file-in <event log> --file-out
+   data/normalized/package_versions/package_versions.parquet` —
    folds the whole log — `PackageVersionObserved` events only,
    dedup by `event_id`, ordered by `(observed_at, event_id)` — into
    the consolidated `package_versions` table (`storage.consolidation`,
@@ -105,7 +107,7 @@ the event log remains the backbone — the stream is a view.
    the ack (ADR-005 amendment).
 3. **Crash/resume:** `kill -9` leaves unacked messages — JetStream
    redelivers, the merge absorbs the duplicates (idempotent fold),
-   and the table converges to exactly what `consolidate
-   --events-dir` regenerates from the same log:
+   and the table converges to exactly what the batch prosumer
+   regenerates from the same log:
    `fold(log parquet) == fold(stream)` (pinned by
    `scripts/crash-test-consumer.sh`).

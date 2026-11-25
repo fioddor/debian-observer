@@ -1,8 +1,8 @@
 """Observability: OpenTelemetry instrumentation for Debian Observer.
 
 Provides unified tracing, metrics, and structured-logging entry points.
-All components use a lightweight Console exporter suitable for R1;
-upgrade to OTLP/Prometheus/Grafana is deferred to R2/R3.
+All components use a lightweight console exporter; upgrading to
+OTLP/Prometheus/Grafana is a later step.
 
 Usage::
 

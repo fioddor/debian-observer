@@ -1,11 +1,10 @@
 """Observability: OpenTelemetry tracing.
 
-Configures a ``TracerProvider`` with a ``ConsoleSpanExporter`` for R1.
+Configures a ``TracerProvider`` with a console span exporter.
 Provides a ``@span`` decorator and ``get_tracer()`` helper.
 
-Upgrade path:
-- R2: swap ConsoleSpanExporter for OTLPSpanExporter
-- R3: add Jaeger/Tempo collector
+A later upgrade swaps the console exporter for OTLP and a Jaeger/
+Tempo collector.
 """
 
 from __future__ import annotations
@@ -13,6 +12,7 @@ from __future__ import annotations
 import functools
 import inspect
 import logging
+import sys
 from typing import Any, Callable, TypeVar
 
 from opentelemetry import trace
@@ -37,7 +37,7 @@ def _init_provider() -> TracerProvider:
     if _Provider is not None:
         return _Provider
 
-    exporter = ConsoleSpanExporter()
+    exporter = ConsoleSpanExporter(out=sys.stderr)
     processor = BatchSpanProcessor(exporter)
     provider = TracerProvider()
     provider.add_span_processor(processor)

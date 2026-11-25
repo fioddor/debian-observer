@@ -753,10 +753,10 @@ The ingestion pipeline integrates ParquetWriter for persistent storage.
 OpenTelemetry tracing and metrics are wired throughout the pipeline,
 messaging and the API; the API exposes `/metrics/`. The exporters are
 the console ones: metrics export every 5 seconds while a process runs,
-and spans and metrics flush at process exit — on **stdout**, after the
-command's own output. Commands that record telemetry (e.g. `ingest`,
-`benchmark`) therefore end with JSON telemetry blocks on stdout: keep
-that in mind before piping or redirecting their output.
+and spans and metrics flush at process exit — on **stderr**. Commands
+that record telemetry (e.g. `ingest`, `benchmark`) keep their stdout
+clean: it carries only the command's own output, so it is safe to
+pipe or redirect. The JSON telemetry blocks appear on stderr instead.
 
 
 ## Troubleshooting

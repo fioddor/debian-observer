@@ -1,5 +1,12 @@
 # Debian Release Observatory
 
+![Python](https://img.shields.io/badge/python-3.13-blue?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115-blue?logo=fastapi&logoColor=white)
+![NATS](https://img.shields.io/badge/NATS-2.16-blue?logo=jetstream&logoColor=white)
+![DuckDB](https://img.shields.io/badge/DuckDB-0.10-blue?logo=duckdb&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-darkviolet?logo=docker&logoColor=white)
+![OpenTofu](https://img.shields.io/badge/OpenTofu-darkviolet?logo=opentofu&logoColor=white)
+
 A reproducible and scalable observatory for studying
 the evolution of Debian releases from public historical data.
 

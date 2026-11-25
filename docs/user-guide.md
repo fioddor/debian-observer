@@ -23,11 +23,12 @@ Data Processing
      - [Testing](#testing)
   6. [Publication](#publication)
 
-[Execution analytics](#execution-analytics)
-
 [Pipeline Data Layout](#pipeline-data-layout)
 
-[Observability](#observability)
+Observability:
+
+  - (Debian) Domain [observability](#observability)
+  - Platform [execution analytics](#execution-analytics)
 
 [Troubleshooting](#troubleshooting)
 

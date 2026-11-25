@@ -2,13 +2,13 @@
 
 Operational guide for the Debian Observer CLI.
 
-For other documentation star at [README](../README.md).
+For other documentation start at [README](../README.md).
 
 ## Table of contents
 
 Installation
 
-  - 3 alternatives: [source code](#a-from-source), [pipx](#b-pipx), [Docker compose](#c-docker-compose)]
+  - 3 alternatives: [source code](#a-from-source), [pipx](#b-pipx), [Docker compose](#c-docker-compose)
   - [Quick checks](#smoke-tests-with-real-debian-data)
 
 Data Processing
@@ -18,11 +18,14 @@ Data Processing
   3. [Normalization](#normalization) of raw records
   4. [Query](#query-stored-data) stored data
   5. [Prosumers](#prosumers-pipeable-processors) (pipeable processors)
-     - Examples: [Filter](#example-debian-observer-filter), [Consolidate](#example-debian-observer-consolidate)
+     - Examples: [Consolidate](#example-debian-observer-consolidate), [Filter](#example-debian-observer-filter)
+     - [Queue consumer](#queue-consumer-nats)
      - [Testing](#testing)
   6. [Publication](#publication)
 
-[Pipeline Data](#pipeline-data)
+[Execution analytics](#execution-analytics)
+
+[Pipeline Data Layout](#pipeline-data-layout)
 
 [Observability](#observability)
 
@@ -91,6 +94,23 @@ Run ID: run-xxxxxx
 Checksum: ...
 Events produced: N
 Parquet written: /tmp/smoke-events/run-xxxxxx.parquet
+```
+
+**Verify outputs:**
+
+Raw artifact (xz-compressed CSV):
+```bash
+xz -dc /tmp/smoke-raw/sources.debian.org-*.csv.xz | head -n 3
+```
+
+Parquet schema (`read_table` takes the directory, not a glob):
+```bash
+python3 -c "
+import pyarrow.parquet as pq
+table = pq.read_table('/tmp/smoke-events')
+print(f'Rows: {table.num_rows}, Cols: {table.num_columns}')
+print(f'Columns: {table.column_names}')
+"
 ```
 
 ### Mirror Package List (Packages.gz)
@@ -223,7 +243,7 @@ then streams the COPY block through `pg_restore --data-only --table`
 **on the host** (`pg_restore` on PATH; the dev and deploy images ship
 `postgresql-client`) — no database connection, no restore, and no
 container indirection ([ADR-006][ADR-006]) — and writes the events to the
-Parquet observaton event log (EOL) under `--events-dir`
+Parquet observation event log under `--events-dir`
 (default `data/observed`): one directory per event type, one file per run
 (the prosumers' input). `--limit` unset normalizes the whole table with a
 warning on stderr.
@@ -269,23 +289,6 @@ debian-observer normalize udddump \
 
 Records that fail canonical transformation are skipped with a warning
 naming the cause — the raw artifact preserves them ([ADR-002][ADR-002]).
-
-**Verify outputs:**
-
-Raw artifact (xz-compressed CSV):
-```bash
-xz -dc /tmp/smoke-raw/sources.debian.org-*.csv.xz | head -n 3
-```
-
-Parquet schema:
-```bash
-python3 -c "
-import pyarrow.parquet as pq
-table = pq.read_table('/tmp/smoke-events/run-*.parquet')
-print(f'Rows: {table.num_rows}, Cols: {table.num_columns}')
-print(f'Columns: {table.column_names}')
-"
-```
 
 
 ## Ingestion
@@ -351,9 +354,11 @@ Run `debian-observer normalize <surface> --help` for all options
 
 Each `normalize` invocation records a `normalization` run (records,
 events, duration, throughput) into `execution_runs.duckdb` beside the
-directory of the artifacts it reads (see Data layout; `ingest` records
+directory of the artifacts it reads (see
+[Pipeline Data Layout](#pipeline-data-layout); `ingest` records
 into `<raw_dir>/../execution_runs.duckdb`) — the same analytics
-database `execution-report` reads; see the Execution report section.
+database `execution-report` reads; see
+[Execution analytics](#execution-analytics).
 
 
 ## Query stored data
@@ -397,9 +402,6 @@ SQL queries.
 
 ## Prosumers (Pipeable Processors)
 
-A queue consumer is a pipeline the researcher owns.
-The tool ships no `consume` subcommand.
-
 The prosumers are stand-alone CLI tools that read and write
 observation events via a common pipeable contract. They are
 intended for ad-hoc analytical pipelines and for researchers who
@@ -420,15 +422,8 @@ The product ships two kinds of prosumer code, in separate places:
     The shipped example executables, `consolidate.py` and `filter.py` —
     decoupled from the `debian-observer` package, installed as the
     `debian-observer-consolidate` and `debian-observer-filter` commands.
-  1. Copy one as a starting point for your own prosumer.
-  2. Adjust the durable name, subject and dataset dir (environment variables:
-     `DEBIAN_OBSERVER_{SERVER,STREAM,DURABLE,SUBJECT,DATASET_DIR}`), and run it
-     as its own process:
-     ```bash
-        DEBIAN_OBSERVER_DATASET_DIR=data/normalized/package_versions \
-        python examples/consume_packages.py
-     ```
-Each is a self-contained Click script built on the libraries above.
+    Each is a self-contained Click script built on the libraries above:
+    copy one as a starting point for your own prosumer.
 
 Every prosumer accepts at least one input and at least one output
 from the following four options:
@@ -440,13 +435,111 @@ from the following four options:
 | `--stream-in`     | Read ND-JSON records from stdin |
 | `--stream-out`    | Write ND-JSON records to stdout |
 
+- `--file-in` takes a Parquet file, a glob or a directory (its
+  `*.parquet` files, no recursion): `data/observed` after `ingest`,
+  `data/observed/package_version_observed` after `normalize udddump`.
+- `--stream-in` reads one JSON record per line: the prosumer records
+  another prosumer's `--stream-out` writes, or the event JSON lines
+  `normalize` writes.
+- `--file-out` writes one Parquet file atomically (tmp file + rename);
+  a directory target gets a `sink.parquet` inside.
+
+### Example: `debian-observer-consolidate`
+
+Folds the `PackageVersionObserved` events of its input into the
+consolidated `PackageVersionConsolidated` table (other event types
+are ignored; an input without any fails with
+`No PackageVersionObserved events found.`):
+
+- One row per full observation key
+  `(package_id, version, distribution, release, suite, architecture)`.
+- Attribute columns (`source_package`, `component`, `section`,
+  `priority`, `source`) are last-observed-wins, ordered by
+  `(observed_at, event_id)`.
+- `observed_first_at`/`observed_last_at` are the min/max `observed_at`
+  of the group (in `_meta` on `--stream-out`).
+- The fold is idempotent: duplicate `event_id` values collapse, so
+  folding the same events twice — or duplicated log files — yields
+  the same table.
+- A summary goes to stderr:
+  `Events read: N | PVO events: N | Consolidated rows: N`.
+
+```bash
+# File to file: rebuild the consolidated table from the event log
+debian-observer-consolidate --file-in data/observed \
+  --file-out data/normalized/package_versions/package_versions.parquet
+
+# Stream to stream: fold the events normalize writes
+debian-observer normalize artifacts data/raw/<file>.csv.xz | \
+  debian-observer-consolidate --stream-in --stream-out > consolidated.ndjson
+
+# File to stream: inspect the folded rows as ND-JSON
+debian-observer-consolidate --file-in data/observed --stream-out
+```
+
+Query the consolidated table with DuckDB ([ADR-003][ADR-003] example, on the
+dataset schema) — or with `debian-observer query`, whose `--dataset-dir`
+defaults to `data/normalized/package_versions`:
+
+```sql
+SELECT package_id, version, release
+FROM read_parquet('data/normalized/package_versions/*.parquet')
+WHERE release = 'sid'
+```
+
+The table is **state, not log**: it is fully derived from the event log and
+can be re-generated at any time. The event log remains the replay surface while
+the dataset is the consolidated projection.
+
+### Example: `debian-observer-filter`
+
+Pass-through filter for observation events. Accepts repeatable
+`--distribution` and `--release` flags (AND logic). Records without
+a `distribution` value (not package observations) pass through
+unchanged; without any flag everything passes, with a warning.
+
+```bash
+# Keep only Debian sid observations
+debian-observer-filter --file-in data/observed \
+                       --file-out sid.parquet   \
+                       --distribution debian --release sid
+
+# Pipe: filter, then consolidate what passed
+debian-observer-filter --file-in data/observed --stream-out --distribution debian | \
+debian-observer-consolidate --stream-in --file-out debian-only.parquet
+```
+
+Filter first: `debian-observer-consolidate` folds observation events,
+so it cannot take its own consolidated output as input.
+
+### Queue consumer (NATS)
+
+A queue consumer is a pipeline the researcher owns: the tool ships
+no `consume` subcommand. `examples/consume_packages.py` is the
+recipe — it folds `debian.package_version.observed` off JetStream
+into the consolidated `package_versions` table:
+
+1. Copy it into your own project as a starting point.
+2. Adjust the server, stream, durable name, subject and dataset dir
+   (environment variables
+   `DEBIAN_OBSERVER_{SERVER,STREAM,DURABLE,SUBJECT,DATASET_DIR}`), and
+   run it as its own process:
+
+   ```bash
+   DEBIAN_OBSERVER_DATASET_DIR=data/normalized/package_versions \
+     python examples/consume_packages.py
+   ```
+
 The queue state lives **server-side** in JetStream under the durable name
 (plus the dataset table itself): `kill -9` the process and JetStream redelivers
-the unacked messages.
+the unacked messages. The consolidation merge absorbs the duplicates
+(idempotent fold), so the consumer resumes where it left off, and the
+ack happens only **after** the durable table write ([ADR-005][ADR-005]
+amendment of 2026-10-23): a crash before the ack means redelivery, not
+loss.
 
-### Consume and persist to storage
+#### Consume and persist to storage
 
-The :class:`PersistingHandler` connects a consumer to Parquet storage.
 To persist consumed events into Parquet event files (instead of
 consolidating), register the library `PersistingHandler` yourself:
 
@@ -458,98 +551,6 @@ app = ConsumerApp()
 handler = PersistingHandler("data/observed", flush_threshold=100)
 app.register_handler("PackageVersionObserved", handler)
 ```
-
-### Example: `debian-observer-consolidate`
-
-Folds a stream of `PackageVersionObserved` events into a single consolidated
-`PackageVersionConsolidated` table.  Duplicate `event_id` values collapse.
-The surviving row per observation key
-`(package_id, version, distribution, release, suite, architecture)`
-is the one with the latest `(observed_at, event_id)`.
-
-```bash
-# File to file (batch rebuild)
-debian-observer-consolidate --file-in events.parquet --file-out package_versions.parquet
-
-# Stream to stream (pipe through a filter first)
-cat events.ndjson | debian-observer-consolidate --stream-in --stream-out > consolidated.ndjson
-```
-
-### Example: `debian-observer-filter`
-
-Pass-through filter for observation events.  Accepts repeatable
-`--distribution` and `--release` flags (AND logic).  Non-observation
-records are passed through unchanged.
-
-```bash
-# Keep only Debian sid observations
-debian-observer-filter --file-in events.parquet \
-                       --file-out sid.parquet   \
-                       --distribution debian --release sid
-
-# Pipe: consolidate then filter
-debian-observer-consolidate --stream-in --stream-out                       | \
-debian-observer-filter      --stream-in --stream-out --distribution debian | \
-debian-observer-consolidate --stream-in --stream-out > debian-only.ndjson
-```
-
-### Example: Consolidate
-
-The `consolidate` command folds the event log into the consolidated
-`package_versions` table (see spec §10.2, [ADR-003][ADR-003] amendment 2026-10-23).
-
-#### Features:
-
-- The consolidation merge absorbs the duplicates (idempotent fold),
-  so the consumer resumes where it left off.
-  - Folding the same log twice yields the same table, and
-  - duplicated log files collapse (spec §15.1).
-- Concurrent readers never see a partial file, because it is
-  *written transactionally* (tmp file + rename).
-  The ack happens only **after** the durable table write
-  (complying with the [ADR-005][ADR-005] amendment of 2026-10-23).
-- `consolidate --events-dir` remains the batch rebuild of the same
-  table: `fold(log parquet) == fold(stream)`.
-- The command is local only — no NATS/streaming is involved.
-
-#### Usage
-
-```bash
-debian-observer consolidate                      \
-  --events-dir data/observed                     \
-  --dataset-dir data/normalized/package_versions
-```
-
-Arguments:
-
-  - `--events-dir` is required
-  - `--dataset-dir` defaults to `data/normalized/package_versions`.
-    The consumer reads every `*.parquet` event file in the events dir,
-    keeps the `PackageVersionObserved` events and consolidates them:
-
-Expect:
-
-  - The output is ONE *re-generable* `package_versions.parquet` file
-  - One row per full observation PK
-    `(package_id, version, distribution, release, suite, architecture)`
-  - Attribute columns (`source_package`, `component`, `section`, `priority`,
-    `source`) are last-observed-wins (ordered by `observed_at`,
-    then `event_id`).
-  - `observed_first_at`/`observed_last_at` are the min/max
-    `observed_at` of the group.
-
-Query the consolidated table with DuckDB ([ADR-003][ADR-003] example, on the
-dataset schema):
-
-```sql
-SELECT package_id, version, release
-FROM read_parquet('data/normalized/package_versions/*.parquet')
-WHERE release = 'sid'
-```
-
-The table is **state, not log**: it is fully derived from the event log and
-can be re-generated at any time. The event log remains the replay surface while
-the dataset is the consolidated projection.
 
 ### Testing
 
@@ -575,7 +576,7 @@ pytest tests/
 #### Consumer testing
 
 The queue consumer is exercised through the external recipe (see
-Consume above): start NATS, publish a small log, run the example
+[Queue consumer](#queue-consumer-nats)): start NATS, publish a small log, run the example
 process. The crash test scripts it end to end:
 
 ```bash
@@ -600,7 +601,7 @@ duplicates server-side within the stream's duplicate window).
 
 ### Messaging (NATS JetStream)
 
-Publising requires NATS JetStream to be available.
+Publishing requires NATS JetStream to be available.
 
 Start NATS:
 
@@ -628,7 +629,7 @@ debian-observer publish --events-dir data/observed \
 
 The stream is created if missing with the [ADR-004][ADR-004] topology.
 Subjects are **flat per event type**:
- 
+
   - `debian.package.observed`,
   - `debian.package_version.observed`,
   - `debian.release.observed`,
@@ -695,6 +696,25 @@ testing), unless the `EVENTS_DIR` environment variable is set.
 | API             | 8088 | FastAPI analytical endpoints |
 
 
+## Execution analytics
+
+`ingest`, `normalize` and `benchmark` record each run (records,
+events, duration, throughput) into an `execution_runs.duckdb`
+analytics database (see [Pipeline Data Layout](#pipeline-data-layout)).
+
+```bash
+# What is in the event log
+debian-observer status --events-dir data/observed
+
+# A quick synthetic ingestion run (writes raw artifacts to --raw-dir)
+debian-observer benchmark --records 1000 --raw-dir data/raw
+
+# Runs of the last 7 days: counts and median duration/throughput
+debian-observer execution-report --days 7 [--type ingestion] \
+  [--source udd] [--format table|json|csv] [--db data/execution_runs.duckdb]
+```
+
+
 ## Pipeline Data Layout
 
 The ingestion pipeline integrates ParquetWriter for persistent storage.
@@ -711,15 +731,15 @@ The ingestion pipeline integrates ParquetWriter for persistent storage.
     `data/observed/dependency_observed/`). Ingestion eventizes raw observations
     into the append-only observation event log as one Parquet file per
     ingestion run.
-- Prosumers like `consolidate`, `publish`, `query` (events view) and `serve`
-  read `*.parquet` directly inside the given `--events-dir` (no recursion):
-  after `normalize udddump`, point them at the event-type directory, e.g.
-  `--events-dir data/observed/package_version_observed`.
-  Consumer outputs consolidated as datasets, such as `package_versions` are
-  optional.
-  The consolidated dataset lands in
+- `publish`, `query` (events view), `serve` and the prosumers'
+  `--file-in` read `*.parquet` directly inside the given directory (no
+  recursion): after `normalize udddump`, point them at the event-type
+  directory, e.g. `--events-dir data/observed/package_version_observed`.
+- Consolidated datasets are optional derived state: the
+  `package_versions` table goes to
   `data/normalized/package_versions/package_versions.parquet`
-  (`consolidate --dataset-dir`, same default for `query`).
+  (`debian-observer-consolidate --file-out`), the default
+  `query --dataset-dir`.
 - Execution analytics:
   - each `ingest` run is recorded into `<raw_dir>/../execution_runs.duckdb`
     (`data/execution_runs.duckdb` with defaults — the `execution-report --db`
@@ -731,14 +751,16 @@ The ingestion pipeline integrates ParquetWriter for persistent storage.
 ## Observability
 
 OpenTelemetry tracing and metrics are wired throughout the pipeline,
-messaging and the API; the API exposes `/metrics/`. Console telemetry
-output appears only for long-lived processes: metrics export every 5
-seconds while a process runs, and traces flush at process exit —
-short-lived CLI commands show no telemetry output.
+messaging and the API; the API exposes `/metrics/`. The exporters are
+the console ones: metrics export every 5 seconds while a process runs,
+and spans and metrics flush at process exit — on **stdout**, after the
+command's own output. Commands that record telemetry (e.g. `ingest`,
+`benchmark`) therefore end with JSON telemetry blocks on stdout: keep
+that in mind before piping or redirecting their output.
 
 
 ## Troubleshooting
-	
+
 **No Parquet files found:** ensure `--events-dir` matches where ingestion writes.
 
 **NATS connection refused:** verify `docker compose ps` shows nats healthy.
@@ -749,5 +771,5 @@ short-lived CLI commands show no telemetry output.
 [ADR-003]: architecture/adr/ADR-003-parquet-duckdb.md
 [ADR-004]: architecture/adr/ADR-004-nats-jetstream.md
 [ADR-005]: architecture/adr/ADR-005-event-delivery-semantics.md
-[ADR-012]: architecture/adr/ADR-006-no-postgresql.md
+[ADR-006]: architecture/adr/ADR-006-no-postgresql.md
 [ADR-012]: architecture/adr/ADR-012-cli-ingest-ux.md

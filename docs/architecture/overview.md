@@ -45,7 +45,8 @@ flowchart LR
 ```
 
 **Data flow:** ingestion → normalization → the Parquet event log (the
-backbone); `consolidate` folds the log into the consolidated table;
+backbone); the `debian-observer-consolidate` prosumer folds the log
+into the consolidated table;
 publishing to NATS JetStream is the explicit `publish` command (a
 rebuildable view); the API serves the consolidated table.
 

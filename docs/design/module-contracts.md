@@ -108,7 +108,9 @@ cannot reconstruct without reading everything.
     - the consolidation fold IS a writer of the consolidated table.
   - Two feeders, one semantics:
     - a) batch feeder
-      - behind the `consolidate` CLI.
+      - behind the example prosumer `debian-observer-consolidate`
+        (batch: `--file-in <event log> --file-out
+        data/normalized/package_versions/package_versions.parquet`).
       - `fold_package_versions` / `build_consolidated_packages`
       - read the whole log, feed every event, write once
         pure regeneration, `merge_existing=False`
@@ -215,11 +217,11 @@ cannot reconstruct without reading everything.
     - `mirror`,
     - `udd`,
     - `udddump`: mandatory filter flags, ADR-012, URL-scoped.
-  - `consolidate` is the batch feeder of `storage.consolidation`.
-    It folds the event log into the consolidated `package_versions`
-    table.
-    - `--events-dir` is required,
-    - `--dataset-dir` defaults to `data/normalized/package_versions`.
+  - `consolidate` is not a subcommand: the batch feeder of
+    `storage.consolidation` is the example prosumer
+    `debian-observer-consolidate` (installed from `src/prosumers/`)
+    — `--file-in <event log> --file-out
+    data/normalized/package_versions/package_versions.parquet`.
   - `publish` projects the event log onto NATS JetStream
     - `--events-dir` is required,
     - `--stream` defaults to `debian-events`,

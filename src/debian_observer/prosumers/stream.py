@@ -61,11 +61,27 @@ class Record:
     def from_dict(cls, d: dict[str, Any]) -> "Record":
         """Rehydrate from a plain dict.
 
-        The input dict is NOT mutated: the envelope keys (_event_type,
-        _meta) are read from a shallow copy, so the caller keeps its
-        dict intact (a library caller may rehydrate the same dict
-        twice, or read it afterwards).
+        Two shapes are read: the flat prosumer record (``_event_type``,
+        ``_meta`` and the payload fields at the top level, what a
+        ``StreamSink`` writes) and the canonical event envelope
+        (``event_type`` plus a nested ``payload`` dict, what
+        ``normalize`` writes).
+
+        The input dict is NOT mutated: the envelope keys are read from a
+        shallow copy, so the caller keeps its dict intact (a library
+        caller may rehydrate the same dict twice, or read it afterwards).
         """
+        # Canonical event envelope (the ``normalize artifacts`` output):
+        # top-level ``event_type`` plus a nested ``payload`` dict. The
+        # envelope fields (event_id, observed_at, ...) are metadata for
+        # the fold, so they land in ``meta`` next to the real payload.
+        if "event_type" in d and isinstance(d.get("payload"), dict):
+            meta = {k: v for k, v in d.items() if k != "payload"}
+            return cls(
+                event_type=d["event_type"],
+                payload=dict(d["payload"]),
+                meta=meta,
+            )
         event_type = d.get("_event_type", "Unknown")
         meta = d.get("_meta", {})
         payload = {k: v for k, v in d.items() if k not in ("_event_type", "_meta")}

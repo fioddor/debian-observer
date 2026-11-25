@@ -6,7 +6,10 @@ lives in the storage layer, writer-owned ADR-011 — "consumer" now
 names the queue consumers over NATS, see ``consumer_app`` and
 ``messaging``). Two feeders share one semantics (spec §15.1):
 
-* **Batch feeder** — the ``consolidate`` CLI folds the whole
+* **Batch feeder** — the example prosumer
+  ``debian-observer-consolidate`` (``--file-in <event log>
+  --file-out data/normalized/package_versions/package_versions.parquet``)
+  folds the whole
   append-only event log (one Parquet file per ingestion run,
   ADR-003 amendment) and rewrites the table: pure regeneration,
   ``merge_existing=False``.
@@ -39,7 +42,7 @@ as ``None``).
 
 Usage::
 
-    # batch (the consolidate CLI):
+    # batch (the debian-observer-consolidate prosumer):
     build_consolidated_packages(
         Path("data/observed"), dataset_dir=Path("data/normalized/package_versions")
     )

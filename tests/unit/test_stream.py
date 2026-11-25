@@ -15,6 +15,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
+from debian_observer.prosumers.packages import fold_package_versions
 from debian_observer.prosumers.stream import FileSink, FileSource, Record, StreamSink, StreamSource
 
 
@@ -202,3 +203,103 @@ class TestRecordRoundtrip:
         # roundtrip: the rehydrated record survives another from_dict
         rec2 = Record.from_dict(out)
         assert rec2 == rec or (rec2.event_type, rec2.payload) == (rec.event_type, rec.payload)
+
+
+def _envelope(package_id: str, version: str) -> dict:
+    """One canonical event envelope line, as ``normalize artifacts`` emits."""
+    return {
+        "event_id": f"evt-{package_id}-{version}",
+        "event_type": "PackageVersionObserved",
+        "schema_version": "1",
+        "source": "mirror.example.org",
+        "observed_at": "2026-10-01T10:00:00Z",
+        "effective_at": "2026-10-01T10:00:00Z",
+        "entity_id": f"{package_id}/{version}",
+        "ingestion_run_id": "run-1",
+        "payload": {
+            "package_id": package_id,
+            "version": version,
+            "distribution": "debian",
+            "release": "trixie",
+            "suite": "main",
+            "architecture": "amd64",
+        },
+    }
+
+
+class TestRecordEventEnvelope:
+    """Canonical event envelopes (the ``normalize artifacts`` output)."""
+
+    def test_from_dict_reads_canonical_event_envelope(self) -> None:
+        """An envelope line rehydrates with its real type and fields.
+
+        ``debian-observer normalize artifacts`` pipes canonical envelope
+        JSON lines (top-level ``event_type`` plus a nested ``payload``
+        dict) into prosumers; before this contract was pinned every such
+        line collapsed into one row of empty strings (event_type
+        ``Unknown``, the whole envelope lost inside one opaque field),
+        silently folding distinct observations into a single empty row.
+        The envelope fields (event_id, observed_at, ...) must surface as
+        record metadata next to the real payload.
+        """
+        d = _envelope("pkg-a", "1.0")
+        expected = dict(d)
+        rec = Record.from_dict(d)
+        assert d == expected, "from_dict must not mutate the caller's dict"
+        assert rec.event_type == "PackageVersionObserved"
+        assert rec.payload["package_id"] == "pkg-a"
+        assert rec.payload["version"] == "1.0"
+        assert rec.meta["event_id"] == "evt-pkg-a-1.0"
+        assert rec.meta["observed_at"] == "2026-10-01T10:00:00Z"
+
+    def test_envelope_records_fold_into_real_rows(self) -> None:
+        """Envelope lines fold into one row per observation, with values.
+
+        This is the end-user contract:
+        ``normalize artifacts ... | debian-observer-consolidate
+        --stream-in --stream-out`` must yield one consolidated row per
+        observation PK carrying the real package_id/version/... — not a
+        single row of empty strings.
+        """
+        records = [
+            Record.from_dict(_envelope("pkg-a", "1.0")),
+            Record.from_dict(_envelope("pkg-a", "1.0-1")),
+            Record.from_dict(_envelope("pkg-b", "2.0")),
+        ]
+        rows, stats = fold_package_versions(records)
+        assert stats.pvo_events == 3
+        assert len(rows) == 3
+        by_pk = {(r["package_id"], r["version"]): r for r in rows}
+        assert set(by_pk) == {
+            ("pkg-a", "1.0"),
+            ("pkg-a", "1.0-1"),
+            ("pkg-b", "2.0"),
+        }
+        assert by_pk[("pkg-a", "1.0")]["architecture"] == "amd64"
+        assert by_pk[("pkg-b", "2.0")]["source"] == "mirror.example.org"
+
+    def test_flat_prosumer_records_still_fold(self) -> None:
+        """The flat prosumer record shape keeps working unchanged.
+
+        A record emitted by one prosumer (``_event_type`` / ``_meta``
+        plus payload at top level) rehydrated through ``from_dict``
+        still folds exactly as before the envelope support was added.
+        """
+        d = {
+            "_event_type": "PackageVersionObserved",
+            "_meta": {
+                "event_id": "e1",
+                "event_type": "PackageVersionObserved",
+            },
+            "package_id": "pkg-c",
+            "version": "3.0",
+            "distribution": "debian",
+            "release": "trixie",
+            "suite": "main",
+            "architecture": "all",
+        }
+        rows, stats = fold_package_versions([Record.from_dict(d)])
+        assert stats.pvo_events == 1
+        assert len(rows) == 1
+        assert rows[0]["package_id"] == "pkg-c"
+        assert rows[0]["version"] == "3.0"

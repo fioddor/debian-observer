@@ -33,14 +33,20 @@ Usage::
 from __future__ import annotations
 
 from debian_observer.messaging.client import NATSClient
-from debian_observer.messaging.config import StreamConfig
+from debian_observer.messaging.config import (
+    MIGRATIONS_STREAM_NAME,
+    MigrationStreamConfig,
+    StreamConfig,
+)
 from debian_observer.messaging.consumer import EventConsumer, IngestionHandler
-from debian_observer.messaging.publisher import EventPublisher
+from debian_observer.messaging.publisher import EventPublisher, ensure_stream
 
 __all__ = [
+    "MIGRATIONS_STREAM_NAME",
     "EventConsumer",
     "EventPublisher",
     "IngestionHandler",
+    "MigrationStreamConfig",
     "NATSClient",
     "StreamConfig",
 ]

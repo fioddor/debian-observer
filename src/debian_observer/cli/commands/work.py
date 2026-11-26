@@ -127,11 +127,13 @@ def work_britney(
         results_bucket=results_bucket,
         durable_name=durable_name,
     )
+    stats: Any = None
 
     async def _run() -> None:
+        nonlocal stats
         await client.connect()
         try:
-            await worker.run()
+            stats = await worker.run()
         finally:
             await client.close()
 
@@ -139,9 +141,15 @@ def work_britney(
         asyncio.run(_run())
     except KeyboardInterrupt:
         click.echo("Drained by signal", err=True)
-    click.echo(
-        f"Worked: {len(worker.done)} snapshots "
-        f"({', '.join(worker.done) if len(worker.done) <= 8 else str(len(worker.done)) + ' ids'}) "
-        f"from {', '.join(servers)}",
-        err=True,
-    )
+    if stats is None:
+        # Drained by signal before the run could return: what was
+        # worked is still in worker.done.
+        click.echo(
+            f"Worked: {len(worker.done)} snapshots before the signal",
+            err=True,
+        )
+        return
+    click.echo(f"Worked: {stats.jobs_done} snapshots", err=True)
+    # One JSON record per run (§13): the metrics' and benchmarks'
+    # input.
+    click.echo(stats.to_json())

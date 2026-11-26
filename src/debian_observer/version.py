@@ -7,4 +7,4 @@ devcontainer image can copy just this file before the editable
 install (a version bump invalidates only this layer).
 """
 
-__version__ = "1.1.1"
+__version__ = "1.2.0rc1"

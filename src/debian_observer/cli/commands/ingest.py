@@ -355,6 +355,21 @@ def ingest_udddump(
     help="Seconds between two live polls (default: 900 s, the poll floor; "
     "never more often than every 15 min; --live only).",
 )
+@click.option(
+    "--queue-url",
+    "queue_servers",
+    multiple=True,
+    default=(),
+    show_default=False,
+    help=(
+        "NATS server URL(s) of the parse work queue: with it every "
+        "OBSERVED snapshot of the window also goes to the raw object "
+        "bucket and ONE parse job is published per snapshot "
+        "(idempotent: a re-run is absorbed by Nats-Msg-Id). "
+        "The workers run `debian-observer work britney`; the live "
+        "follower does not enqueue (yet) — only a window does."
+    ),
+)
 def ingest_britney(
     year: int | None,
     from_ts: str | None,
@@ -368,6 +383,7 @@ def ingest_britney(
     backoff_base: float,
     live: bool,
     poll_interval: float,
+    queue_servers: tuple[str, ...],
 ) -> None:
     """Ingest britney's migration excuses over an archive window.
 
@@ -393,7 +409,9 @@ def ingest_britney(
     as data. One execution record per run.
 
     Acquisition only: the parse and the eventization are
-    `debian-observer normalize britney`.
+    `debian-observer normalize britney`. With --queue-url the window
+    also enqueues: one parse job per observed snapshot, the workers
+    are `debian-observer work britney`.
     """
     from debian_observer.ingestion.britney import (
         MIN_REQUEST_INTERVAL,
@@ -443,6 +461,8 @@ def ingest_britney(
     click.echo(f"Failed: {len(result.failures)}")
     click.echo(f"Gaps: {len(result.manifest['gaps'])}")
     click.echo(f"Manifest: {result.manifest_path}")
+    if queue_servers:
+        _enqueue_window(result, raw_dir_path, list(queue_servers))
     if live:
         # --live --from X: the backfill ran above; now follow.
         follow_live(
@@ -452,3 +472,65 @@ def ingest_britney(
             poll_interval=poll_interval,
         )
         click.echo("Live following stopped")
+
+
+def _enqueue_window(result, raw_dir_path: Path, servers: list[str]) -> None:
+    """Enqueue the window's observed snapshots on the parse queue.
+
+    One job per OBSERVED snapshot (fetched or skipped — both are in
+    the raw store and the manifest): each raw ``.yaml.gz`` goes to
+    the Object Store bucket and one job naming it publishes with its
+    derived job id, so a re-run is absorbed server-side
+    (`messaging.parse_queue`). Failures are not jobs — a listed file
+    that could not be retrieved is failure data in the manifest, not
+    a snapshot to parse.
+    """
+    import asyncio
+
+    from debian_observer.ingestion.britney import RAW_SUBDIR
+    from debian_observer.messaging.client import NATSClient
+    from debian_observer.messaging.parse_queue import (
+        RawSnapshot,
+        enqueue_snapshots,
+    )
+
+    subdir = "live" if result.manifest.get("live") else str(
+        result.manifest.get("year")
+    )
+    snapshots = []
+    for entry in result.manifest.get("snapshots", []):
+        snapshot_id = entry["snapshot_id"]
+        path = raw_dir_path / RAW_SUBDIR / subdir / f"{snapshot_id}.yaml.gz"
+        if not path.exists():
+            raise click.ClickException(
+                f"snapshot {snapshot_id} is not in the raw store ({path}); "
+                "the queue job would name an object nobody can read"
+            )
+        snapshots.append(
+            RawSnapshot(
+                snapshot_id=snapshot_id,
+                gz_bytes=path.read_bytes(),
+                url=entry.get("url"),
+                sha256=entry.get("sha256"),
+            )
+        )
+
+    async def _enqueue():
+        client = NATSClient(servers=servers)
+        await client.connect()
+        try:
+            return await enqueue_snapshots(client, snapshots)
+        finally:
+            await client.close()
+
+    try:
+        stats = asyncio.run(_enqueue())
+    except (RuntimeError, ConnectionError, OSError) as exc:
+        raise click.ClickException(f"Enqueue failed: {exc}") from exc
+    click.echo(
+        f"Queued: {stats.jobs} parse jobs ({stats.duplicates_absorbed} "
+        f"duplicates absorbed, {stats.objects_put} raw objects, "
+        f"{stats.raw_bytes_put} bytes) to {stats.stream_name} at "
+        f"{', '.join(stats.servers)}",
+        err=True,
+    )

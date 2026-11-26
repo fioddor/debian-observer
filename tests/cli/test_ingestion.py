@@ -22,15 +22,6 @@ from click.testing import CliRunner
 from debian_observer.cli.main import cli
 
 
-def test_ingest_help():
-    runner = CliRunner()
-    result = runner.invoke(cli, ["ingest", "--help"])
-    assert result.exit_code == 0
-    # One subcommand per source is listed in the synopsis.
-    for subcommand in ("sources", "mirror", "udd", "udddump"):
-        assert subcommand in result.output
-
-
 def _make_mock_result(
     *,
     record_count: int = 3,
@@ -154,10 +145,15 @@ def test_ingest_unknown_subcommand():
 
 def test_ingest_help_lists_subcommands():
     """`ingest --help` shows one subcommand per source."""
+    # The list comes from the group's own `commands` (ADR-012: one
+    # subcommand per source): a new source without its help line
+    # fails here, never a hardcoded name.
+    from debian_observer.cli.commands import ingest as ingest_group
+
     runner = CliRunner()
     result = runner.invoke(cli, ["ingest", "--help"])
     assert result.exit_code == 0
-    for subcommand in ("sources", "mirror", "udd", "udddump"):
+    for subcommand in sorted(ingest_group.ingest.commands):
         assert subcommand in result.output
 
 

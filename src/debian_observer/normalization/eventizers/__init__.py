@@ -18,6 +18,7 @@ behaviour). Each eventizer is an object with:
 from __future__ import annotations
 
 from .dependencies import DependenciesEventizer
+from .excuses import ExcusesEventizer
 from .package_versions import PackageVersionsEventizer
 from .popcon import PopconEventizer
 
@@ -29,6 +30,12 @@ EVENTIZERS: dict[str, dict[str, object]] = {
         "package-versions": PackageVersionsEventizer(),
         "dependencies": DependenciesEventizer(),
         "popcon": PopconEventizer(),
+    },
+    # The britney source (R3) has no retro-compatible default: the
+    # pair eventizer is its only eventization (§9.1) — `--eventizer
+    # excuses` is required, `None` names no default here.
+    "britney": {
+        "excuses": ExcusesEventizer(),
     },
 }
 

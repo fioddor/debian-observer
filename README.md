@@ -54,6 +54,7 @@ Our technical [documentation](docs/) includes:
   - a phase-planned evolution **roadmap** as a collection of
     project documents per release
     ([R1](docs/release1.project.v0.4.md),
-    [R2](docs/release2.project.v0.4.md))
+    [R2](docs/release2.project.v0.4.md),
+    [R3](docs/release3.project.v0.1.md))
   - Software Bill of Materials ([SBOM](docs/SBOM.spdx.json)) in
     standard format.

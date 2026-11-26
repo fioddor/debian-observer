@@ -124,12 +124,136 @@ EVENT_TYPE_SCHEMAS: dict[str, pa.Schema] = {
 }
 
 
+def _envelope_columns() -> list[tuple[str, pa.DataType]]:
+    """The envelope columns every event row carries (§6.2 of R3)."""
+    return [
+        ("event_id", pa.string()),
+        ("event_type", pa.string()),
+        ("source", pa.string()),
+        ("entity_id", pa.string()),
+        ("observed_at", pa.string()),
+        ("effective_at", pa.string()),
+        ("ingestion_run_id", pa.string()),
+    ]
+
+
+# The britney excuse event lake (R3, C2 — docs/release3 §10): every
+# type registers envelope columns plus its own payload columns; list
+# payload fields (blocked_by, migrate_after, reason, before/after of
+# the set comparison) are JSON string columns (see
+# _flatten_payload_row).
+def _snapshot_columns() -> list[tuple[str, pa.DataType]]:
+    """The pair identifiers every excuse payload carries."""
+    return [
+        ("snapshot", pa.string()),
+        ("prev_snapshot", pa.string()),
+    ]
+
+
+def _excuse_state_columns() -> list[tuple[str, pa.DataType]]:
+    """The compact ExcuseState as columns (§5.1).
+
+    ``source_package`` is the state's source package: the envelope
+    already owns a ``source`` column (the data source), so the state
+    field takes a distinct column name (see
+    :data:`_PAYLOAD_COLUMN_ALIASES`).
+    """
+    return [
+        ("item_name", pa.string()),
+        ("source_package", pa.string()),
+        ("old_version", pa.string()),
+        ("new_version", pa.string()),
+        ("verdict", pa.string()),
+        ("is_candidate", pa.bool_()),
+        ("blocked_by", pa.string()),
+        ("migrate_after", pa.string()),
+        ("reason", pa.string()),
+    ]
+
+
+#: Parquet columns that read a differently-named payload field: the
+#: envelope owns ``source`` (the data source), the excuse state owns
+#: its source package (§5.1) — one column name each.
+_PAYLOAD_COLUMN_ALIASES = {"source_package": "source"}
+
+
+EVENT_TYPE_SCHEMAS.update(
+    {
+        "ExcuseObserved": pa.schema(
+            _envelope_columns()
+            + _snapshot_columns()
+            + _excuse_state_columns()
+        ),
+        "ExcuseEntered": pa.schema(
+            _envelope_columns()
+            + _snapshot_columns()
+            + _excuse_state_columns()
+        ),
+        "ExcuseLeft": pa.schema(
+            _envelope_columns()
+            + _snapshot_columns()
+            + _excuse_state_columns()
+        ),
+        "ExcuseVerdictChanged": pa.schema(
+            _envelope_columns()
+            + _snapshot_columns()
+            + [
+                ("item_name", pa.string()),
+                ("before", pa.string()),
+                ("after", pa.string()),
+            ]
+        ),
+        "ExcuseBlockedByChanged": pa.schema(
+            _envelope_columns()
+            + _snapshot_columns()
+            + [
+                ("item_name", pa.string()),
+                ("before", pa.string()),
+                ("after", pa.string()),
+            ]
+        ),
+        "ExcuseMigrateAfterChanged": pa.schema(
+            _envelope_columns()
+            + _snapshot_columns()
+            + [
+                ("item_name", pa.string()),
+                ("before", pa.string()),
+                ("after", pa.string()),
+            ]
+        ),
+        "ExcuseVersionChanged": pa.schema(
+            _envelope_columns()
+            + _snapshot_columns()
+            + [
+                ("item_name", pa.string()),
+                ("before", pa.string()),
+                ("after", pa.string()),
+            ]
+        ),
+        "SnapshotObserved": pa.schema(
+            _envelope_columns()
+            + [
+                ("snapshot", pa.string()),
+                ("generated_date", pa.string()),
+                ("prev_snapshot", pa.string()),
+                ("elapsed", pa.int64()),
+                ("gap_before", pa.bool_()),
+                ("item_count", pa.int64()),
+            ]
+        ),
+    }
+)
+
+
 def _flatten_payload_row(event: EventEnvelope, schema: pa.Schema) -> dict:
     """Flatten any event into a row over its registered schema.
 
     Envelope columns first; payload fields fill the remaining
     schema columns by name. Payloads loaded as JSON strings are
-    parsed first.
+    parsed first. List and dict payload fields (britney's
+    ``blocked_by``, ``reason`` — lists by §5.1) flatten as JSON
+    strings: the column stays one primitive value and the fold
+    reads it back with one ``json.loads``.
     """
     payload = event.payload
     if isinstance(payload, str):
@@ -148,8 +272,10 @@ def _flatten_payload_row(event: EventEnvelope, schema: pa.Schema) -> dict:
     for name in schema.names:
         if name in row:
             continue
-        value = payload.get(name)
-        if name in ("clause_index", "alternatives") and value is None:
+        value = payload.get(_PAYLOAD_COLUMN_ALIASES.get(name, name))
+        if isinstance(value, (list, dict)):
+            value = json.dumps(value, ensure_ascii=False)
+        elif name in ("clause_index", "alternatives") and value is None:
             value = 0
         elif name in ("insts", "vote", "olde", "recent", "nofiles"):
             if value is None:

@@ -79,3 +79,12 @@ Python/Go workers (ADR-017) — is implemented by the **dopi-pdda**
 plug-in on top of the platform; it is not part of this repository,
 and the platform never imports plug-ins (ADR-022 in the R2 spec:
 the arrow points from plug-in to platform).
+
+## Release 3 (Migration Dynamics, planned)
+
+R3 (`docs/release3.project.v0.1.md`; ADR-024..028 in
+`docs/architecture/adr/`) is the platform part of migration
+dynamics: acquisition, eventization, the migration event stream and
+a distributed parse over a work queue that spans machines. The
+analytics that consume the stream live in a plug-in.
+

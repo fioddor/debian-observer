@@ -1,12 +1,15 @@
 """CLI tests for the `ingest` command group.
 
-One subcommand per data source (ADR-012): `ingest sources`,
-`ingest mirror`, `ingest udd`, `ingest udddump`. Each source's
-selector is a mandatory filter flag. `ingest udddump` is
-acquisition only (ADR-012 amendment, 2026-10-23): it downloads the
-dump (`--url`) and stores it byte-preserving with a manifest
-sidecar — no parsing, no events; the gates and the eventization
-live in `normalize udddump` (tests/cli/test_normalization.py).
+One subcommand per data source (ADR-012), all of them registered on
+the group and each mentioned in the group's `--help` (the subcommand
+list is never hardcoded here: the help test reads the group's own
+`commands`, so a source added without its help line fails the
+battery). Each source's selector is a mandatory filter flag.
+`ingest udddump` is acquisition only (ADR-012 amendment, 2026-10-23):
+it downloads the dump (`--url`) and stores it byte-preserving with a
+manifest sidecar — no parsing, no events; the gates and the
+eventization live in `normalize udddump`
+(tests/cli/test_normalization.py).
 """
 
 from __future__ import annotations
@@ -20,6 +23,7 @@ import pytest
 from click.testing import CliRunner
 
 from debian_observer.cli.main import cli
+
 
 
 def _make_mock_result(

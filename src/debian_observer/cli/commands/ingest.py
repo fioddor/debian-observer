@@ -35,6 +35,15 @@ from debian_observer.ingestion.acquisition import (
     download_dump,
 )
 from debian_observer.ingestion.manifest import DatasetManifest
+from debian_observer.ingestion import britney
+from debian_observer.ingestion.britney import (
+    BACKOFF_BASE,
+    FETCH_ATTEMPTS,
+    HTTP_TIMEOUT_SECONDS,
+    MIN_LIVE_POLL_INTERVAL,
+    fetch_index,
+    select_window,
+)
 from debian_observer.ingestion.pipeline import IngestionPipeline
 from debian_observer.ingestion.provenance import ProvenanceRecorder, RawArtifact
 from debian_observer.ingestion.raw import sha256_raw
@@ -51,7 +60,9 @@ def ingest() -> None:
     - `sources` (sources.debian.org API; `--package` is the source package name),
     -  `mirror` (Packages.gz from a Debian mirror; `--suite` is the suite role, codename or pocket),
     - `udd` (UDD PostgreSQL mirror; `--table` is the table name),
-    - `udddump` (UDD `pg_dump` file) downloads the dump (`--url`).
+    - `udddump` (UDD `pg_dump` file) downloads the dump (`--url`),
+    - `britney` (the migration excuses; `--from`/`--to`/`--last` select an
+      archive window from the listed index, `--live` follows the endpoint).
 
     Behaviour:
 
@@ -268,3 +279,176 @@ def ingest_udddump(
     click.echo(f"Manifest: {manifest_path}")
     click.echo(f"Checksum: {checksum}")
     click.echo(f"Size: {size_bytes} bytes")
+
+
+@ingest.command(name="britney")
+@click.option(
+    "--year",
+    type=int,
+    default=None,
+    help="Archive year to ingest (default: the current UTC year).",
+)
+@click.option(
+    "--from",
+    "from_ts",
+    default=None,
+    help="Inclusive UTC lower bound of the window (ISO 8601; naive means UTC).",
+)
+@click.option(
+    "--to",
+    "to_ts",
+    default=None,
+    help="Inclusive UTC upper bound of the window (ISO 8601; naive means UTC).",
+)
+@click.option(
+    "--last",
+    type=int,
+    default=None,
+    help="The N most recent snapshots of the index (positive integer).",
+)
+@click.option(
+    "--raw-dir", default="data/raw", help="Directory for raw artifacts (default: data/raw)."
+)
+@click.option(
+    "--codename",
+    default=None,
+    help="The testing codename at generated-date (coordinates; optional, recorded in the manifest).",
+)
+@click.option(
+    "--min-interval",
+    type=float,
+    default=None,
+    help="Seconds between two source requests (default: at least 1 s; never 0).",
+)
+@click.option(
+    "--timeout",
+    type=float,
+    default=HTTP_TIMEOUT_SECONDS,
+    help="Seconds before one source request is given up as lost "
+    "(default: 60 s, generous for one archive file).",
+)
+@click.option(
+    "--attempts",
+    type=int,
+    default=FETCH_ATTEMPTS,
+    help="Download attempts per listed snapshot before it is recorded as "
+    "failed (default: 3).",
+)
+@click.option(
+    "--backoff-base",
+    type=float,
+    default=BACKOFF_BASE,
+    help="Base of the exponential backoff between download attempts, "
+    "in seconds (default: 2.0).",
+)
+@click.option(
+    "--live",
+    is_flag=True,
+    default=False,
+    help="Follow the live endpoint instead of a fixed window: conditional requests, "
+    "a poll no more often than every 15 min (with --from: backfill first, then follow).",
+)
+@click.option(
+    "--poll-interval",
+    type=float,
+    default=MIN_LIVE_POLL_INTERVAL,
+    help="Seconds between two live polls (default: 900 s, the poll floor; "
+    "never more often than every 15 min; --live only).",
+)
+def ingest_britney(
+    year: int | None,
+    from_ts: str | None,
+    to_ts: str | None,
+    last: int | None,
+    raw_dir: str,
+    codename: str | None,
+    min_interval: float | None,
+    timeout: float,
+    attempts: int,
+    backoff_base: float,
+    live: bool,
+    poll_interval: float,
+) -> None:
+    """Ingest britney's migration excuses over an archive window.
+
+    The truth of the archive is the file listing of
+    release.debian.org/britney/update_excuses/<year>/ — file names are
+    never computed. The window:
+
+    \b
+    - --from/--to: inclusive UTC bounds on the snapshot timestamp,
+    - --last N: the N most recent snapshots of the index,
+    - --timeout/--attempts/--backoff-base: the fetch perimeter — a
+      request given up after --timeout s, retried --attempts times
+      with a --backoff-base exponential backoff,
+    - --live: follow the live endpoint (with --from: backfill, then
+      follow); polls no more often than every 15 minutes
+      (--poll-interval) with conditional requests.
+
+    Each listed snapshot is fetched once, politely (one request at a
+    time, at least 1 s apart, --min-interval), stored byte-preserving
+    in the raw store (re-runs skip by SHA-256), and described in a
+    window manifest with its gaps (periods with no published
+    snapshot) and failures (listed files that could not be retrieved)
+    as data. One execution record per run.
+
+    Acquisition only: the parse and the eventization are
+    `debian-observer normalize britney`.
+    """
+    from debian_observer.ingestion.britney import (
+        MIN_REQUEST_INTERVAL,
+        acquire_window,
+        follow_live,
+    )
+
+    chosen_year = year or datetime.now(timezone.utc).year
+    raw_dir_path = Path(raw_dir)
+    raw_dir_path.mkdir(parents=True, exist_ok=True)
+    index = fetch_index(chosen_year, raw_dir=raw_dir_path, timeout=timeout)
+    window = select_window(
+        index.refs,
+        from_ts=from_ts,
+        to_ts=to_ts,
+        last=last,
+    )
+    click.echo(f"Index: {britney.index_url(chosen_year)}")
+    if index.from_cache:
+        click.echo(f"Index cache: {index.cache_path}")
+    click.echo(f"Window: {len(window)} snapshots")
+    interval = (
+        min_interval if min_interval is not None else MIN_REQUEST_INTERVAL
+    )
+    if live and from_ts is None:
+        # --live without --from follows the endpoint; no archive window.
+        follow_live(
+            raw_dir=raw_dir_path,
+            min_interval=interval,
+            codename=codename,
+            poll_interval=poll_interval,
+        )
+        click.echo("Live following stopped")
+        return
+    result = acquire_window(
+        window,
+        year=chosen_year,
+        raw_dir=raw_dir_path,
+        min_interval=interval,
+        codename=codename,
+        timeout=timeout,
+        attempts=attempts,
+        backoff_base=backoff_base,
+    )
+    click.echo(f"Fetched: {len(result.fetched)}")
+    click.echo(f"Skipped (SHA-256 in store): {len(result.skipped)}")
+    click.echo(f"Failed: {len(result.failures)}")
+    click.echo(f"Gaps: {len(result.manifest['gaps'])}")
+    click.echo(f"Manifest: {result.manifest_path}")
+    if live:
+        # --live --from X: the backfill ran above; now follow.
+        follow_live(
+            raw_dir=raw_dir_path,
+            min_interval=interval,
+            codename=codename,
+            poll_interval=poll_interval,
+        )
+        click.echo("Live following stopped")

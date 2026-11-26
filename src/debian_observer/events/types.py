@@ -27,6 +27,17 @@ Event types added by the dependency analytics release:
                                  package version was observed
 - ``PopconObserved``          — popcon counters of a package were
                                  observed
+
+Event types added by the migration-dynamics release (R3, C2):
+
+- ``ExcuseObserved``          — an item's full state at the seed
+- ``ExcuseEntered``           — an item appears in the next snapshot
+- ``ExcuseLeft``              — an item left (ambiguous by design)
+- ``ExcuseVerdictChanged``    — an item's verdict changed
+- ``ExcuseBlockedByChanged`` — an item's blocked-by set changed
+- ``ExcuseMigrateAfterChanged`` — an item's migrate-after set changed
+- ``ExcuseVersionChanged``    — an item's new-version changed
+- ``SnapshotObserved``       — one snapshot's frame (pair data)
 """
 
 from __future__ import annotations
@@ -463,4 +474,184 @@ class PopconObservedPayload(BaseModel):
     recent: int = Field(default=0, description="Number of recent reports.")
     nofiles: int = Field(
         default=0, description="Number of nofiles reports."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Migration-dynamics payloads (R3, C2 — docs/release3.project.v0.1.md §6.1)
+# ---------------------------------------------------------------------------
+
+
+class _ExcuseStatePayloadFields(BaseModel):
+    """The compact ExcuseState as event payload fields (§5.1).
+
+    ``blocked_by``/``migrate_after``/``reason`` are the state's lists;
+    the verdict travels verbatim — its set is open (§4.1.1).
+    """
+
+    model_config = FrozenModelConfig
+
+    item_name: str = Field(..., description="The item's name.")
+    source: str | None = Field(default=None, description="Source package.")
+    old_version: str | None = Field(
+        default=None, description="Version in testing."
+    )
+    new_version: str | None = Field(
+        default=None, description="Version in unstable."
+    )
+    verdict: str | None = Field(
+        default=None,
+        description="Migration-policy verdict, verbatim (open set).",
+    )
+    is_candidate: bool = Field(
+        default=False, description="Is a migration candidate."
+    )
+    blocked_by: list[str] = Field(
+        default_factory=list, description="Blocking item names."
+    )
+    migrate_after: list[str] = Field(
+        default_factory=list, description="Items to migrate first."
+    )
+    reason: list[str] = Field(
+        default_factory=list, description="britney's reasons."
+    )
+
+
+class _SnapshotFields(BaseModel):
+    """The snapshot pair identifiers every excuse payload carries."""
+
+    model_config = FrozenModelConfig
+
+    snapshot: str = Field(..., description="The eventized snapshot id.")
+    prev_snapshot: str | None = Field(
+        default=None,
+        description="The previous observed snapshot id (None at the seed).",
+    )
+
+
+class ExcuseObservedPayload(_SnapshotFields, _ExcuseStatePayloadFields):
+    """Payload for ``ExcuseObserved``: an item's full state at the seed."""
+
+    observation: ObservationMeta = Field(
+        ..., description="Provenance metadata."
+    )
+
+
+class ExcuseEnteredPayload(_SnapshotFields, _ExcuseStatePayloadFields):
+    """Payload for ``ExcuseEntered``: present in next, absent in prev."""
+
+    observation: ObservationMeta = Field(
+        ..., description="Provenance metadata."
+    )
+
+
+class ExcuseLeftPayload(_SnapshotFields, _ExcuseStatePayloadFields):
+    """Payload for ``ExcuseLeft``: present in prev, absent in next.
+
+    Carries the item's **last** state. Ambiguous on purpose: an item
+    leaves when it migrates, is removed or is superseded — consumers
+    must not read "left" as "migrated" (§6.1).
+    """
+
+    observation: ObservationMeta = Field(
+        ..., description="Provenance metadata."
+    )
+
+
+class ExcuseVerdictChangedPayload(_SnapshotFields):
+    """Payload for ``ExcuseVerdictChanged``: the verdict differs."""
+
+    model_config = FrozenModelConfig
+
+    observation: ObservationMeta = Field(
+        ..., description="Provenance metadata."
+    )
+    item_name: str = Field(..., description="The item's name.")
+    before: str | None = Field(..., description="Verdict in prev.")
+    after: str | None = Field(..., description="Verdict in next.")
+
+
+class ExcuseBlockedByChangedPayload(_SnapshotFields):
+    """Payload for ``ExcuseBlockedByChanged``: the set differs.
+
+    ``before``/``after`` are the compared sets, sorted — order is not
+    a change (§9.3).
+    """
+
+    model_config = FrozenModelConfig
+
+    observation: ObservationMeta = Field(
+        ..., description="Provenance metadata."
+    )
+    item_name: str = Field(..., description="The item's name.")
+    before: list[str] = Field(..., description="Blocked-by in prev.")
+    after: list[str] = Field(..., description="Blocked-by in next.")
+
+
+class ExcuseMigrateAfterChangedPayload(_SnapshotFields):
+    """Payload for ``ExcuseMigrateAfterChanged``: the set differs.
+
+    ``before``/``after`` are the compared sets, sorted — order is not
+    a change (§9.3).
+    """
+
+    model_config = FrozenModelConfig
+
+    observation: ObservationMeta = Field(
+        ..., description="Provenance metadata."
+    )
+    item_name: str = Field(..., description="The item's name.")
+    before: list[str] = Field(..., description="Migrate-after in prev.")
+    after: list[str] = Field(..., description="Migrate-after in next.")
+
+
+
+class ExcuseVersionChangedPayload(_SnapshotFields):
+    """Payload for ``ExcuseVersionChanged``: new-version differs.
+
+    Compares ``new_version`` only: ``old_version`` is the testing side
+    and changes when the item migrates (§9.3).
+    """
+
+    model_config = FrozenModelConfig
+
+    observation: ObservationMeta = Field(
+        ..., description="Provenance metadata."
+    )
+    item_name: str = Field(..., description="The item's name.")
+    before: str | None = Field(..., description="new-version in prev.")
+    after: str | None = Field(..., description="new-version in next.")
+
+
+class SnapshotObservedPayload(BaseModel):
+    """Payload for ``SnapshotObserved``: one snapshot's frame (§6.1).
+
+    Makes the pair explicit: a consumer knows its duration
+    (``elapsed``) and whether a gap precedes it (``gap_before``)
+    without inferring either. ``gap_before`` is None at the seed (no
+    previous snapshot), False for a pair within the source's
+    publication rhythm, True for one wider than it.
+    """
+
+    model_config = FrozenModelConfig
+
+    observation: ObservationMeta = Field(
+        ..., description="Provenance metadata."
+    )
+    snapshot: str = Field(..., description="The eventized snapshot id.")
+    generated_date: str = Field(
+        ..., description="The snapshot's generated-date (ISO 8601 UTC)."
+    )
+    prev_snapshot: str | None = Field(
+        default=None, description="The previous observed snapshot id."
+    )
+    elapsed: int | None = Field(
+        default=None,
+        description="Seconds between the pair's generated-dates.",
+    )
+    gap_before: bool | None = Field(
+        default=None, description="Does a publication gap precede it."
+    )
+    item_count: int = Field(
+        default=0, ge=0, description="Items in this snapshot."
     )

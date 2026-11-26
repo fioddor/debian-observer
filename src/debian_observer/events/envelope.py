@@ -273,11 +273,19 @@ class EventEnvelope(BaseModel):
         """
         from debian_observer.events.types import (
             DependencyObservedPayload,
+            ExcuseBlockedByChangedPayload,
+            ExcuseEnteredPayload,
+            ExcuseLeftPayload,
+            ExcuseMigrateAfterChangedPayload,
+            ExcuseObservedPayload,
+            ExcuseVerdictChangedPayload,
+            ExcuseVersionChangedPayload,
             MigrationObservedPayload,
             PackageObservedPayload,
             PackageVersionObservedPayload,
             PopconObservedPayload,
             ReleaseObservedPayload,
+            SnapshotObservedPayload,
         )
 
         mapping: dict[str, type[BaseModel]] = {
@@ -287,6 +295,14 @@ class EventEnvelope(BaseModel):
             "MigrationObserved": MigrationObservedPayload,
             "DependencyObserved": DependencyObservedPayload,
             "PopconObserved": PopconObservedPayload,
+            "ExcuseObserved": ExcuseObservedPayload,
+            "ExcuseEntered": ExcuseEnteredPayload,
+            "ExcuseLeft": ExcuseLeftPayload,
+            "ExcuseMigrateAfterChanged": ExcuseMigrateAfterChangedPayload,
+            "ExcuseVerdictChanged": ExcuseVerdictChangedPayload,
+            "ExcuseBlockedByChanged": ExcuseBlockedByChangedPayload,
+            "ExcuseVersionChanged": ExcuseVersionChangedPayload,
+            "SnapshotObserved": SnapshotObservedPayload,
         }
 
         model_cls = mapping.get(self.event_type)

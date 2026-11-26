@@ -644,6 +644,36 @@ No per-package partitioning: the package id travels in the payload
 Echo: files read, events read, per-subject publish counts,
 duplicates absorbed, stream name and servers.
 
+### Publish the britney pairs (`normalize britney --publish`)
+
+`normalize britney --publish` publishes the eventized pairs of an
+ingested window to a second, dedicated stream — `debian-migrations`
+(ADR-026) — while it writes the Parquet event lake:
+
+```bash
+debian-observer normalize britney <manifest> \
+  [--events-dir DIR] [--publish] [--server nats://localhost:4222]
+```
+
+  - `--publish` is optional: without it the run stays C2's
+    (lake only, nothing connected).
+  - `--server` names the NATS URL(s) for `--publish` (repeatable,
+    default `nats://localhost:4222`).
+  - every message carries `Nats-Msg-Id: <event_id>`, so a re-run of a
+    published window publishes the same ids again and the stream
+    absorbs them (server-side dedup within the stream's duplicate
+    window — an optimization; the guarantee stays in the consumers,
+    which deduplicate by `event_id`).
+
+Subjects are `debian.migration.excuse.<kind>` and
+`debian.migration.snapshot.observed` (spec §6.1); the existing
+`debian.migration.observed` stays on `debian-events`, untouched.
+The stream is created if missing with its own retention: file
+storage, limits retention, 400 days / 2 GB (D3), a duplicate window
+of hours, and no message-count limit (age and bytes are the disk
+budget). The pairs publish in order: the events of a pair only after
+every event of the previous pair (ADR-027).
+
 ### Replay events
 
 Replay events from a JSON-lines file (`--input`, required) to NATS.

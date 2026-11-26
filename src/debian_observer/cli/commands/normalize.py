@@ -9,6 +9,7 @@ One subcommand per raw surface (ADR-012 amendment, 2026-10-23):
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 import uuid
@@ -21,6 +22,8 @@ from debian_observer.storage.parquet import (
     IncrementalParquetWriter,
     EVENTS_DIR_DEFAULT,
 )
+
+from debian_observer.messaging.client import NATSClient
 
 from debian_observer.analytics.models import ExecutionRecord
 from debian_observer.analytics.store import ExecutionStore
@@ -457,6 +460,24 @@ def normalize_udddump(
         "stdout); the Parquet event lake is always written."
     ),
 )
+@click.option(
+    "--publish",
+    "publish_stream",
+    is_flag=True,
+    help=(
+        "Also publish the eventized pairs to the migration stream "
+        "debian-migrations (ADR-026), pair by pair with "
+        "Nats-Msg-Id: <event_id>; created if missing."
+    ),
+)
+@click.option(
+    "--server",
+    "servers",
+    multiple=True,
+    default=("nats://localhost:4222",),
+    show_default=True,
+    help="NATS server URL for --publish (may be given multiple times).",
+)
 def normalize_britney(
     manifest: Path,
     raw_dir: str,
@@ -464,6 +485,8 @@ def normalize_britney(
     events_dir: Path,
     checkpoint_path: Path | None,
     output_file,
+    publish_stream: bool,
+    servers: tuple[str, ...],
 ) -> None:
     """Eventize an ingested britney window: seed, pairs, lake, resume.
 
@@ -479,8 +502,12 @@ def normalize_britney(
     after it, and re-running a published window writes ZERO new
     events and rewrites none of the old ones.
 
-    C2 produces to the lake only; publication to the migration
-    stream is C3.
+    With --publish the eventized pairs also go to the migration
+    stream `debian-migrations` (ADR-026), in pair order, every
+    message carrying `Nats-Msg-Id: <event_id>`: the stream absorbs a
+    re-published window server-side (an optimization — the guarantee
+    stays in the consumers, which dedup by event_id). Without
+    --publish nothing connects: the run stays lake-only.
     """
     import json as _json
     import uuid as _uuid
@@ -532,35 +559,78 @@ def normalize_britney(
     writers: dict[str, IncrementalParquetWriter] = {}
     snapshots_eventized = 0
     total_events = 0
+    pair_publisher = None
+    client = None
+    if publish_stream:
+        from debian_observer.messaging.migrations import (
+            MigrationPairPublisher,
+        )
+
+        client = NATSClient(servers=list(servers))
+        pair_publisher = MigrationPairPublisher(client=client)
     start = time.perf_counter()
-    for snapshot_id, events in eventizer.iter_eventized(
-        parsed, checkpoint=checkpoint
-    ):
-        for event in events:
-            writer = writers.get(event.event_type)
-            if writer is None:
-                writer = writer_for_event_type(
-                    event.event_type, events_dir=str(events_dir)
-                ).open_parquet_file(lake_run)
-                writers[event.event_type] = writer
-            writer.append_event(event)
-            if output_file is not None:
-                _write_events([event], output_file)
-        checkpoint.save(snapshot_id)
-        snapshots_eventized += 1
-        total_events += len(events)
-    for writer in writers.values():
-        writer.close()
+
+    async def _window() -> None:
+        # One event loop for the whole run: the NATS connection (and
+        # every publish on it) is bound to the loop it connected on.
+        nonlocal snapshots_eventized, total_events
+        if pair_publisher is not None:
+            await client.connect()
+            await pair_publisher.ensure_stream()
+        try:
+            for snapshot_id, events in eventizer.iter_eventized(
+                parsed, checkpoint=checkpoint
+            ):
+                for event in events:
+                    writer = writers.get(event.event_type)
+                    if writer is None:
+                        writer = writer_for_event_type(
+                            event.event_type, events_dir=str(events_dir)
+                        ).open_parquet_file(lake_run)
+                        writers[event.event_type] = writer
+                    writer.append_event(event)
+                    if output_file is not None:
+                        _write_events([event], output_file)
+                # The pair publishes before its checkpoint advances:
+                # a crash after the publish resumes after it (a
+                # re-eventized pair republishes the same ids, which
+                # the stream absorbs); a pair's events are all
+                # published before the next pair is eventized
+                # (ADR-027).
+                if pair_publisher is not None:
+                    await pair_publisher.publish_pair(snapshot_id, events)
+                checkpoint.save(snapshot_id)
+                snapshots_eventized += 1
+                total_events += len(events)
+        finally:
+            for writer in writers.values():
+                writer.close()
+            if pair_publisher is not None:
+                await client.close()
+
+    try:
+        asyncio.run(_window())
+    except (RuntimeError, ConnectionError) as exc:
+        if publish_stream:
+            raise click.ClickException(f"Publish failed: {exc}") from exc
+        raise
 
     if snapshots_eventized == 0:
         click.echo(
             f"Eventized: 0 new events (checkpoint at "
-            f"{checkpoint.last_snapshot})", err=True
-        )
+            f"{checkpoint.last_snapshot})", err=True)
     else:
         click.echo(
             f"Eventized: {snapshots_eventized} snapshots, "
-            f"{total_events} events", err=True
+            f"{total_events} events", err=True)
+    if pair_publisher is not None:
+        stats = pair_publisher.stats()
+        click.echo(
+            f"Published: {stats.events} events across {stats.pairs} "
+            f"snapshots ({stats.duplicates_absorbed} duplicates "
+            f"absorbed) to {stats.stream_name} at "
+            f"{', '.join(stats.servers)}",
+            err=True,
         )
 
     _record_execution(

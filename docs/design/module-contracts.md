@@ -165,7 +165,18 @@ cannot reconstruct without reading everything.
     `debian.package.observed`, `debian.package_version.observed`,
     `debian.release.observed`, `debian.migration.observed`
      — per event type, no per-package partitioning)
+  - a second stream `debian-migrations` (ADR-026): subjects
+    `debian.migration.excuse.>` and `debian.migration.snapshot.>`,
+    file storage, limits retention (400 days / 2 GB, D3), a
+    duplicate window of hours, no message-count limit
+    (`MigrationStreamConfig`; the per-event-type subject map
+    stays single-sourced in the pair eventizer's `SUBJECTS`)
   - `ensure_stream` (the stream created if missing).
+  - publication of the eventized pairs pair by pair
+    (`messaging.migrations`: `Nats-Msg-Id = event_id`, a pair's
+    events only after every event of the previous pair, ADR-027)
+    and a durable replay of the migration stream from the start
+    (deliver policy all, dedup by `event_id` in the consumer).
   Notes:
   - `EventPublisher.publish` passes `headers` through
   - The publish CLI sends `Nats-Msg-Id: <event_id>` for server-side

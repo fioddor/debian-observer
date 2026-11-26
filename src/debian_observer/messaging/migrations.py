@@ -1,10 +1,11 @@
-"""Messaging: publication of the eventized pairs to the migration stream.
+"""Messaging: the migration stream — publication and replay.
 
 The pair eventizer (``normalization.eventizers.excuses``) yields the
 events of an eventized snapshot — the seed first, then one pair per
 following snapshot, in ``generated_date`` order. This module
 publishes those chunks to the dedicated ``debian-migrations`` stream
-(ADR-026) pair by pair:
+(ADR-026) pair by pair, and attaches the durable consumers that
+re-read it:
 
 * every message carries ``Nats-Msg-Id: <event_id>`` (ADR-025), so
   JetStream deduplicates server-side within the stream's duplicate
@@ -15,6 +16,12 @@ publishes those chunks to the dedicated ``debian-migrations`` stream
   previous pair (ADR-027 — the pair eventizer stays sequential);
   the caller drives the chunks, this module publishes them in the
   order they come, one pair fully before the next.
+* a durable consumer (:func:`replay_migration_stream`) attaches
+  with deliver policy **all**: it re-reads the stream from the
+  start, whenever it arrives (§11.1 — the stream is the durable
+  record), with the NATS URL as a parameter. Redeliveries may
+  arrive out of order: the handler orders by the event, never by
+  arrival (§6.3).
 
 The stream is created if missing (``ensure_stream``), with the
 declarative :class:`MigrationStreamConfig` retention.
@@ -26,17 +33,26 @@ from dataclasses import dataclass
 from typing import Any, Iterable, Sequence
 
 from debian_observer.events.envelope import EventEnvelope
+from debian_observer.messaging.client import NATSClient
 from debian_observer.messaging.config import (
     MIGRATIONS_STREAM_NAME,
     MigrationStreamConfig,
 )
+from debian_observer.messaging.consumer import EventConsumer, EventHandler
 from debian_observer.messaging.publisher import EventPublisher, ensure_stream
 
 __all__ = [
+    "MIGRATIONS_SUBJECT_FILTER",
     "MigrationPairPublisher",
     "MigrationPublishStats",
     "publish_eventized_pairs",
+    "replay_migration_stream",
 ]
+
+#: The subject filter a migration-stream consumer subscribes to:
+#: both subject families of §6.1 (`debian.migration.excuse.>` and
+#: `debian.migration.snapshot.>`), one filter token.
+MIGRATIONS_SUBJECT_FILTER = "debian.migration.>"
 
 
 @dataclass(frozen=True)
@@ -145,3 +161,78 @@ async def publish_eventized_pairs(
     for snapshot_id, events in chunks:
         await publisher.publish_pair(snapshot_id, events)
     return publisher.stats()
+
+
+def _deliver_all() -> Any:
+    """``DeliverPolicy.ALL``, imported lazily (like ``NATSClient``).
+
+    The battery runs against fakes; the real enum only matters when
+    a real NATS answers, and its absence must name the install, not
+    crash the import.
+    """
+    try:
+        from nats.js.api import DeliverPolicy
+    except ImportError as exc:  # pragma: no cover - depends on nats-py
+        raise RuntimeError(
+            "nats-py is required. Install with: pip install nats-py"
+        ) from exc
+    return DeliverPolicy.ALL
+
+
+async def replay_migration_stream(
+    *,
+    durable_name: str,
+    handler: EventHandler,
+    client: Any = None,
+    servers: list[str] | None = None,
+) -> EventConsumer:
+    """Attach a durable consumer that replays ``debian-migrations``.
+
+    A consumer that arrives later than the publisher re-reads the
+    stream **from the start**: deliver policy all — the stream is the
+    durable record (ADR-026), limits retention keeps history, and the
+    subject filter :data:`MIGRATIONS_SUBJECT_FILTER` covers both
+    subject families (§6.1). The NATS URL is a parameter
+    (``servers``); an existing connected ``client`` is reused as-is.
+
+    The handler owns the semantics: it deduplicates by ``event_id``
+    (the standard pattern is
+    :class:`~debian_observer.messaging.consumer.IngestionHandler`
+    over a persistent store) — JetStream's server-side dedup is an
+    optimization, bounded by the duplicate window (§6.2) — and it
+    orders by the event's own timestamps, never by arrival (§6.3).
+
+    Usage::
+
+        consumer = await replay_migration_stream(
+            durable_name="analytics",
+            handler=my_handler,
+            servers=["nats://nats:4222"],
+        )
+        ...
+        await consumer.close()
+
+    Args:
+        durable_name: The durable consumer name (survives restarts).
+        handler: Async ``handler(msg, event, payload, ack)``.
+        client: A connected NATS client; built from ``servers``
+            when omitted.
+        servers: NATS server URLs for the built client
+            (default ``nats://localhost:4222``).
+
+    Returns:
+        The subscribed :class:`EventConsumer` (``close`` to stop).
+    """
+    if client is None:
+        client = NATSClient(servers=servers)
+        await client.connect()
+    consumer = EventConsumer(
+        client=client,
+        handler=handler,
+        stream_name=MIGRATIONS_STREAM_NAME,
+        durable_name=durable_name,
+    )
+    await consumer.subscribe(
+        MIGRATIONS_SUBJECT_FILTER, deliver_policy=_deliver_all()
+    )
+    return consumer

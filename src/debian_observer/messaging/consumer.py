@@ -2,7 +2,7 @@
 
 Consumes domain events from NATS JetStream with at-least-once semantics.
 
-The consumer follows the R1 reliability model:
+The consumer follows the at-least-once reliability model:
 
 1. Receive an event from JetStream
 2. Deserialize into EventEnvelope
@@ -101,11 +101,21 @@ class EventConsumer:
         self._metrics = MessagingMetrics()
         self._tracer = get_tracer("debian_observer.messaging")
 
-    async def subscribe(self, subject: str) -> None:
+    async def subscribe(
+        self,
+        subject: str,
+        *,
+        deliver_policy: Any = None,
+    ) -> None:
         """Subscribe to a subject and begin consuming messages.
 
         Args:
             subject: NATS subject filter (e.g. "debian.package_version.observed").
+            deliver_policy: Optional JetStream deliver policy for
+                the durable (e.g. ``DeliverPolicy.ALL`` to replay the
+                stream from the start). Unset (None) keeps the server
+                default: the kwarg is absent from the subscribe call,
+                not None — existing consumers see no change.
 
         Raises:
             RuntimeError: If the NATS client is not connected.
@@ -114,12 +124,14 @@ class EventConsumer:
             raise RuntimeError("NATS client not connected")
 
         js = self._client.jetstream
-        self._subscription = await js.subscribe(
-            subject,
-            stream=self.stream_name,
-            durable=self.durable_name,
-            cb=self._on_message,
-        )
+        kwargs: dict[str, Any] = {
+            "stream": self.stream_name,
+            "durable": self.durable_name,
+            "cb": self._on_message,
+        }
+        if deliver_policy is not None:
+            kwargs["deliver_policy"] = deliver_policy
+        self._subscription = await js.subscribe(subject, **kwargs)
 
     async def _on_message(self, msg: Any) -> None:
         """Internal callback for incoming NATS messages."""

@@ -1,12 +1,15 @@
 """CLI tests for the `ingest` command group.
 
-One subcommand per data source (ADR-012): `ingest sources`,
-`ingest mirror`, `ingest udd`, `ingest udddump`. Each source's
-selector is a mandatory filter flag. `ingest udddump` is
-acquisition only (ADR-012 amendment, 2026-10-23): it downloads the
-dump (`--url`) and stores it byte-preserving with a manifest
-sidecar — no parsing, no events; the gates and the eventization
-live in `normalize udddump` (tests/cli/test_normalization.py).
+One subcommand per data source (ADR-012), all of them registered on
+the group and each mentioned in the group's `--help` (the subcommand
+list is never hardcoded here: the help test reads the group's own
+`commands`, so a source added without its help line fails the
+battery). Each source's selector is a mandatory filter flag.
+`ingest udddump` is acquisition only (ADR-012 amendment, 2026-10-23):
+it downloads the dump (`--url`) and stores it byte-preserving with a
+manifest sidecar — no parsing, no events; the gates and the
+eventization live in `normalize udddump`
+(tests/cli/test_normalization.py).
 """
 
 from __future__ import annotations
@@ -21,14 +24,6 @@ from click.testing import CliRunner
 
 from debian_observer.cli.main import cli
 
-
-def test_ingest_help():
-    runner = CliRunner()
-    result = runner.invoke(cli, ["ingest", "--help"])
-    assert result.exit_code == 0
-    # One subcommand per source is listed in the synopsis.
-    for subcommand in ("sources", "mirror", "udd", "udddump"):
-        assert subcommand in result.output
 
 
 def _make_mock_result(
@@ -154,10 +149,15 @@ def test_ingest_unknown_subcommand():
 
 def test_ingest_help_lists_subcommands():
     """`ingest --help` shows one subcommand per source."""
+    # The list comes from the group's own `commands` (ADR-012: one
+    # subcommand per source): a new source without its help line
+    # fails here, never a hardcoded name.
+    from debian_observer.cli.commands import ingest as ingest_group
+
     runner = CliRunner()
     result = runner.invoke(cli, ["ingest", "--help"])
     assert result.exit_code == 0
-    for subcommand in ("sources", "mirror", "udd", "udddump"):
+    for subcommand in sorted(ingest_group.ingest.commands):
         assert subcommand in result.output
 
 

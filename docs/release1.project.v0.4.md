@@ -5,38 +5,38 @@
 
 ## Table of Contents
 
-Overview
- 1. Main **Goals**: Purpose, Product purpose, release goal, main technical features.
- 2. Technical **Challenges**: Heterogenity and resource restrictions.
- 3. Engineering **Analysis**: Patterns and release scope.
+- **Overview**
+  - [1. Main **Goals** — Purpose, Product purpose, release goal, main technical features.](#1-main-goals)
+  - [2. Technical **Challenges** — Heterogenity and resource restrictions.](#2-technical-challenges)
+  - [3. Engineering **Analysis** — Patterns and release scope.](#3-engineering-analysis)
 
-Data Models
- 4. Data Sources & Datasets
- 5. Data Model: Domain and metadata
- 6. Event Model: Why?, envelope, identity, schema versioning, ordering
+- **Data Models**
+  - [4. Data Sources & Datasets](#4-data-sources--datasets)
+  - [5. Data Model](#5-data-model)
+  - [6. Event Model](#6-event-model)
 
-Automated Process
- 7. Architecture
- 8. Ingestion
- 9. Normalization
- 10. Analytical Storage
- 11. Messaging
- 12. Interaction Interfaces: API & CLI
- 13. Observability
+- **Automated Process**
+  - [7. Architecture](#7-architecture)
+  - [8. Ingestion](#8-ingestion)
+  - [9. Normalization](#9-normalization)
+  - [10. Analytical Storage](#10-analytical-storage)
+  - [11. Messaging](#11-messaging)
+  - [12. Interaction Interfaces: API & CLI](#12-api--cli)
+  - [13. Observability](#13-observability)
 
-Product Quality Specifications
- 14. IaC Deployment: scalable, reproducible/consistent, modular/isolated, dependency-managed
- 15. Reliability Properties
- 16. Benchmarked Performance
- 17. Security & Supply Chain
- 
-Product Quality Checks
- 18. Definition of Done
- 19. Testing Strategy
- 20. Demonstration Scenario
+- **Product Quality Specifications**
+  - [14. IaC Deployment](#14-deployment)
+  - [15. Reliability Properties](#15-reliability-properties)
+  - [16. Benchmarked Performance](#16-benchmarked-performance)
+  - [17. Security & Supply Chain](#17-security--supply-chain)
 
-Development Plan
- 21. Three-Week Execution Plan
+- **Product Quality Checks**
+  - [18. Definition of Done](#18-definition-of-done)
+  - [19. Testing Strategy](#19-testing-strategy)
+  - [20. Demonstration Scenario](#20-demonstration-scenario)
+
+- **Development Plan**
+  - [21. Three-Week Execution Plan](#21-three-week-execution-plan)
 
 
 ---

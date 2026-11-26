@@ -21,41 +21,41 @@ committed with the implementation (Benchmarked Performance, §16).
 
 ## Table of Contents
 
-Overview
- 1. Main **Goals**: domain purpose, release scope, technical features.
- 2. Technical **Challenges**: volume, memory, parallelism, semantics.
- 3. Engineering **Analysis**: related work & positioning, scope, ADRs.
+- **Overview**
+  - [1. Main **Goals** — domain purpose, release scope, technical features.](#1-main-goals)
+  - [2. Technical **Challenges** — volume, memory, parallelism, semantics.](#2-technical-challenges)
+  - [3. Engineering **Analysis** — related work & positioning, scope, ADRs.](#3-engineering-analysis)
 
-Data Models
- 4. Data Sources & Datasets (with measured sizes)
- 5. Data Model: dependency domain
- 6. Event Model: `DependencyObserved`, `PopconObserved`
+- **Data Models**
+  - [4. Data Sources & Datasets (with measured sizes)](#4-data-sources--datasets)
+  - [5. Data Model: dependency domain](#5-data-model)
+  - [6. Event Model: `DependencyObserved`, `PopconObserved`](#6-event-model-debian-observers)
 
-Automated Process
- 7. Architecture
- 8. Ingestion & the eventizer concept
- 9. Normalization: eventizers
- 10. Analytical Storage: derived dependency tables (the prosumers)
- 11. Messaging: events and work distribution
- 12. CLI & API
- 13. Observability
+- **Automated Process**
+  - [7. Architecture](#7-architecture)
+  - [8. Ingestion & the eventizer concept](#8-ingestion--the-eventizer-concept-debian-observer)
+  - [9. Normalization: eventizers](#9-normalization-eventizers-debian-observer)
+  - [10. Analytical Storage: derived dependency tables (the prosumers)](#10-analytical-storage-derived-dependency-tables)
+  - [11. Messaging: events and work distribution](#11-messaging)
+  - [12. CLI & API](#12-cli--api)
+  - [13. Observability](#13-observability)
 
-Product Quality Specifications
- 14. Deployment
- 15. Reliability Properties
- 16. Benchmarked Performance (extension of R1 §16)
- 17. Security & Supply Chain
+- **Product Quality Specifications**
+  - [14. Deployment](#14-deployment)
+  - [15. Reliability Properties](#15-reliability-properties)
+  - [16. Benchmarked Performance (extension of R1 §16)](#16-benchmarked-performance-extension-of-r1-16)
+  - [17. Security & Supply Chain](#17-security--supply-chain)
 
-Product Quality Checks
- 18. Definition of Done
- 19. Testing Strategy
- 20. Demonstration Scenario
+- **Product Quality Checks**
+  - [18. Definition of Done](#18-definition-of-done)
+  - [19. Testing Strategy](#19-testing-strategy)
+  - [20. Demonstration Scenario](#20-demonstration-scenario)
 
-Development Plan
- 21. Ten-Day Execution Plan
- 22. Stretch Goals (only if time remains)
- 23. Future Work
- 24. Open Decisions for the Owner
+- **Development Plan**
+  - [21. Ten-Day Execution Plan](#21-ten-day-execution-plan)
+  - [22. Stretch Goals (only if time remains)](#22-stretch-goals-only-if-time-remains)
+  - [23. Future Work](#23-future-work)
+  - [24. Open Decisions for the Owner](#24-open-decisions-for-the-owner)
 
 
 ---

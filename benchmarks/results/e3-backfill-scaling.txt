@@ -1,0 +1,54 @@
+
+========================================================================
+E3 — backfill scaling: 1, 2, 4 workers on one machine
+========================================================================
+
+
+========================================================================
+E3 — 1 worker slot(s)
+========================================================================
+
+host: 7c2d333cabe8
+cpus: 4
+python: 3.13.18
+nats-py: 2.16.0
+pyarrow: 26.0.1
+PyYAML: 6.0.3
+stream: britney-parse at nats://huevo-c4-nats:4222
+command shape: debian-observer work britney --concurrency <slots> --drain 0 (started by the driver, signalled when the window is complete)
+slots=1 workers=1 window=24  enqueue=0.8s jobs=0 (duplicates absorbed 24)  raw=85375112B
+wall (last enqueue -> all results back): 372.1s
+
+========================================================================
+E3 — 2 worker slot(s)
+========================================================================
+
+host: 7c2d333cabe8
+cpus: 4
+python: 3.13.18
+nats-py: 2.16.0
+pyarrow: 26.0.1
+PyYAML: 6.0.3
+stream: britney-parse at nats://huevo-c4-nats:4222
+command shape: debian-observer work britney --concurrency <slots> --drain 0 (started by the driver, signalled when the window is complete)
+slots=2 workers=1 window=24  enqueue=0.9s jobs=24 (duplicates absorbed 0)  raw=85375112B
+wall (last enqueue -> all results back): 501.8s
+
+========================================================================
+E3 — 4 worker slot(s)
+========================================================================
+
+host: 7c2d333cabe8
+cpus: 4
+python: 3.13.18
+nats-py: 2.16.0
+pyarrow: 26.0.1
+PyYAML: 6.0.3
+stream: britney-parse at nats://huevo-c4-nats:4222
+command shape: debian-observer work britney --concurrency <slots> --drain 0 (started by the driver, signalled when the window is complete)
+slots=4 workers=1 window=24  enqueue=0.8s jobs=24 (duplicates absorbed 0)  raw=85375112B
+wall (last enqueue -> all results back): 496.2s
+across machines: PENDING — no second machine in this
+environment; the deployment shape (a worker in its own
+container against the same NATS) is exercised by every run
+here, the multi-host half stays to run where two hosts exist.

@@ -1,0 +1,38 @@
+
+========================================================================
+E1 — parse cost per snapshot; compact-state size
+========================================================================
+
+host: 7c2d333cabe8
+cpus: 4
+python: 3.13.18
+nats-py: 2.16.0
+pyarrow: 26.0.1
+PyYAML: 6.0.3
+window: 24 observed snapshots
+run: serial parse of each raw .yaml.gz (the queue's unit of work)
+20261125230001  items=5951  parse=16.81s  raw=3740386B  compact=260117B
+20261126000001  items=5951  parse=15.27s  raw=3742414B  compact=260123B
+20261126010001  items=5951  parse=16.52s  raw=3730560B  compact=260058B
+20261126020001  items=5951  parse=15.08s  raw=3702364B  compact=260068B
+20261126030001  items=5747  parse=16.47s  raw=3702760B  compact=256639B
+20261126040001  items=5747  parse=16.06s  raw=3691953B  compact=256717B
+20261126050001  items=5747  parse=15.85s  raw=3673595B  compact=256726B
+20261126060001  items=5747  parse=15.07s  raw=3665616B  compact=256795B
+20261126070001  items=5747  parse=16.31s  raw=3642517B  compact=256732B
+20261126080001  items=5747  parse=15.14s  raw=3625790B  compact=256740B
+20261126090001  items=5731  parse=14.63s  raw=3611642B  compact=254397B
+20261126100001  items=5758  parse=16.30s  raw=3586676B  compact=255995B
+20261126110001  items=5758  parse=16.03s  raw=3568760B  compact=256017B
+20261126120001  items=5758  parse=14.12s  raw=3539369B  compact=255998B
+20261126130001  items=5758  parse=15.15s  raw=3530831B  compact=255932B
+20261126140001  items=5758  parse=14.89s  raw=3513132B  compact=256037B
+20261126150001  items=5763  parse=16.11s  raw=3521650B  compact=255892B
+20261126160001  items=5763  parse=14.85s  raw=3523129B  compact=255853B
+20261126170002  items=5763  parse=15.08s  raw=3513967B  compact=255855B
+20261126180002  items=5763  parse=16.34s  raw=3508960B  compact=255842B
+20261126190001  items=5763  parse=16.08s  raw=3506701B  compact=255770B
+20261126200001  items=5763  parse=16.02s  raw=3518602B  compact=255856B
+20261126210001  items=3062  parse=12.76s  raw=3009277B  compact=135941B
+20261126220001  items=3062  parse=12.69s  raw=3004461B  compact=135928B
+total=369.6s  mean=15.40s  min=12.69s  max=16.81s  compact mean=246751B

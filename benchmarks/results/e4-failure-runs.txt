@@ -1,0 +1,24 @@
+
+========================================================================
+E4 — the failure run: a worker dies mid-job
+========================================================================
+
+
+========================================================================
+E4 — 2 workers, one SIGKILLed mid-run
+========================================================================
+
+host: 7c2d333cabe8
+cpus: 4
+python: 3.13.18
+nats-py: 2.16.0
+pyarrow: 26.0.1
+PyYAML: 6.0.3
+stream: britney-parse at nats://huevo-c4-nats:4222
+command shape: debian-observer work britney --concurrency <slots> --drain 0 (started by the driver, signalled when the window is complete)
+slots=2 workers=2 window=24  enqueue=0.8s jobs=24 (duplicates absorbed 0)  raw=85375112B
+wall (last enqueue -> all results back): 500.3s
+worker killed mid-run (SIGKILL): pid 547
+expected (§15): the killed worker's in-flight job is
+redelivered after ack_wait to the other worker; the final
+output is complete and identical to the clean serial parse.

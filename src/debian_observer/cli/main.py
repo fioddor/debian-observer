@@ -18,6 +18,7 @@ from debian_observer.cli.commands import (
     serve,
     status,
     validate,
+    work,
 )
 from debian_observer.version import __version__
 
@@ -55,6 +56,7 @@ cli.add_command(replay.replay)
 cli.add_command(serve.serve)
 cli.add_command(status.status)
 cli.add_command(validate.validate)
+cli.add_command(work.work)
 
 
 if __name__ == "__main__":
